@@ -13,12 +13,28 @@ public struct DoseInput: Sendable {
     }
 }
 
+/// Sanity limits for dose estimates; same values as TS `DOSE_LIMITS`. Values above these are refused:
+/// inputs → `invalidInput`, settings → `invalidSettings`, raw units → `exceedsLimit`.
+public enum DoseLimits {
+    public static let maxCarbsG: Double = 2000
+    public static let maxBg: Double = 1000
+    public static let maxRatioGPerUnit: Double = 1000
+    public static let maxCorrectionThreshold: Double = 1000
+    public static let maxCorrectionStep: Double = 1000
+    public static let maxUnitsPerStep: Double = 50
+    public static let maxRoundingIncrement: Double = 10
+    public static let maxRoundDownBelowBg: Double = 1000
+    /// Largest raw (meal + correction, before rounding) dose that is still estimated.
+    public static let maxRawUnits: Double = 50
+}
+
 public enum DoseRefusal: String, Sendable {
     case noWindow = "no_window"
     case invalidRatio = "invalid_ratio"
     case incompleteCarbs = "incomplete_carbs"
     case invalidInput = "invalid_input"
     case invalidSettings = "invalid_settings"
+    case exceedsLimit = "exceeds_limit"
 
     /// Shown in place of a dose. iOS-only text; the reason codes match the TS core.
     public var message: String {
@@ -28,6 +44,7 @@ public enum DoseRefusal: String, Sendable {
         case .incompleteCarbs: "No dose estimate: at least one item is missing carb data or uses a unit it can't convert."
         case .invalidInput: "No dose estimate: the carbs, BG or time entered are not valid numbers."
         case .invalidSettings: "No dose estimate: the dose settings are invalid. Fix them in Settings."
+        case .exceedsLimit: "No dose estimate: the calculated dose is over 50 units. Check the carbs and BG entered."
         }
     }
 }
@@ -58,8 +75,8 @@ public enum DoseEstimate: Equatable, Sendable {
 
 private func hasInvalidInput(_ input: DoseInput) -> Bool {
     if input.minutes < 0 || input.minutes > 1439 { return true }
-    if !input.carbs.carbsG.isFinite || input.carbs.carbsG < 0 { return true }
-    if let bg = input.bg, !bg.isFinite || bg < 0 { return true }
+    if !input.carbs.carbsG.isFinite || input.carbs.carbsG < 0 || input.carbs.carbsG > DoseLimits.maxCarbsG { return true }
+    if let bg = input.bg, !bg.isFinite || bg < 0 || bg > DoseLimits.maxBg { return true }
     return false
 }
 
@@ -72,15 +89,16 @@ public func hasInvalidSettings(_ settings: DoseSettingsData) -> Bool {
         guard let start = try? parseHHMM(window.start) else { return true }
         if starts.contains(start) { return true }
         starts.append(start)
+        if window.ratioGPerUnit > DoseLimits.maxRatioGPerUnit { return true }
     }
     let c = settings.correction
-    if !c.threshold.isFinite { return true }
-    if !c.step.isFinite || c.step <= 0 { return true }
-    if !c.unitsPerStep.isFinite || c.unitsPerStep < 0 { return true }
+    if !c.threshold.isFinite || c.threshold > DoseLimits.maxCorrectionThreshold { return true }
+    if !c.step.isFinite || c.step <= 0 || c.step > DoseLimits.maxCorrectionStep { return true }
+    if !c.unitsPerStep.isFinite || c.unitsPerStep < 0 || c.unitsPerStep > DoseLimits.maxUnitsPerStep { return true }
     if !validCorrectionModes.contains(c.mode) { return true }
     let r = settings.rounding
-    if !r.increment.isFinite || r.increment <= 0 { return true }
-    if let below = r.roundDownBelowBg, !below.isFinite { return true }
+    if !r.increment.isFinite || r.increment <= 0 || r.increment > DoseLimits.maxRoundingIncrement { return true }
+    if let below = r.roundDownBelowBg, !below.isFinite || below > DoseLimits.maxRoundDownBelowBg { return true }
     return false
 }
 
@@ -93,6 +111,7 @@ public func estimateDose(_ input: DoseInput) -> DoseEstimate {
     let mealUnits = input.carbs.carbsG / window.ratioGPerUnit
     let correction = correctionUnits(input.settings.correction, input.bg)
     let raw = mealUnits + correction
+    if raw > DoseLimits.maxRawUnits { return .refused(.exceedsLimit, window: window) }
     let rounded = roundDose(raw, input.settings.rounding, input.bg)
     return .ok(DoseSuggestion(
         window: window, carbsG: input.carbs.carbsG, bg: input.bg, mealUnits: mealUnits,

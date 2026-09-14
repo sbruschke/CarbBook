@@ -70,6 +70,17 @@
       "correction": { "threshold": 200, "step": 0, "units_per_step": 1, "mode": "started" },
       "expect": { "ok": false, "reason": "invalid_settings", "window": null } },
     { "name": "negative carbs refuse", "time": "18:00", "carbs": -40, "bg": null,
-      "expect": { "ok": false, "reason": "invalid_input", "window": null } }
+      "expect": { "ok": false, "reason": "invalid_input", "window": null } },
+    { "name": "carbs over 2000 refuse", "time": "18:00", "carbs": 2001, "bg": null,
+      "expect": { "ok": false, "reason": "invalid_input", "window": null } },
+    { "name": "BG over 1000 refuse", "time": "18:00", "carbs": 72, "bg": 1001,
+      "expect": { "ok": false, "reason": "invalid_input", "window": null } },
+    { "name": "units_per_step over 50 refuses", "time": "18:00", "carbs": 72, "bg": 250,
+      "correction": { "threshold": 200, "step": 50, "units_per_step": 51, "mode": "started" },
+      "expect": { "ok": false, "reason": "invalid_settings", "window": null } },
+    { "name": "raw 50 is allowed", "time": "18:00", "carbs": 400, "bg": null,
+      "expect": { "ok": true, "window": "Dinner", "meal_units": 50, "correction_units": 0, "raw_units": 50, "units": 50, "rounded_down": false } },
+    { "name": "raw over 50 refuses", "time": "18:00", "carbs": 401, "bg": null,
+      "expect": { "ok": false, "reason": "exceeds_limit", "window": "Dinner" } }
   ]
 }

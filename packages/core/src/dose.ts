@@ -4,6 +4,24 @@ import type { CorrectionRule, DoseSettingsData, DoseWindow, RoundingRule } from 
 const EPS = 1e-9;
 const HOUR_MS = 3_600_000;
 
+/**
+ * Sanity limits for dose estimates. Values above these are refused rather than estimated:
+ * inputs → `invalid_input`, settings → `invalid_settings`, raw units → `exceeds_limit`.
+ * Mirrored as `DoseLimits` in the Swift core.
+ */
+export const DOSE_LIMITS = Object.freeze({
+  maxCarbsG: 2000,
+  maxBg: 1000,
+  maxRatioGPerUnit: 1000,
+  maxCorrectionThreshold: 1000,
+  maxCorrectionStep: 1000,
+  maxUnitsPerStep: 50,
+  maxRoundingIncrement: 10,
+  maxRoundDownBelowBg: 1000,
+  /** Largest raw (meal + correction, before rounding) dose that is still estimated. */
+  maxRawUnits: 50,
+} as const);
+
 export function parseHHMM(value: string): number {
   const match = /^(\d{2}):(\d{2})$/.exec(value);
   if (!match) throw new Error(`Invalid time "${value}", expected HH:MM`);
@@ -74,7 +92,7 @@ export type DoseEstimate =
     }
   | {
       ok: false;
-      reason: 'no_window' | 'invalid_ratio' | 'incomplete_carbs' | 'invalid_input' | 'invalid_settings';
+      reason: 'no_window' | 'invalid_ratio' | 'incomplete_carbs' | 'invalid_input' | 'invalid_settings' | 'exceeds_limit';
       window: DoseWindow | null;
     };
 
@@ -82,8 +100,8 @@ const isFiniteNumber = (n: unknown): n is number => typeof n === 'number' && Num
 
 function hasInvalidInput(input: DoseInput): boolean {
   if (!Number.isInteger(input.minutes) || input.minutes < 0 || input.minutes > 1439) return true;
-  if (!isFiniteNumber(input.carbs.carbs_g) || input.carbs.carbs_g < 0) return true;
-  if (input.bg != null && (!isFiniteNumber(input.bg) || input.bg < 0)) return true;
+  if (!isFiniteNumber(input.carbs.carbs_g) || input.carbs.carbs_g < 0 || input.carbs.carbs_g > DOSE_LIMITS.maxCarbsG) return true;
+  if (input.bg != null && (!isFiniteNumber(input.bg) || input.bg < 0 || input.bg > DOSE_LIMITS.maxBg)) return true;
   return false;
 }
 
@@ -100,17 +118,28 @@ function hasInvalidSettings(settings: DoseSettingsData): boolean {
     }
     if (starts.includes(start)) return true;
     starts.push(start);
+    if (window.ratio_g_per_unit > DOSE_LIMITS.maxRatioGPerUnit) return true;
   }
 
   const correction = settings.correction;
-  if (!isFiniteNumber(correction.threshold)) return true;
-  if (!isFiniteNumber(correction.step) || correction.step <= 0) return true;
-  if (!isFiniteNumber(correction.units_per_step) || correction.units_per_step < 0) return true;
+  if (!isFiniteNumber(correction.threshold) || correction.threshold > DOSE_LIMITS.maxCorrectionThreshold) return true;
+  if (!isFiniteNumber(correction.step) || correction.step <= 0 || correction.step > DOSE_LIMITS.maxCorrectionStep) return true;
+  if (
+    !isFiniteNumber(correction.units_per_step) ||
+    correction.units_per_step < 0 ||
+    correction.units_per_step > DOSE_LIMITS.maxUnitsPerStep
+  )
+    return true;
   if (!VALID_CORRECTION_MODES.has(correction.mode)) return true;
 
   const rounding = settings.rounding;
-  if (!isFiniteNumber(rounding.increment) || rounding.increment <= 0) return true;
-  if (rounding.round_down_below_bg != null && !isFiniteNumber(rounding.round_down_below_bg)) return true;
+  if (!isFiniteNumber(rounding.increment) || rounding.increment <= 0 || rounding.increment > DOSE_LIMITS.maxRoundingIncrement)
+    return true;
+  if (
+    rounding.round_down_below_bg != null &&
+    (!isFiniteNumber(rounding.round_down_below_bg) || rounding.round_down_below_bg > DOSE_LIMITS.maxRoundDownBelowBg)
+  )
+    return true;
 
   return false;
 }
@@ -125,6 +154,7 @@ export function estimateDose(input: DoseInput): DoseEstimate {
   const mealUnits = input.carbs.carbs_g / window.ratio_g_per_unit;
   const correction = correctionUnits(input.settings.correction, input.bg);
   const raw = mealUnits + correction;
+  if (raw > DOSE_LIMITS.maxRawUnits) return { ok: false, reason: 'exceeds_limit', window };
   const { units, rounded_down } = roundDose(raw, input.settings.rounding, input.bg);
   return {
     ok: true,
