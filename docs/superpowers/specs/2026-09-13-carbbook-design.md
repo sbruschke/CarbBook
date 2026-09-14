@@ -32,14 +32,15 @@ Web PWA (React + Dexie/IndexedDB)   ─┘                                      
 
 - Also runs Pi-hole v6 natively (holds :80/:443) — nothing in this stack binds host 80/443.
 - Docker Engine + compose plugin installed for this project.
-- Compose project at `/opt/carbbook/` (on the Pi), services:
-  - `carbs-server` — Node 22, Fastify, better-sqlite3. Serves API + built web PWA. Internal port 3000.
-  - `dexcom-api` — the existing container from `~/HomelabServer/dexcom-api/`, moved off the desktop.
-    Same env (`DEXCOM_*`), same endpoints. Internal only to `carbs-server`, and also published
-    as `dexcom.dxshdw.dev` for the Widgy widget.
-  - `cloudflared` — a **new** tunnel (`pi`), separate from the desktop's `homelab` tunnel, with
-    public hostnames `recipes.dxshdw.dev → carbs-server:3000` and
-    `dexcom.dxshdw.dev → dexcom-api:8000`.
+- Pi compose projects share an external Docker network `pi_net`:
+  - `/opt/pi-infra/` — shared infrastructure:
+    - `cloudflared` — a **new** tunnel (`pi`), separate from the desktop's `homelab` tunnel.
+      Public hostnames: `recipes.dxshdw.dev → carbs-server:3000`,
+      `dexcom.dxshdw.dev → dexcom-api:8000`, `ipa.dxshdw.dev → ipa-hub` (see the ipa-hub spec).
+    - `dexcom-api` — the existing container from `~/HomelabServer/dexcom-api/`, moved off the
+      desktop. Same env (`DEXCOM_*`), same endpoints.
+  - `/opt/carbbook/` — `carbs-server`: Node 22, Fastify, better-sqlite3. Serves API + built web PWA.
+    Internal port 3000. Reaches `dexcom-api` over `pi_net`.
 - Migration of dexcom: bring up on Pi, switch the `dexcom.dxshdw.dev` hostname from the desktop
   tunnel to the Pi tunnel, verify the widget, then remove `dexcom-api` from
   `~/HomelabServer/compose.infra.yml` and its Caddy route.
@@ -57,8 +58,13 @@ web/               React + Vite PWA, Dexie local store, sync client
 ios/               SwiftUI app, XcodeGen project.yml, GRDB, VisionKit scanner
 testdata/          dose-vectors.json, units-vectors.json (shared by TS and Swift tests)
 deploy/            Pi compose file, cloudflared notes, backup script
-.github/workflows/ build-ipa + release (LiveContainer source.json), same shape as Cipherbook
+.github/workflows/ build-ipa (CI) + release (uploads the IPA as a GitHub Release asset)
 ```
+
+The GitHub repo is **private**. Distribution goes through the self-hosted IPA hub at
+`https://ipa.dxshdw.dev/source.json` (separate spec: `~/Projects/ipa-hub/`), which pulls release
+assets with a read-only token. The release workflow only needs to publish a `v*` release with
+`CarbBook-<version>-build<N>.ipa` attached.
 
 ## 3. Data model
 
@@ -211,7 +217,8 @@ Same screens on web and iOS:
 1. `packages/core` + test vectors.
 2. `server` (schema, auth, sync, USDA import, OFF lookup, BG proxy).
 3. `web` PWA.
-4. Pi deploy: Docker, compose, new tunnel, dexcom migration, Pi-hole exceptions, backups.
-5. `ios` app + release pipeline.
+4. Pi deploy: Docker, `pi-infra` (new tunnel, dexcom migration), carbbook compose, Pi-hole
+   exceptions, backups.
+5. `ios` app + release workflow (GitHub Release asset), listed in the IPA hub.
 
 Steps 1–4 are usable without the iOS app.
