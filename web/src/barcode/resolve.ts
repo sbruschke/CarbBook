@@ -1,7 +1,7 @@
 import { type FoodData, isNewer, type PortionData, type Synced } from '@carbbook/core';
 import type { Table } from 'dexie';
 import type { AnySyncRecord, CarbBookDb } from '../db/db';
-import { type Api, NetworkError } from '../lib/api';
+import { type Api, ApiError, NetworkError } from '../lib/api';
 import type { BarcodeResponse, FoodDraft } from '../lib/wire';
 
 export type BarcodeResolution =
@@ -11,7 +11,12 @@ export type BarcodeResolution =
   /** Open Food Facts had nothing or failed: enter the food by hand, prefilled with the code. */
   | { kind: 'manual'; code: string; message: string }
   /** Offline and not known locally: kept to look up later (spec §6). */
-  | { kind: 'queued'; code: string };
+  | { kind: 'queued'; code: string }
+  /** Not a plausible barcode: no lookup was attempted. */
+  | { kind: 'invalid'; code: string; message: string };
+
+/** UPC-A/EAN-13 (and other GS1) barcodes are 6-14 digits. */
+const VALID_CODE = /^[0-9]{6,14}$/;
 
 /** UPC-A/EAN-13 spellings, matching the server: "737628064502" ⇄ "0737628064502". */
 export function barcodeCandidates(code: string): string[] {
@@ -30,6 +35,10 @@ export async function resolveBarcode(
   code: string,
   now: () => number = Date.now,
 ): Promise<BarcodeResolution> {
+  if (!VALID_CODE.test(code)) {
+    return { kind: 'invalid', code, message: 'Not a valid barcode.' };
+  }
+
   const rows = await db.barcode.where('code').anyOf(barcodeCandidates(code)).toArray();
   for (const row of rows.filter((r) => r.deleted === 0).sort((a, b) => b.updated_at - a.updated_at)) {
     const food = await db.food.get(row.food_id);
@@ -43,7 +52,10 @@ export async function resolveBarcode(
   try {
     response = await api.get<BarcodeResponse>(`/api/barcode/${encodeURIComponent(code)}`);
   } catch (error) {
-    if (!(error instanceof NetworkError)) throw error;
+    // Network failure, or the server itself is unreachable (Cloudflare 502/503/504 when the
+    // Pi is down): queue for a retry once connectivity is back, same as offline.
+    const retryable = error instanceof NetworkError || (error instanceof ApiError && error.status >= 500);
+    if (!retryable) throw error;
     await db.pending_barcode.put({ code, created_at: now() });
     return { kind: 'queued', code };
   }
@@ -61,6 +73,9 @@ export async function resolveBarcode(
     case 'not_found':
       return { kind: 'manual', code, message: `No product found for barcode ${code}. Enter the food from its label.` };
     case 'unavailable':
+      // Our server answered, but Open Food Facts didn't: also queue so a background retry can
+      // pick it up automatically, while still letting the user enter it by hand right now.
+      await db.pending_barcode.put({ code, created_at: now() });
       return {
         kind: 'manual',
         code,

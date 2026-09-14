@@ -30,6 +30,8 @@ export interface SyncEngineOptions {
   now?: () => number;
   /** Called when the server answers 401; pending changes stay in IndexedDB. */
   onAuthExpired?: () => void;
+  /** Source of randomness for retry jitter; injected in tests. Defaults to `Math.random`. */
+  random?: () => number;
 }
 
 export const WRITE_DEBOUNCE_MS = 2_000;
@@ -57,6 +59,7 @@ export class SyncEngine {
   private readonly isOnline: () => boolean;
   private readonly events: ConnectivityEvents;
   private readonly now: () => number;
+  private readonly random: () => number;
   private running: Promise<void> | null = null;
   private rerun = false;
   private failures = 0;
@@ -70,6 +73,7 @@ export class SyncEngine {
     this.isOnline = options.isOnline ?? (() => navigator.onLine);
     this.events = options.events ?? window;
     this.now = options.now ?? Date.now;
+    this.random = options.random ?? Math.random;
   }
 
   getStatus = (): SyncStatus => this.status;
@@ -102,8 +106,9 @@ export class SyncEngine {
     this.clearRetry();
   }
 
-  /** Call after a local write; syncs once writes pause for 2 s. */
+  /** Call after a local write; syncs once writes pause for 2 s. No-op once stopped (e.g. after logout). */
   requestSync = (): void => {
+    if (!this.started) return;
     this.clearDebounce();
     this.debounceHandle = this.timers.setTimeout(() => {
       this.debounceHandle = null;
@@ -150,6 +155,9 @@ export class SyncEngine {
   }
 
   private handleFailure(error: unknown): void {
+    // Guards against a run that was in flight when stop() (e.g. logout) was called: don't
+    // schedule a retry — or sign-out handling — for a session that's no longer active.
+    if (!this.started) return;
     if (error instanceof ApiError && error.status === 401) {
       this.setStatus({ phase: 'signed_out', error: SIGNED_OUT_MESSAGE, retryAt: null });
       this.options.onAuthExpired?.();
@@ -160,7 +168,9 @@ export class SyncEngine {
       return;
     }
     this.failures++;
-    const delay = Math.min(RETRY_BASE_MS * 2 ** (this.failures - 1), RETRY_MAX_MS);
+    const base = Math.min(RETRY_BASE_MS * 2 ** (this.failures - 1), RETRY_MAX_MS);
+    const jitter = 1 + (this.random() * 2 - 1) * 0.2; // +/-20%
+    const delay = Math.round(base * jitter);
     this.retryHandle = this.timers.setTimeout(() => {
       this.retryHandle = null;
       void this.syncNow();

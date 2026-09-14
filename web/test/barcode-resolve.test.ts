@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { barcodeCandidates, resolveBarcode } from '../src/barcode/resolve';
 import type { CarbBookDb } from '../src/db/db';
-import { NetworkError } from '../src/lib/api';
+import { ApiError, NetworkError } from '../src/lib/api';
 import { FakeApi, foodData, openTestDb, portionData, synced } from './helpers';
 
 const noServer = () => new FakeApi();
@@ -79,6 +79,51 @@ describe('resolveBarcode', () => {
     expect(await db.pending_barcode.toArray()).toEqual([{ code: '3017624010070', created_at: 42 }]);
     api.on('GET', '/api/barcode/3017624010070', () => ({ status: 'not_found', code: '3017624010070' }));
     await resolveBarcode(db, api, '3017624010070');
+    expect(await db.pending_barcode.count()).toBe(0);
+  });
+
+  it('queues the code for retry when the server returns 5xx (e.g. Cloudflare down)', async () => {
+    db = openTestDb();
+    const api = new FakeApi().on('GET', '/api/barcode/3017624010070', () => {
+      throw new ApiError(502, 'http_error', 'HTTP 502');
+    });
+    expect(await resolveBarcode(db, api, '3017624010070', () => 42)).toEqual({ kind: 'queued', code: '3017624010070' });
+    expect(await db.pending_barcode.toArray()).toEqual([{ code: '3017624010070', created_at: 42 }]);
+  });
+
+  it('still rethrows non-5xx ApiErrors instead of queueing', async () => {
+    db = openTestDb();
+    const api = new FakeApi().on('GET', '/api/barcode/3017624010070', () => {
+      throw new ApiError(400, 'bad_request', 'nope');
+    });
+    await expect(resolveBarcode(db, api, '3017624010070')).rejects.toBeInstanceOf(ApiError);
+    expect(await db.pending_barcode.count()).toBe(0);
+  });
+
+  it('also queues for retry when Open Food Facts itself is unavailable', async () => {
+    db = openTestDb();
+    const api = new FakeApi().on('GET', '/api/barcode/3017624010070', () => ({
+      status: 'unavailable',
+      code: '3017624010070',
+      message: 'Open Food Facts responded 503',
+    }));
+    expect(await resolveBarcode(db, api, '3017624010070', () => 42)).toEqual({
+      kind: 'manual',
+      code: '3017624010070',
+      message: 'Open Food Facts is unavailable (Open Food Facts responded 503). Enter the food from its label.',
+    });
+    expect(await db.pending_barcode.toArray()).toEqual([{ code: '3017624010070', created_at: 42 }]);
+  });
+
+  it('rejects malformed codes before any lookup or queueing', async () => {
+    db = openTestDb();
+    const api = noServer();
+    expect(await resolveBarcode(db, api, 'abc')).toEqual({
+      kind: 'invalid',
+      code: 'abc',
+      message: 'Not a valid barcode.',
+    });
+    expect(api.calls).toEqual([]);
     expect(await db.pending_barcode.count()).toBe(0);
   });
 });

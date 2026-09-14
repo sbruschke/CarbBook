@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { ApiError } from '../src/lib/api';
-import { SIGNED_OUT_MESSAGE, SyncEngine, type SyncPhase } from '../src/sync/engine';
+import { SIGNED_OUT_MESSAGE, SyncEngine, type SyncEngineOptions, type SyncPhase } from '../src/sync/engine';
 import { flush } from './helpers';
 import { FakeEvents, ManualTimers } from './timers';
 
-function setup(run: () => Promise<void> = async () => {}) {
+function setup(run: () => Promise<void> = async () => {}, extra: Partial<SyncEngineOptions> = {}) {
   const timers = new ManualTimers();
   const events = new FakeEvents();
   const state = { online: true, runs: 0, authExpired: 0 };
@@ -18,6 +18,8 @@ function setup(run: () => Promise<void> = async () => {}) {
     timers,
     now: () => timers.now,
     onAuthExpired: () => state.authExpired++,
+    random: () => 0.5, // neutral: no jitter offset
+    ...extra,
   });
   return { engine, timers, events, state };
 }
@@ -115,6 +117,49 @@ describe('SyncEngine', () => {
     release();
     await flush();
     expect(state.runs).toBe(2);
+  });
+
+  it('applies +/-20% jitter to the retry delay', async () => {
+    let failuresLeft = 1;
+    const { engine, timers, state } = setup(
+      async () => {
+        if (failuresLeft-- > 0) throw new ApiError(502, 'http_error', 'HTTP 502');
+      },
+      { random: () => 1 }, // max jitter: +20%
+    );
+    engine.start();
+    await flush();
+    expect(engine.getStatus().retryAt).toBe(2_400); // 2000 * 1.2
+    await timers.advance(2_400);
+    expect(state.runs).toBe(2);
+  });
+
+  it('stops scheduling retries once stop() is called during an in-flight failing sync', async () => {
+    let rejectRun: ((error: unknown) => void) | null = null;
+    const { engine, timers, state } = setup(async () => {
+      await new Promise<void>((_resolve, reject) => {
+        rejectRun = reject;
+      });
+    });
+    engine.start();
+    await flush();
+    expect(state.runs).toBe(1);
+    engine.stop();
+    // The in-flight run fails after stop(); no retry should be scheduled under the old session.
+    rejectRun!(new ApiError(502, 'http_error', 'HTTP 502'));
+    await flush();
+    await timers.advance(10 * 60_000);
+    expect(state.runs).toBe(1);
+  });
+
+  it('does not schedule a debounced sync from requestSync after stop()', async () => {
+    const { engine, timers, state } = setup();
+    engine.start();
+    await flush();
+    engine.stop();
+    engine.requestSync();
+    await timers.advance(2_000);
+    expect(state.runs).toBe(1);
   });
 
   it('notifies subscribers and stops cleanly', async () => {

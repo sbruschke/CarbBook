@@ -26,10 +26,25 @@ export async function restoreSession(db: CarbBookDb, api: Api): Promise<Session>
   }
 }
 
-export async function login(db: CarbBookDb, api: Api, username: string, password: string): Promise<User> {
+export interface LoginResult {
+  user: User;
+  /**
+   * True when a different user was cached locally and the outbox still holds unsynced changes
+   * from them. The new user's `/api/auth/me` cookie is live, but the cached local `user` (and the
+   * outbox) is intentionally left alone so the old user's queued edits are never pushed under the
+   * new session; the caller must let the original user sign back in (to flush the outbox) or
+   * explicitly discard those changes before proceeding as the new user.
+   */
+  outboxConflict: boolean;
+}
+
+export async function login(db: CarbBookDb, api: Api, username: string, password: string): Promise<LoginResult> {
   const { user } = await api.post<{ user: User }>('/api/auth/login', { username, password });
-  await setMeta(db, 'user', user);
-  return user;
+  const cached = await getMeta(db, 'user');
+  const pending = await db.outbox.count();
+  const outboxConflict = cached !== undefined && cached.id !== user.id && pending > 0;
+  if (!outboxConflict) await setMeta(db, 'user', user);
+  return { user, outboxConflict };
 }
 
 /** Signs out locally even if the server is unreachable; returns whether the server session was revoked. */
@@ -39,10 +54,14 @@ export async function logout(db: CarbBookDb, api: Api): Promise<boolean> {
     // Body `{}`: cookie-authenticated POSTs must be application/json (415 otherwise).
     await api.post('/api/auth/logout', {});
   } catch (error) {
-    if (!(error instanceof NetworkError || (error instanceof ApiError && error.status === 401))) throw error;
-    revoked = error instanceof ApiError;
+    const recoverable = error instanceof NetworkError || (error instanceof ApiError && (error.status === 401 || error.status >= 500));
+    if (!recoverable) throw error;
+    revoked = error instanceof ApiError && error.status === 401;
+  } finally {
+    // Always clear the cached local identity on a logout attempt, even on a 5xx/network failure,
+    // so a stale user is never left signed in locally after the user asked to sign out.
+    await deleteMeta(db, 'user');
   }
-  await deleteMeta(db, 'user');
   return revoked;
 }
 
