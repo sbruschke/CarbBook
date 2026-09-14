@@ -1,7 +1,8 @@
 name: ios-tests
 
-# Swift package tests. Linux jobs run on every relevant push (cheap); the macOS job runs on
-# main, pull requests and manual runs only, because macOS minutes are expensive on a private repo.
+# Swift package tests. Linux jobs run on every relevant push. The repo is public, so macOS
+# runner minutes are free; the macOS job still runs on main, pull requests and manual runs
+# (not every feature-branch push) to keep total CI time down.
 on:
   push:
     paths:
