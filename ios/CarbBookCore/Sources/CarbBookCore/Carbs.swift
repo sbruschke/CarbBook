@@ -1,0 +1,127 @@
+import Foundation
+
+/// Mirrors packages/core/src/carbs.ts.
+public protocol Catalog: Sendable {
+    func food(_ id: Id) -> FoodData?
+    func portions(_ foodId: Id) -> [PortionData]
+    func meal(_ id: Id) -> MealData?
+    func mealItems(_ mealId: Id) -> [MealItemData]
+}
+
+public struct CarbResult: Equatable, Sendable {
+    public var carbsG: Double
+    public var complete: Bool
+
+    public init(carbsG: Double, complete: Bool) {
+        self.carbsG = carbsG
+        self.complete = complete
+    }
+
+    public static let incomplete = CarbResult(carbsG: 0, complete: false)
+}
+
+public struct InMemoryCatalog: Catalog {
+    private let foods: [Id: FoodData]
+    private let portionsByFood: [Id: [PortionData]]
+    private let meals: [Id: MealData]
+    private let itemsByMeal: [Id: [MealItemData]]
+
+    /// Rows with `deleted == 1` are skipped. Meal items are ordered by `position`, keeping input
+    /// order for equal positions (JS `Array.prototype.sort` is stable).
+    public init(foods: [FoodData] = [], portions: [PortionData] = [], meals: [MealData] = [], mealItems: [MealItemData] = []) {
+        var foodMap: [Id: FoodData] = [:]
+        for f in foods where f.deleted != 1 { foodMap[f.id] = f }
+        var mealMap: [Id: MealData] = [:]
+        for m in meals where m.deleted != 1 { mealMap[m.id] = m }
+        var portionMap: [Id: [PortionData]] = [:]
+        for p in portions where p.deleted != 1 { portionMap[p.foodId, default: []].append(p) }
+        var itemMap: [Id: [(Int, MealItemData)]] = [:]
+        for (index, item) in mealItems.enumerated() where item.deleted != 1 {
+            itemMap[item.mealId, default: []].append((index, item))
+        }
+        self.foods = foodMap
+        self.meals = mealMap
+        self.portionsByFood = portionMap
+        self.itemsByMeal = itemMap.mapValues { list in
+            list.sorted { $0.1.position != $1.1.position ? $0.1.position < $1.1.position : $0.0 < $1.0 }.map(\.1)
+        }
+    }
+
+    public func food(_ id: Id) -> FoodData? { foods[id] }
+    public func portions(_ foodId: Id) -> [PortionData] { portionsByFood[foodId] ?? [] }
+    public func meal(_ id: Id) -> MealData? { meals[id] }
+    public func mealItems(_ mealId: Id) -> [MealItemData] { itemsByMeal[mealId] ?? [] }
+}
+
+private func isValidCarbsPer100g(_ value: Double?) -> Bool {
+    guard let value else { return false }
+    return value.isFinite && value >= 0 && value <= 100
+}
+
+private func foodItemCarbs(_ catalog: Catalog, _ foodId: Id, _ amount: Double, _ unit: String) -> CarbResult {
+    guard let food = catalog.food(foodId), isValidCarbsPer100g(food.carbsPer100g),
+          let grams = foodAmountToGrams(amount, unit, food, catalog.portions(foodId)) else { return .incomplete }
+    return CarbResult(carbsG: grams * food.carbsPer100g! / 100, complete: true)
+}
+
+private func mealTotalCarbs(_ catalog: Catalog, _ mealId: Id, _ visiting: inout Set<Id>) -> CarbResult {
+    if visiting.contains(mealId) || catalog.meal(mealId) == nil { return .incomplete }
+    visiting.insert(mealId)
+    let items = catalog.mealItems(mealId)
+    var results: [CarbResult] = []
+    for item in items {
+        results.append(resolveItem(catalog, item.refType, item.refId, item.amount, item.unit, &visiting))
+    }
+    let total = items.isEmpty ? .incomplete : sumCarbs(results)
+    visiting.remove(mealId)
+    return total
+}
+
+private func mealItemCarbs(_ catalog: Catalog, _ mealId: Id, _ amount: Double, _ unit: String, _ visiting: inout Set<Id>) -> CarbResult {
+    guard let meal = catalog.meal(mealId), amount.isFinite, amount >= 0 else { return .incomplete }
+    var factor: Double?
+    if unit == Units.serving && meal.yieldServings.isFinite && meal.yieldServings > 0 {
+        factor = amount / meal.yieldServings
+    } else if let grams = Units.massGrams[unit], let weight = meal.totalWeightG, weight.isFinite, weight > 0 {
+        factor = amount * grams / weight
+    }
+    guard let factor else { return .incomplete }
+    let total = mealTotalCarbs(catalog, mealId, &visiting)
+    return CarbResult(carbsG: total.carbsG * factor, complete: total.complete)
+}
+
+private func resolveItem(_ catalog: Catalog, _ refType: RefType, _ refId: Id, _ amount: Double, _ unit: String,
+                         _ visiting: inout Set<Id>) -> CarbResult {
+    switch refType {
+    case .food: foodItemCarbs(catalog, refId, amount, unit)
+    case .meal: mealItemCarbs(catalog, refId, amount, unit, &visiting)
+    }
+}
+
+/// Carbs for one line item (a food or a meal) at the given amount and unit.
+public func itemCarbs(_ catalog: Catalog, _ refType: RefType, _ refId: Id, _ amount: Double, _ unit: String) -> CarbResult {
+    var visiting = Set<Id>()
+    return resolveItem(catalog, refType, refId, amount, unit, &visiting)
+}
+
+public func sumCarbs(_ results: [CarbResult]) -> CarbResult {
+    results.reduce(CarbResult(carbsG: 0, complete: true)) {
+        CarbResult(carbsG: $0.carbsG + $1.carbsG, complete: $0.complete && $1.complete)
+    }
+}
+
+/// True if adding `candidateMealId` as a component of `mealId` would make a meal contain itself.
+public func wouldCreateCycle(_ catalog: Catalog, _ mealId: Id, _ candidateMealId: Id) -> Bool {
+    if candidateMealId == mealId { return true }
+    var stack = [candidateMealId]
+    var seen = Set<Id>()
+    while let current = stack.popLast() {
+        if seen.contains(current) { continue }
+        seen.insert(current)
+        for item in catalog.mealItems(current) where item.refType == .meal {
+            if item.refId == mealId { return true }
+            stack.append(item.refId)
+        }
+    }
+    return false
+}

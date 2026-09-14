@@ -61,9 +61,10 @@ deploy/            Pi compose file, cloudflared notes, backup script
 .github/workflows/ build-ipa (CI) + release (uploads the IPA as a GitHub Release asset)
 ```
 
-The GitHub repo is **private**. Distribution goes through the self-hosted IPA hub at
+The GitHub repo is **public** (user decision 2026-09-14: free macOS CI minutes; the repo holds no
+health data or secrets). Distribution goes through the self-hosted IPA hub at
 `https://ipa.dxshdw.dev/source.json` (separate spec: `~/Projects/ipa-hub/`), which pulls release
-assets with a read-only token. The release workflow only needs to publish a `v*` release with
+assets from GitHub on the desktop. The release workflow only needs to publish a `v*` release with
 `CarbBook-<version>-build<N>.ipa` attached.
 
 ## 3. Data model
