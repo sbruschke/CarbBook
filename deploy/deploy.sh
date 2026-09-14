@@ -47,7 +47,7 @@ PREV=$(cat previous-tag 2>/dev/null || echo none)
 echo "carbs-server $STATUS (tag $TAG, previous $PREV)"
 [ "$STATUS" = healthy ] || { docker logs --tail 30 carbs-server; exit 1; }
 docker image ls carbbook-server --format '{{.Tag}}' \
-  | grep -vxF -e "$TAG" -e "$PREV" \
+  | { grep -vxF -e "$TAG" -e "$PREV" || true; } \
   | xargs -r -I{} docker image rm "carbbook-server:{}" >/dev/null
 docker image prune -f >/dev/null
 docker builder prune -f --filter until=168h >/dev/null
