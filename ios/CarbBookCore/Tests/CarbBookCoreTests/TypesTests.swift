@@ -34,4 +34,20 @@ final class TypesTests: XCTestCase {
         XCTAssertEqual(object["effective_from"], .number(1_786_492_800_000))
         XCTAssertEqual(try value.decode(DoseSettingsData.self), settings)
     }
+
+    /// Item 5: the server rejects a missing `round_down_below_bg` key; a nil value must encode
+    /// as an explicit JSON null, not be omitted.
+    func testNilRoundDownBelowBgEncodesAsExplicitNull() throws {
+        var settings = seedSettings
+        settings.rounding.roundDownBelowBg = nil
+        let value = try JSONValue.from(settings)
+        guard case .object(let object) = value, case .object(let rounding)? = object["rounding"] else {
+            return XCTFail("not an object")
+        }
+        XCTAssertEqual(rounding["round_down_below_bg"], .null)
+
+        let data = try JSONEncoder().encode(settings.rounding)
+        let jsonString = String(data: data, encoding: .utf8)!
+        XCTAssertTrue(jsonString.contains("\"round_down_below_bg\":null"), jsonString)
+    }
 }

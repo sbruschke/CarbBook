@@ -17,9 +17,11 @@ final class SyncTests: XCTestCase {
         let older = RecordVersion(updatedAt: 1, updatedBy: "laptop")
         let newer = RecordVersion(updatedAt: 2, updatedBy: "phone")
         XCTAssertTrue(shouldApplyPulled(incoming: older, local: nil, localPending: false))
-        XCTAssertTrue(shouldApplyPulled(incoming: older, local: newer, localPending: false))
+        // A stale/older page must not clobber a newer local row, pending or not (item 3).
+        XCTAssertFalse(shouldApplyPulled(incoming: older, local: newer, localPending: false))
         XCTAssertFalse(shouldApplyPulled(incoming: older, local: newer, localPending: true))
         XCTAssertTrue(shouldApplyPulled(incoming: newer, local: older, localPending: true))
+        XCTAssertTrue(shouldApplyPulled(incoming: newer, local: older, localPending: false))
         XCTAssertTrue(shouldApplyPulled(incoming: newer, local: newer, localPending: true))
     }
 
@@ -33,6 +35,21 @@ final class SyncTests: XCTestCase {
         XCTAssertEqual(page.nextSince, 7)
         XCTAssertEqual(page.changes[0].key, "food/f1")
         XCTAssertEqual(page.changes[0].version, RecordVersion(updatedAt: 1000, updatedBy: "phone"))
+    }
+
+    /// Item 4: the server sends `id: null` for records without a string id; the client must
+    /// still decode the response and match results to sent records by index, not by id.
+    func testDecodesNullPushResultId() throws {
+        let json = #"""
+        {"results":[
+          {"table":"food","id":"f1","status":"accepted","server_seq":1},
+          {"table":"recipe","id":null,"status":"rejected","reason":"unknown_table","message":"Unknown table \"recipe\""}
+        ],"server_seq":1}
+        """#
+        let response = try JSONDecoder().decode(PushResponse.self, from: Data(json.utf8))
+        XCTAssertEqual(response.results[0].id, "f1")
+        XCTAssertNil(response.results[1].id)
+        XCTAssertEqual(response.results[1].reason, "unknown_table")
     }
 
     func testUUIDv7Layout() {

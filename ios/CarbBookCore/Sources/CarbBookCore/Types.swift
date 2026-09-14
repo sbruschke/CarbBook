@@ -150,6 +150,15 @@ public struct RoundingRule: Codable, Equatable, Sendable {
         case increment
         case roundDownBelowBg = "round_down_below_bg"
     }
+
+    /// Explicit, since synthesized Codable uses `encodeIfPresent` for optionals and would omit
+    /// `round_down_below_bg` entirely when nil. The server requires the key present (as JSON
+    /// `null`, not missing) even when there is no cutoff.
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(increment, forKey: .increment)
+        try container.encode(roundDownBelowBg, forKey: .roundDownBelowBg)
+    }
 }
 
 public struct DoseSettingsData: Codable, Equatable, Sendable {
