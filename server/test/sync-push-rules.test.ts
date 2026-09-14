@@ -74,6 +74,48 @@ describe('applyPush dose_settings append-only rule', () => {
     const republish = applyPush(db, 'owner', [{ table: 'dose_settings', record: { ...created, updated_at: 2000 } }]);
     expect(republish[0]!.status).toBe('accepted');
   });
+
+  it('treats an identical re-send with reordered JSON keys as a no-op, not append_only', () => {
+    const db = initDatabase(':memory:');
+    const created = doseSettings({ id: 'd-owner' });
+    applyPush(db, 'owner', [{ table: 'dose_settings', record: created }]);
+
+    const reordered = {
+      ...created,
+      windows: created.windows.map((w) => ({ ratio_g_per_unit: w.ratio_g_per_unit, start: w.start, name: w.name })),
+      correction: {
+        mode: created.correction.mode,
+        units_per_step: created.correction.units_per_step,
+        step: created.correction.step,
+        threshold: created.correction.threshold,
+      },
+      rounding: { round_down_below_bg: created.rounding.round_down_below_bg, increment: created.rounding.increment },
+    };
+    const [result] = applyPush(db, 'owner', [{ table: 'dose_settings', record: reordered }]);
+    expect(result!.status).toBe('ignored');
+  });
+
+  it('still rejects a genuine content change even when its JSON keys happen to be reordered', () => {
+    const db = initDatabase(':memory:');
+    const created = doseSettings({ id: 'd-owner' });
+    applyPush(db, 'owner', [{ table: 'dose_settings', record: created }]);
+
+    const reorderedButChanged = {
+      ...created,
+      updated_at: 2000,
+      correction: {
+        mode: created.correction.mode,
+        units_per_step: created.correction.units_per_step,
+        step: created.correction.step,
+        threshold: 999,
+      },
+    };
+    const [result] = applyPush(db, 'owner', [{ table: 'dose_settings', record: reorderedButChanged }]);
+    expect(result).toEqual({
+      table: 'dose_settings', id: 'd-owner', status: 'rejected', reason: 'append_only',
+      message: 'dose_settings rows are append-only: cannot edit an existing version, push a new one instead',
+    });
+  });
 });
 
 describe('applyPush meal cycles', () => {

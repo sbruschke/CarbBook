@@ -6,11 +6,14 @@ export type SqlRow = Record<string, string | number | null>;
 export type ValidationResult = { ok: true; row: SqlRow } | { ok: false; message: string };
 
 const MAX_ID_LENGTH = 64;
+const MAX_FUTURE_SKEW_MS = 24 * 60 * 60 * 1000;
 
 function checkField(name: string, spec: FieldSpec, value: unknown): { value: string | number | null } | { error: string } {
   if (spec.type === 'json') {
     const problem = spec.check(value);
-    return problem ? { error: problem } : { value: JSON.stringify(value) };
+    if (problem) return { error: problem };
+    const canonical = spec.canonicalize ? spec.canonicalize(value) : value;
+    return { value: JSON.stringify(canonical) };
   }
   if (value === undefined || value === null) {
     if ((spec.type === 'text' || spec.type === 'number') && spec.nullable) return { value: null };
@@ -27,6 +30,7 @@ function checkField(name: string, spec: FieldSpec, value: unknown): { value: str
       if (spec.integer && !Number.isSafeInteger(value)) return { error: `${name} must be an integer` };
       if (spec.positive && value <= 0) return { error: `${name} must be > 0` };
       if (spec.min !== undefined && value < spec.min) return { error: `${name} must be >= ${spec.min}` };
+      if (spec.max !== undefined && value > spec.max) return { error: `${name} must be <= ${spec.max}` };
       return { value };
     case 'enum':
       if (typeof value !== 'string' || !spec.values.includes(value)) {
@@ -36,8 +40,9 @@ function checkField(name: string, spec: FieldSpec, value: unknown): { value: str
   }
 }
 
-/** Validates one pushed record against its table spec. Unknown fields are ignored. */
-export function validateRecord(spec: TableSpec, record: unknown): ValidationResult {
+/** Validates one pushed record against its table spec. Unknown fields are ignored.
+ * `now` is injectable for tests; production callers rely on the Date.now() default. */
+export function validateRecord(spec: TableSpec, record: unknown, now: number = Date.now()): ValidationResult {
   if (typeof record !== 'object' || record === null || Array.isArray(record)) {
     return { ok: false, message: 'record must be an object' };
   }
@@ -47,6 +52,9 @@ export function validateRecord(spec: TableSpec, record: unknown): ValidationResu
   }
   if (typeof r.updated_at !== 'number' || !Number.isSafeInteger(r.updated_at) || r.updated_at < 0) {
     return { ok: false, message: 'updated_at must be a non-negative integer (ms)' };
+  }
+  if (r.updated_at > now + MAX_FUTURE_SKEW_MS) {
+    return { ok: false, message: 'updated_at is too far in the future' };
   }
   if (typeof r.updated_by !== 'string' || r.updated_by === '' || r.updated_by.length > MAX_ID_LENGTH) {
     return { ok: false, message: `updated_by must be a string of 1-${MAX_ID_LENGTH} characters` };

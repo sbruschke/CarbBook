@@ -34,14 +34,20 @@ function upsert(db: Db, spec: TableSpec, row: SqlRow): void {
   ).run(row);
 }
 
-/** Would saving this meal_item make a meal contain itself? Uses core's wouldCreateCycle. */
-function createsCycle(db: Db, row: SqlRow): boolean {
-  const items = db
-    .prepare(
-      `SELECT id, meal_id, ref_type, ref_id, amount, unit, position
-         FROM meal_item WHERE deleted = 0 AND id <> ?`,
-    )
-    .all(row.id) as MealItemData[];
+/** All non-deleted meal_items, loaded once per push batch rather than requeried per record. */
+function loadMealItems(db: Db): MealItemData[] {
+  return db
+    .prepare(`SELECT id, meal_id, ref_type, ref_id, amount, unit, position FROM meal_item WHERE deleted = 0`)
+    .all() as MealItemData[];
+}
+
+/**
+ * Would saving this meal_item make a meal contain itself? Uses core's wouldCreateCycle against
+ * the batch's live meal_item snapshot, which the caller keeps in sync as earlier records in the
+ * same push are accepted (so later checks in the batch see them without a re-query).
+ */
+function createsCycle(mealItems: MealItemData[], row: SqlRow): boolean {
+  const others = mealItems.filter((item) => item.id !== row.id);
   const candidate = {
     id: row.id,
     meal_id: row.meal_id,
@@ -51,8 +57,25 @@ function createsCycle(db: Db, row: SqlRow): boolean {
     unit: row.unit,
     position: row.position,
   } as MealItemData;
-  const catalog = createCatalog({ meal_items: [...items, candidate] });
+  const catalog = createCatalog({ meal_items: [...others, candidate] });
   return wouldCreateCycle(catalog, candidate.meal_id, candidate.ref_id);
+}
+
+/** Reflects an accepted meal_item write into the batch's live snapshot for later cycle checks. */
+function updateMealItemsSnapshot(mealItems: MealItemData[], row: SqlRow): void {
+  const index = mealItems.findIndex((item) => item.id === row.id);
+  if (index !== -1) mealItems.splice(index, 1);
+  if (row.deleted === 0) {
+    mealItems.push({
+      id: row.id,
+      meal_id: row.meal_id,
+      ref_type: row.ref_type,
+      ref_id: row.ref_id,
+      amount: row.amount,
+      unit: row.unit,
+      position: row.position,
+    } as MealItemData);
+  }
 }
 
 /**
@@ -76,7 +99,7 @@ function dosSettingsAppendOnlyViolation(db: Db, row: SqlRow): 'delete' | 'edit' 
   return null;
 }
 
-function applyOne(db: Db, role: Role, change: PushChange): PushResult {
+function applyOne(db: Db, role: Role, change: PushChange, mealItems: MealItemData[]): PushResult {
   const id = recordId(change.record);
   const table = String(change.table);
   if (!isSyncTable(change.table)) {
@@ -119,16 +142,20 @@ function applyOne(db: Db, role: Role, change: PushChange): PushResult {
     return { table, id: rowId, status: 'ignored', server_seq: stored.server_seq };
   }
 
-  if (spec.name === 'meal_item' && row.deleted === 0 && row.ref_type === 'meal' && createsCycle(db, row)) {
+  if (spec.name === 'meal_item' && row.deleted === 0 && row.ref_type === 'meal' && createsCycle(mealItems, row)) {
     return { table, id: rowId, status: 'rejected', reason: 'cycle', message: 'A meal cannot contain itself' };
   }
 
   const serverSeq = nextServerSeq(db);
   upsert(db, spec, { ...row, server_seq: serverSeq });
+  if (spec.name === 'meal_item') updateMealItemsSnapshot(mealItems, row);
   return { table, id: rowId, status: 'accepted', server_seq: serverSeq };
 }
 
 /** Applies pushed records in order inside one transaction; each record gets its own result. */
 export function applyPush(db: Db, role: Role, changes: PushChange[]): PushResult[] {
-  return db.transaction(() => changes.map((change) => applyOne(db, role, change)))();
+  return db.transaction(() => {
+    const mealItems = loadMealItems(db);
+    return changes.map((change) => applyOne(db, role, change, mealItems));
+  })();
 }

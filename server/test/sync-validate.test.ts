@@ -42,8 +42,27 @@ describe('validateRecord', () => {
     [{ ...food(), carbs_per_100g: -1 }, 'carbs_per_100g must be >= 0'],
     [{ ...food(), density_g_per_ml: 0 }, 'density_g_per_ml must be > 0'],
     [{ ...food(), carbs_per_100g: 'lots' }, 'carbs_per_100g must be a finite number'],
+    [{ ...food(), carbs_per_100g: 100.1 }, 'carbs_per_100g must be <= 100'],
+    [{ ...food(), fiber_per_100g: 100.1 }, 'fiber_per_100g must be <= 100'],
   ])('rejects invalid food %#', (record, message) => {
     expect(validateRecord(TABLE_SPECS.food, record)).toEqual({ ok: false, message });
+  });
+
+  it('accepts carbs_per_100g and fiber_per_100g at exactly the 100 max', () => {
+    const result = validateRecord(TABLE_SPECS.food, { ...food(), carbs_per_100g: 100, fiber_per_100g: 100 });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.row.carbs_per_100g).toBe(100);
+    expect(result.row.fiber_per_100g).toBe(100);
+  });
+
+  it('rejects updated_at more than 24h in the future, relative to an injected clock', () => {
+    const now = 1_000_000_000_000;
+    const within = validateRecord(TABLE_SPECS.food, { ...food(), updated_at: now + 23 * 60 * 60 * 1000 }, now);
+    expect(within.ok).toBe(true);
+
+    const beyond = validateRecord(TABLE_SPECS.food, { ...food(), updated_at: now + 25 * 60 * 60 * 1000 }, now);
+    expect(beyond).toEqual({ ok: false, message: 'updated_at is too far in the future' });
   });
 
   it('requires volume portions to use a core volume unit id', () => {

@@ -15,9 +15,9 @@ export type SyncTable = (typeof SYNC_TABLES)[number];
 
 export type FieldSpec =
   | { type: 'text'; nullable?: boolean; max?: number }
-  | { type: 'number'; nullable?: boolean; min?: number; positive?: boolean; integer?: boolean }
+  | { type: 'number'; nullable?: boolean; min?: number; max?: number; positive?: boolean; integer?: boolean }
   | { type: 'enum'; values: readonly string[] }
-  | { type: 'json'; check: (value: unknown) => string | null };
+  | { type: 'json'; check: (value: unknown) => string | null; canonicalize?: (value: unknown) => unknown };
 
 export interface TableSpec {
   name: SyncTable;
@@ -80,8 +80,34 @@ export function checkRounding(value: unknown): string | null {
   return null;
 }
 
+/** Rebuilds an object with only the given keys, in the given order, dropping any others. */
+function reorderKeys(value: unknown, keys: readonly string[]): unknown {
+  if (!isObject(value)) return value;
+  const out: Record<string, unknown> = {};
+  for (const key of keys) if (key in value) out[key] = value[key];
+  return out;
+}
+
+/**
+ * Canonicalizers for dose_settings JSON fields: fixed key order so two pushes with the same
+ * content but different key ordering serialize identically (see push.ts's append-only check).
+ */
+export const canonicalizeWindows = (value: unknown): unknown =>
+  Array.isArray(value) ? value.map((w) => reorderKeys(w, ['name', 'start', 'ratio_g_per_unit'])) : value;
+export const canonicalizeCorrection = (value: unknown): unknown =>
+  reorderKeys(value, ['threshold', 'step', 'units_per_step', 'mode']);
+export const canonicalizeRounding = (value: unknown): unknown =>
+  reorderKeys(value, ['increment', 'round_down_below_bg']);
+
 const text = (max = 200): FieldSpec => ({ type: 'text', max });
 const optionalText = (max = 200): FieldSpec => ({ type: 'text', nullable: true, max });
+/**
+ * meal_item.ref_id and log_item.ref_id point at food/meal rows but are not enforced as foreign
+ * keys here: offline-first clients may push a child (e.g. a meal_item) before its parent syncs,
+ * and the server must not reject a valid, merely out-of-order push. Core's catalog builder treats
+ * a dangling reference as incomplete carbs data rather than an error, which is the safe default —
+ * once the parent arrives on a later push, the reference resolves normally.
+ */
 const REF_TYPES = ['food', 'meal'] as const;
 
 export const TABLE_SPECS: Record<SyncTable, TableSpec> = {
@@ -93,8 +119,8 @@ export const TABLE_SPECS: Record<SyncTable, TableSpec> = {
       source: { type: 'enum', values: ['usda', 'off', 'custom'] },
       source_ref: optionalText(64),
       derived_from: optionalText(64),
-      carbs_per_100g: { type: 'number', nullable: true, min: 0 },
-      fiber_per_100g: { type: 'number', nullable: true, min: 0 },
+      carbs_per_100g: { type: 'number', nullable: true, min: 0, max: 100 },
+      fiber_per_100g: { type: 'number', nullable: true, min: 0, max: 100 },
       density_g_per_ml: { type: 'number', nullable: true, positive: true },
       notes: optionalText(4000),
     },
@@ -169,9 +195,9 @@ export const TABLE_SPECS: Record<SyncTable, TableSpec> = {
     ownerOnly: true,
     fields: {
       effective_from: { type: 'number', integer: true, min: 0 },
-      windows: { type: 'json', check: checkWindows },
-      correction: { type: 'json', check: checkCorrection },
-      rounding: { type: 'json', check: checkRounding },
+      windows: { type: 'json', check: checkWindows, canonicalize: canonicalizeWindows },
+      correction: { type: 'json', check: checkCorrection, canonicalize: canonicalizeCorrection },
+      rounding: { type: 'json', check: checkRounding, canonicalize: canonicalizeRounding },
     },
   },
 };
