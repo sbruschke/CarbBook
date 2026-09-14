@@ -52,21 +52,27 @@ public func densityOf(_ food: FoodData, _ portions: [PortionData]) -> Double? {
 }
 
 /// Fail closed: only a nil carb basis may fall back to another path; a present-but-invalid one
-/// removes its unit family (and portions with present-but-invalid carbs are not listed).
+/// removes its unit family. Mirrors units.ts `foodUnits` exactly.
 public func foodUnits(_ food: FoodData, _ portions: [PortionData]) -> [String] {
     let density = densityOf(food, portions)
+    let gPresent = food.carbsPer100g != nil
+    let mlPresent = food.carbsPer100ml != nil
     let validG = isValidCarbsPer100g(food.carbsPer100g)
     let validMl = isValidCarbsPer100ml(food.carbsPer100ml)
-    let listedPortions = portions.filter {
-        $0.kind != "volume" && ($0.carbsG != nil ? isValidPortionCarbs($0.carbsG) : isValidPortionGrams($0.grams))
-    }
-    let hasMassPath = validG || (food.carbsPer100g == nil && validMl && density != nil)
-    let hasVolumePath = validMl || (food.carbsPer100ml == nil && density != nil)
-    let hasAnyBasis = validG || validMl || portions.contains { $0.kind != "volume" && isValidPortionCarbs($0.carbsG) }
+    // carbs_g on a volume portion is ignored everywhere.
+    let hasValidPieceBasis = portions.contains { $0.kind != "volume" && $0.carbsG != nil && isValidPortionCarbs($0.carbsG) }
+    // Mass: per-100 g if present; else per-100 ml + density if present; else (no basis) a placeholder
+    // list, unless a valid portion carb basis makes the food portion-only.
+    let massListed = gPresent ? validG : mlPresent ? (validMl && density != nil) : !hasValidPieceBasis
+    // Volume: per-100 ml if present; else convertible via density, unless per-100 g is present but invalid.
+    let volumeListed = mlPresent ? validMl : (density != nil && (!gPresent || validG))
     var units: [String] = []
-    if hasMassPath || !hasAnyBasis { units += Units.massOrder }
-    if hasVolumePath { units += Units.volumeOrder }
-    for p in listedPortions { units.append(Units.portionPrefix + p.id) }
+    if massListed { units += Units.massOrder }
+    if volumeListed { units += Units.volumeOrder }
+    for p in portions where p.kind != "volume" {
+        let listed = p.carbsG != nil ? isValidPortionCarbs(p.carbsG) : (isValidPortionGrams(p.grams) && massListed)
+        if listed { units.append(Units.portionPrefix + p.id) }
+    }
     return units
 }
 
