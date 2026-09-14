@@ -20,6 +20,8 @@ function getDummyHash(): Promise<string> {
   return dummyHash;
 }
 
+export const LOGIN_RATE_LIMIT = { max: 5, timeWindow: '15 minutes' } as const;
+
 export async function loginRoutes(app: FastifyInstance, ctx: AppContext): Promise<void> {
   app.post<{ Body: LoginBody }>(
     '/api/auth/login',
@@ -35,6 +37,22 @@ export async function loginRoutes(app: FastifyInstance, ctx: AppContext): Promis
             client: { type: 'string', enum: ['web', 'ios'] },
             device_name: { type: 'string', maxLength: 64 },
           },
+        },
+      },
+      config: {
+        rateLimit: {
+          ...LOGIN_RATE_LIMIT,
+          // preHandler runs after body parsing, so the key can include the username.
+          hook: 'preHandler',
+          keyGenerator: (request) => {
+            const body = request.body as Partial<LoginBody> | undefined;
+            return `${request.ip}|${String(body?.username ?? '').toLowerCase()}`;
+          },
+          errorResponseBuilder: (_request, context) => ({
+            statusCode: 429,
+            error: 'rate_limited',
+            message: `Too many login attempts, retry in ${context.after}`,
+          }),
         },
       },
     },

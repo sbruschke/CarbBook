@@ -1,4 +1,5 @@
 import cookie from '@fastify/cookie';
+import rateLimit from '@fastify/rate-limit';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { makeAuthenticate } from './auth/plugin';
 import type { Config } from './config';
@@ -32,6 +33,7 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
   app.setErrorHandler(errorHandler);
   app.decorateRequest('auth', null);
   await app.register(cookie);
+  await app.register(rateLimit, { global: false });
 
   app.get('/api/health', async () => ({ ok: true }));
   await app.register(loginRoutes, ctx);
