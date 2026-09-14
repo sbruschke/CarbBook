@@ -38,9 +38,9 @@ public struct FoodData: Codable, Equatable, Sendable {
         case densityGPerMl = "density_g_per_ml"
     }
 
-    /// Explicit, since synthesized Codable uses `encodeIfPresent` for optionals and would omit
-    /// `carbs_per_100ml` entirely when nil. The server requires the key present (as JSON `null`,
-    /// not missing) even when the food has no volume carb basis.
+    /// Explicit, so nil `carbs_per_100ml` is sent as JSON `null` rather than omitted (synthesized
+    /// Codable uses `encodeIfPresent`). The server treats a missing key as "keep the stored value",
+    /// so explicit `null` is the unambiguous way to clear it.
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(id, forKey: .id)
@@ -84,8 +84,8 @@ public struct PortionData: Codable, Equatable, Sendable {
         case carbsG = "carbs_g"
     }
 
-    /// Explicit, since synthesized Codable would omit `grams`/`carbs_g` entirely when nil. The
-    /// server requires both keys present (as JSON `null`, not missing) even when unknown.
+    /// Explicit, so nil `grams`/`carbs_g` are sent as JSON `null` rather than omitted. The server
+    /// treats a missing key as "keep the stored value", so explicit `null` is the unambiguous clear.
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(id, forKey: .id)

@@ -51,18 +51,21 @@ public func densityOf(_ food: FoodData, _ portions: [PortionData]) -> Double? {
     return best?.density
 }
 
+/// Fail closed: only a nil carb basis may fall back to another path; a present-but-invalid one
+/// removes its unit family (and portions with present-but-invalid carbs are not listed).
 public func foodUnits(_ food: FoodData, _ portions: [PortionData]) -> [String] {
     let density = densityOf(food, portions)
     let validG = isValidCarbsPer100g(food.carbsPer100g)
     let validMl = isValidCarbsPer100ml(food.carbsPer100ml)
     let listedPortions = portions.filter {
-        $0.kind != "volume" && (isValidPortionCarbs($0.carbsG) || isValidPortionGrams($0.grams))
+        $0.kind != "volume" && ($0.carbsG != nil ? isValidPortionCarbs($0.carbsG) : isValidPortionGrams($0.grams))
     }
-    let hasMassPath = validG || (validMl && density != nil)
+    let hasMassPath = validG || (food.carbsPer100g == nil && validMl && density != nil)
+    let hasVolumePath = validMl || (food.carbsPer100ml == nil && density != nil)
     let hasAnyBasis = validG || validMl || portions.contains { $0.kind != "volume" && isValidPortionCarbs($0.carbsG) }
     var units: [String] = []
     if hasMassPath || !hasAnyBasis { units += Units.massOrder }
-    if validMl || density != nil { units += Units.volumeOrder }
+    if hasVolumePath { units += Units.volumeOrder }
     for p in listedPortions { units.append(Units.portionPrefix + p.id) }
     return units
 }

@@ -82,8 +82,23 @@ final class UnitsTests: XCTestCase {
         XCTAssertEqual(foodUnits(bread, [slice, bad]), ["g", "kg", "oz", "lb", "p:bread-slice"])
     }
 
-    func testListsMassUnitsWhenPer100gIsInvalidButPer100mlAndDensityGiveAMassPath() {
+    func testOmitsMassUnitsWhenPer100gIsInvalidEvenWithPer100mlAndDensity() {
         let food = FoodData(id: "x", name: "X", carbsPer100g: 101, carbsPer100ml: 50, densityGPerMl: 1)
+        XCTAssertEqual(foodUnits(food, []), ["ml", "l", "tsp", "tbsp", "floz", "cup"])
+    }
+
+    func testListsMassUnitsWhenPer100gIsNilAndPer100mlAndDensityGiveAMassPath() {
+        let food = FoodData(id: "x", name: "X", carbsPer100g: nil, carbsPer100ml: 50, densityGPerMl: 1)
         XCTAssertEqual(foodUnits(food, []), ["g", "kg", "oz", "lb", "ml", "l", "tsp", "tbsp", "floz", "cup"])
+    }
+
+    func testOmitsVolumeUnitsWhenPer100mlIsInvalidEvenWithDensity() {
+        let food = FoodData(id: "x", name: "X", carbsPer100g: 50, carbsPer100ml: 151, densityGPerMl: 2)
+        XCTAssertEqual(foodUnits(food, []), ["g", "kg", "oz", "lb"])
+    }
+
+    func testOmitsPortionsWithInvalidCarbsEvenWithValidGrams() {
+        let bad = PortionData(id: "bad", foodId: "bread", label: "x", kind: "count", quantity: 1, grams: 25, carbsG: 501)
+        XCTAssertEqual(foodUnits(bread, [slice, bad]), ["g", "kg", "oz", "lb", "p:bread-slice"])
     }
 }
