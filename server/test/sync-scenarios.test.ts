@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { describe, expect, it } from 'vitest';
 import type { PushResult } from '../src/sync/push';
 import { addUser, loginBearer, loginCookie, makeTestApp } from './helpers';
-import { doseSettings, food } from './sync-helpers';
+import { doseSettings, food, portion } from './sync-helpers';
 
 type Rec = Record<string, unknown> & { id: string };
 
@@ -124,5 +124,17 @@ describe('two clients syncing through the server', () => {
     expect(phone.get('dose_settings', 'kim-dose')).toBeUndefined();
     // The viewer's local copy still holds its rejected row plus the one seeded version from the server.
     expect([...viewer.rows.keys()].filter((k) => k.startsWith('dose_settings/'))).toHaveLength(2);
+  });
+
+  it('round-trips a volume-basis food and a carbs_g-only portion between two clients', async () => {
+    const { phone, laptop } = await setup();
+    phone.write('food', food({ id: 'rice', name: 'Calrose rice', carbs_per_100g: null, carbs_per_100ml: 20.2884136211058 }), 1000);
+    phone.write('portion', portion('rice', { id: 'bar', label: 'bar', grams: null, carbs_g: 22 }), 1000);
+    await phone.sync();
+    expect(phone.lastResults.every((r) => r.status === 'accepted')).toBe(true);
+
+    await laptop.sync();
+    expect(laptop.get('food', 'rice')).toMatchObject({ carbs_per_100g: null, carbs_per_100ml: 20.2884136211058 });
+    expect(laptop.get('portion', 'bar')).toMatchObject({ grams: null, carbs_g: 22 });
   });
 });

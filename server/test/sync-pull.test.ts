@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { initDatabase } from '../src/init';
 import { pullChanges } from '../src/sync/pull';
 import { applyPush } from '../src/sync/push';
-import { food, meal } from './sync-helpers';
+import { food, meal, portion } from './sync-helpers';
 
 describe('pullChanges', () => {
   it('returns seeded dose settings from since=0 with JSON decoded', () => {
@@ -41,5 +41,18 @@ describe('pullChanges', () => {
     const page = pullChanges(db, 1, 10);
     expect(page.changes).toHaveLength(1);
     expect(page.changes[0]!.record).toMatchObject({ id: 'f1', deleted: 1, server_seq: 3 });
+  });
+
+  it('returns carbs_per_100ml on food and carbs_g/nullable grams on portion (any-unit foods)', () => {
+    const db = initDatabase(':memory:');
+    applyPush(db, 'owner', [
+      { table: 'food', record: food({ id: 'f1', carbs_per_100g: null, carbs_per_100ml: 20 }) },
+      { table: 'portion', record: portion('f1', { id: 'p1', grams: null, carbs_g: 22 }) },
+    ]);
+    const page = pullChanges(db, 0, 10);
+    const foodChange = page.changes.find((c) => c.table === 'food' && c.record.id === 'f1');
+    const portionChange = page.changes.find((c) => c.table === 'portion' && c.record.id === 'p1');
+    expect(foodChange?.record).toMatchObject({ carbs_per_100g: null, carbs_per_100ml: 20 });
+    expect(portionChange?.record).toMatchObject({ grams: null, carbs_g: 22 });
   });
 });

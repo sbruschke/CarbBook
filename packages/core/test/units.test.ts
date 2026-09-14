@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { FoodData, MealData, PortionData } from '../src/types';
-import { densityOf, foodAmountToGrams, foodUnits, mealUnits } from '../src/units';
+import { MAX_CARBS_PER_100ML, MAX_PORTION_CARBS_G, densityOf, foodAmountToGrams, foodUnits, mealUnits } from '../src/units';
 
 const rice: FoodData = { id: 'rice', name: 'Rice', carbs_per_100g: 28.2 };
 const riceCup: PortionData = { id: 'rice-cup', food_id: 'rice', label: 'cup', kind: 'volume', quantity: 1, grams: 158 };
@@ -60,6 +60,57 @@ describe('foodAmountToGrams', () => {
     expect(foodAmountToGrams(2, 'p:bread-slice', bread, [negQuantity])).toBeNull();
     expect(foodAmountToGrams(2, 'p:bread-slice', bread, [infGrams])).toBeNull();
     expect(foodAmountToGrams(2, 'p:bread-slice', bread, [nanQuantity])).toBeNull();
+  });
+});
+
+describe('any-unit foods: units', () => {
+  it('exports shared validation limits', () => {
+    expect(MAX_CARBS_PER_100ML).toBe(150);
+    expect(MAX_PORTION_CARBS_G).toBe(500);
+  });
+  it('densityOf ignores volume portions with unknown grams', () => {
+    const noGrams: PortionData = { id: 'a-cup', food_id: 'rice', label: 'cup', kind: 'volume', quantity: 1, grams: null };
+    expect(densityOf(bread, [noGrams])).toBeNull();
+    expect(densityOf(rice, [noGrams, riceCup])).toBeCloseTo(158 / 236.5882365, 9);
+  });
+  it('foodAmountToGrams is null for portions with unknown grams', () => {
+    const bar: PortionData = { id: 'bar', food_id: 'bread', label: 'bar', kind: 'count', quantity: 1, grams: null, carbs_g: 22 };
+    expect(foodAmountToGrams(1, 'p:bar', bread, [bar])).toBeNull();
+  });
+  it('lists volume units for a valid per-100 ml basis without density', () => {
+    const food: FoodData = { id: 'x', name: 'X', carbs_per_100g: null, carbs_per_100ml: 20 };
+    expect(foodUnits(food, [])).toEqual(['ml', 'l', 'tsp', 'tbsp', 'floz', 'cup']);
+  });
+  it('omits portions with neither valid grams nor valid carbs', () => {
+    const bad: PortionData = { id: 'bad', food_id: 'bread', label: 'x', kind: 'count', quantity: 1, grams: null, carbs_g: Number.NaN };
+    expect(foodUnits(bread, [slice, bad])).toEqual(['g', 'kg', 'oz', 'lb', 'p:bread-slice']);
+  });
+  it('omits mass units (and gram portions) when per-100 g is present but invalid, even with per-100 ml + density', () => {
+    const food: FoodData = { id: 'x', name: 'X', carbs_per_100g: 101, carbs_per_100ml: 50, density_g_per_ml: 1 };
+    const piece: PortionData = { id: 'piece', food_id: 'x', label: 'piece', kind: 'count', quantity: 1, grams: 30 };
+    expect(foodUnits(food, [piece])).toEqual(['ml', 'l', 'tsp', 'tbsp', 'floz', 'cup']);
+  });
+  it('omits volume units when per-100 ml is present but invalid, even with per-100 g + density', () => {
+    const food: FoodData = { id: 'x', name: 'X', carbs_per_100g: 50, carbs_per_100ml: 151, density_g_per_ml: 2 };
+    expect(foodUnits(food, [])).toEqual(['g', 'kg', 'oz', 'lb']);
+    expect(foodUnits({ ...food, carbs_per_100ml: Number.NaN }, [])).toEqual(['g', 'kg', 'oz', 'lb']);
+  });
+  it('omits volume units when the only volume path is density + an invalid per-100 g', () => {
+    const food: FoodData = { id: 'x', name: 'X', carbs_per_100g: -1, density_g_per_ml: 1 };
+    expect(foodUnits(food, [])).toEqual([]);
+  });
+  it('lists nothing when the only basis is an invalid per-100 ml', () => {
+    const food: FoodData = { id: 'x', name: 'X', carbs_per_100g: null, carbs_per_100ml: 151 };
+    expect(foodUnits(food, [])).toEqual([]);
+  });
+  it('omits a portion whose carbs_g is present but invalid, even when its grams are valid', () => {
+    const bad: PortionData = { id: 'bad', food_id: 'bread', label: 'x', kind: 'count', quantity: 1, grams: 25, carbs_g: 501 };
+    expect(foodUnits(bread, [slice, bad])).toEqual(['g', 'kg', 'oz', 'lb', 'p:bread-slice']);
+  });
+  it('does not count carbs_g on a volume portion as a carb basis', () => {
+    const food: FoodData = { id: 'x', name: 'X', carbs_per_100g: null };
+    const cup: PortionData = { id: 'cup', food_id: 'x', label: 'cup', kind: 'volume', quantity: 1, grams: 158, carbs_g: 48 };
+    expect(foodUnits(food, [cup])).toEqual(['g', 'kg', 'oz', 'lb', 'ml', 'l', 'tsp', 'tbsp', 'floz', 'cup']);
   });
 });
 

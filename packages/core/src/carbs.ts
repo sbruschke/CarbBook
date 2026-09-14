@@ -1,5 +1,18 @@
 import type { FoodData, Id, MealData, MealItemData, PortionData, RefType } from './types';
-import { MASS_UNITS, SERVING_UNIT, foodAmountToGrams, isMassUnit } from './units';
+import {
+  MASS_UNITS,
+  PORTION_PREFIX,
+  SERVING_UNIT,
+  VOLUME_UNITS,
+  densityOf,
+  foodAmountToGrams,
+  isMassUnit,
+  isValidAmount,
+  isValidCarbsPer100g,
+  isValidCarbsPer100ml,
+  isValidPortionCarbs,
+  isVolumeUnit,
+} from './units';
 
 export interface Catalog {
   food(id: Id): FoodData | undefined;
@@ -51,16 +64,61 @@ export function createCatalog(data: {
   };
 }
 
-function isValidCarbsPer100g(value: number | null): value is number {
-  return value != null && Number.isFinite(value) && value >= 0 && value <= 100;
+/**
+ * Fail closed (any-unit foods addendum): only an absent (null/undefined) basis may fall back to
+ * another path. A present-but-invalid basis (out of range, negative, NaN) makes that unit family
+ * incomplete. Keep foodUnits in units.ts in step with this.
+ */
+
+/** Mass path: carbs_per_100g if present; else carbs_per_100ml + density if present; else incomplete. */
+function carbsForGrams(food: FoodData, portions: PortionData[], grams: number): CarbResult {
+  if (food.carbs_per_100g != null) {
+    return isValidCarbsPer100g(food.carbs_per_100g)
+      ? { carbs_g: (grams * food.carbs_per_100g) / 100, complete: true }
+      : INCOMPLETE;
+  }
+  if (food.carbs_per_100ml != null) {
+    const density = densityOf(food, portions);
+    if (!isValidCarbsPer100ml(food.carbs_per_100ml) || density === null) return INCOMPLETE;
+    return { carbs_g: ((grams / density) * food.carbs_per_100ml) / 100, complete: true };
+  }
+  return INCOMPLETE;
 }
 
 function foodItemCarbs(catalog: Catalog, foodId: Id, amount: number, unit: string): CarbResult {
   const food = catalog.food(foodId);
-  if (!food || !isValidCarbsPer100g(food.carbs_per_100g)) return INCOMPLETE;
-  const grams = foodAmountToGrams(amount, unit, food, catalog.portions(foodId));
+  if (!food || !isValidAmount(amount)) return INCOMPLETE;
+  const portions = catalog.portions(foodId);
+
+  if (isVolumeUnit(unit)) {
+    if (food.carbs_per_100ml != null) {
+      return isValidCarbsPer100ml(food.carbs_per_100ml)
+        ? { carbs_g: (amount * VOLUME_UNITS[unit] * food.carbs_per_100ml) / 100, complete: true }
+        : INCOMPLETE;
+    }
+    // No per-100 ml basis: per-100 g + density only.
+    const grams = foodAmountToGrams(amount, unit, food, portions);
+    if (grams === null || food.carbs_per_100g == null || !isValidCarbsPer100g(food.carbs_per_100g)) return INCOMPLETE;
+    return { carbs_g: (grams * food.carbs_per_100g) / 100, complete: true };
+  }
+
+  if (unit.startsWith(PORTION_PREFIX)) {
+    const portionId = unit.slice(PORTION_PREFIX.length);
+    const portion = portions.find((p) => p.id === portionId);
+    if (portion == null) return INCOMPLETE;
+    // carbs_g is ignored on volume portions (they only carry a weight).
+    if (portion.kind !== 'volume' && portion.carbs_g != null) {
+      const quantityOk = Number.isFinite(portion.quantity) && portion.quantity > 0;
+      return isValidPortionCarbs(portion.carbs_g) && quantityOk
+        ? { carbs_g: (amount / portion.quantity) * portion.carbs_g, complete: true }
+        : INCOMPLETE;
+    }
+  }
+
+  // Mass units and portions without carbs_g go through a known weight.
+  const grams = foodAmountToGrams(amount, unit, food, portions);
   if (grams === null) return INCOMPLETE;
-  return { carbs_g: (grams * food.carbs_per_100g) / 100, complete: true };
+  return carbsForGrams(food, portions, grams);
 }
 
 function mealTotalCarbs(catalog: Catalog, mealId: Id, visiting: Set<Id>): CarbResult {

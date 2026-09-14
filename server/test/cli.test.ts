@@ -47,7 +47,7 @@ describe('carbbook user add', () => {
   it('reports validation errors with exit code 1 and usage with exit code 2', async () => {
     const t = io({ readPassword: async () => 'short' });
     expect(await runCli(['user', 'add', 'kim'], t.io)).toBe(1);
-    expect(t.err[0]).toMatch(/at least 8/);
+    expect(t.err[0]).toMatch(/at least 6/);
     expect(await runCli(['bogus'], t.io)).toBe(2);
     expect(t.err[1]).toMatch(/Usage/);
   });

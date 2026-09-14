@@ -16,7 +16,8 @@ export interface StoredUser extends User {
 export class UserError extends Error {}
 
 const USERNAME_RE = /^[A-Za-z0-9_.-]{2,32}$/;
-export const MIN_PASSWORD_LENGTH = 8;
+/** User decision 2026-09-14: allow short passwords (login rate limit is the main guard). */
+export const MIN_PASSWORD_LENGTH = 6;
 
 export async function createUser(
   db: Db,

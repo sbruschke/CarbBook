@@ -22,6 +22,18 @@ export const food = (fields: Partial<Record<string, unknown>> & Meta = {}) => ({
   ...meta(fields),
 });
 
+export const portion = (foodId: string, fields: Partial<Record<string, unknown>> & Meta = {}) => ({
+  id: uid('portion'),
+  food_id: foodId,
+  label: 'slice',
+  kind: 'count',
+  quantity: 1,
+  grams: 25,
+  carbs_g: null,
+  ...fields,
+  ...meta(fields),
+});
+
 export const meal = (fields: Partial<Record<string, unknown>> & Meta = {}) => ({
   id: uid('meal'),
   name: 'Tacos',

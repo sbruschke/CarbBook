@@ -19,7 +19,7 @@ describe('migration 002 (USDA + search)', () => {
     db.prepare("INSERT INTO meal (id, name, updated_at, updated_by, deleted, server_seq) VALUES ('m1', 'Tacos', 1, 'd', 0, 3)").run();
 
     expect(readdirSync(MIGRATIONS_DIR)).toContain('002_usda_search.sql');
-    expect(migrate(db)).toBe(2);
+    expect(migrate(db)).toBe(3);
     expect(catalog(db)).toEqual([
       { kind: 'food', ref_id: 'f1', name: 'Tortilla' },
       { kind: 'meal', ref_id: 'm1', name: 'Tacos' },

@@ -44,8 +44,8 @@ describe('GET /api/barcode/:code', () => {
     expect(response.json()).toEqual({
       status: 'draft',
       draft: {
-        food: { name: 'Noodle kit', brand: 'Thai Kitchen', source: 'off', source_ref: '0737628064502', carbs_per_100g: 71.15, fiber_per_100g: null },
-        portions: [{ label: 'label serving', kind: 'serving', quantity: 1, grams: 52 }],
+        food: { name: 'Noodle kit', brand: 'Thai Kitchen', source: 'off', source_ref: '0737628064502', carbs_per_100g: 71.15, carbs_per_100ml: null, fiber_per_100g: null },
+        portions: [{ label: 'label serving', kind: 'serving', quantity: 1, grams: 52, carbs_g: null }],
         barcode: '0737628064502',
         serving_size: null,
       },
