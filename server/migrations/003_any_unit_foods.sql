@@ -3,6 +3,19 @@
 -- portion), with portion.grams now nullable. SQLite cannot ALTER a column's NOT NULL/CHECK
 -- in place, so the portion table is rebuilt, preserving rows, server_seq values and indexes.
 
+-- Deploy guard: the rebuilt portion table CHECKs grams > 0, but 001 had no such CHECK. Refuse to
+-- migrate (the runner rolls the whole file back) with a clear message instead of an opaque CHECK
+-- failure if any existing row would violate it. Fix or delete those rows, then restart.
+CREATE TEMP TABLE migration_003_guard (bad_portions INTEGER NOT NULL);
+CREATE TEMP TRIGGER migration_003_guard_check BEFORE INSERT ON migration_003_guard
+  WHEN NEW.bad_portions > 0
+  BEGIN
+    SELECT RAISE(ABORT, 'migration 003: portion row(s) have grams <= 0; fix or delete them (SELECT id, grams FROM portion WHERE grams <= 0) before upgrading');
+  END;
+INSERT INTO migration_003_guard (bad_portions) SELECT count(*) FROM portion WHERE grams <= 0;
+DROP TRIGGER migration_003_guard_check;
+DROP TABLE migration_003_guard;
+
 ALTER TABLE food ADD COLUMN carbs_per_100ml REAL CHECK (carbs_per_100ml IS NULL OR (carbs_per_100ml >= 0 AND carbs_per_100ml <= 150));
 
 CREATE TABLE portion_new (

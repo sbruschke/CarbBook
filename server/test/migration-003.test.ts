@@ -53,6 +53,25 @@ describe('migration 003 (any-unit foods)', () => {
     expect(indexes.map((i) => i.name).sort()).toEqual(['portion_food', 'portion_server_seq', 'sqlite_autoindex_portion_1']);
   });
 
+  it.each([[0], [-5]])('refuses to run (and rolls back) when a portion has grams = %s', (grams) => {
+    const db = dbAtVersion2();
+    db.prepare(
+      "INSERT INTO food (id, name, source, updated_at, updated_by, deleted, server_seq) VALUES ('f1', 'Rice', 'custom', 1, 'd', 0, 1)",
+    ).run();
+    db.prepare(
+      "INSERT INTO portion (id, food_id, label, kind, quantity, grams, updated_at, updated_by, deleted, server_seq) VALUES ('bad', 'f1', 'slice', 'count', 1, ?, 2, 'd', 0, 2)",
+    ).run(grams);
+
+    expect(() => migrate(db)).toThrow(/migration 003: portion row\(s\) have grams <= 0/);
+    expect(db.pragma('user_version', { simple: true })).toBe(2);
+    // Nothing was changed: no new column, portion table untouched.
+    const foodCols = (db.prepare('PRAGMA table_info(food)').all() as { name: string }[]).map((c) => c.name);
+    expect(foodCols).not.toContain('carbs_per_100ml');
+    const portionCols = (db.prepare('PRAGMA table_info(portion)').all() as { name: string }[]).map((c) => c.name);
+    expect(portionCols).not.toContain('carbs_g');
+    expect(db.prepare('SELECT grams FROM portion WHERE id = ?').pluck().get('bad')).toBe(grams);
+  });
+
   it('accepts a portion with only carbs_g (no grams) after the rebuild', () => {
     const db = openDb(':memory:');
     migrate(db);
