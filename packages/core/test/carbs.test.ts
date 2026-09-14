@@ -58,6 +58,76 @@ describe('itemCarbs', () => {
   });
 });
 
+describe('invalid stored values', () => {
+  it('rejects carbs_per_100g that is non-finite or out of the 0-100 range', () => {
+    const invalid = createCatalog({
+      foods: [
+        { id: 'neg', name: 'Neg', carbs_per_100g: -1 },
+        { id: 'huge', name: 'Huge', carbs_per_100g: 101 },
+        { id: 'inf', name: 'Inf', carbs_per_100g: Number.POSITIVE_INFINITY },
+        { id: 'nan', name: 'NaN', carbs_per_100g: Number.NaN },
+        { id: 'edge0', name: 'Edge0', carbs_per_100g: 0 },
+        { id: 'edge100', name: 'Edge100', carbs_per_100g: 100 },
+      ],
+    });
+    expect(itemCarbs(invalid, 'food', 'neg', 50, 'g').complete).toBe(false);
+    expect(itemCarbs(invalid, 'food', 'huge', 50, 'g').complete).toBe(false);
+    expect(itemCarbs(invalid, 'food', 'inf', 50, 'g').complete).toBe(false);
+    expect(itemCarbs(invalid, 'food', 'nan', 50, 'g').complete).toBe(false);
+    expect(itemCarbs(invalid, 'food', 'edge0', 50, 'g')).toEqual({ carbs_g: 0, complete: true });
+    expect(itemCarbs(invalid, 'food', 'edge100', 50, 'g')).toEqual({ carbs_g: 50, complete: true });
+  });
+
+  it('marks an empty meal incomplete', () => {
+    const empty = createCatalog({ meals: [{ id: 'empty', name: 'Empty', yield_servings: 1 }] });
+    expect(itemCarbs(empty, 'meal', 'empty', 1, 'serving')).toEqual({ carbs_g: 0, complete: false });
+  });
+
+  it('marks a meal with non-finite yield_servings or total_weight_g incomplete', () => {
+    const badMeal = createCatalog({
+      foods: [{ id: 'rice', name: 'Rice', carbs_per_100g: 28.2 }],
+      meals: [
+        { id: 'inf-yield', name: 'InfYield', yield_servings: Number.POSITIVE_INFINITY },
+        { id: 'inf-weight', name: 'InfWeight', yield_servings: 1, total_weight_g: Number.POSITIVE_INFINITY },
+      ],
+      meal_items: [
+        { id: 'i1', meal_id: 'inf-yield', ref_type: 'food', ref_id: 'rice', amount: 100, unit: 'g', position: 0 },
+        { id: 'i2', meal_id: 'inf-weight', ref_type: 'food', ref_id: 'rice', amount: 100, unit: 'g', position: 0 },
+      ],
+    });
+    expect(itemCarbs(badMeal, 'meal', 'inf-yield', 1, 'serving').complete).toBe(false);
+    expect(itemCarbs(badMeal, 'meal', 'inf-weight', 100, 'g').complete).toBe(false);
+  });
+});
+
+describe('soft-deleted rows', () => {
+  it('excludes deleted foods, portions, meals and meal_items from the catalog', () => {
+    const catalogWithDeletes = createCatalog({
+      foods: [
+        { id: 'rice', name: 'Rice', carbs_per_100g: 28.2 },
+        { id: 'ghost-food', name: 'Ghost', carbs_per_100g: 10, deleted: 1 },
+      ],
+      portions: [
+        { id: 'rice-cup', food_id: 'rice', label: 'cup', kind: 'volume', quantity: 1, grams: 158 },
+        { id: 'ghost-portion', food_id: 'rice', label: 'tbsp', kind: 'volume', quantity: 1, grams: 10, deleted: 1 },
+      ],
+      meals: [
+        { id: 'plate', name: 'Plate', yield_servings: 1 },
+        { id: 'ghost-meal', name: 'Ghost meal', yield_servings: 1, deleted: 1 },
+      ],
+      meal_items: [
+        { id: 'i1', meal_id: 'plate', ref_type: 'food', ref_id: 'rice', amount: 100, unit: 'g', position: 0 },
+        { id: 'ghost-item', meal_id: 'plate', ref_type: 'food', ref_id: 'rice', amount: 999, unit: 'g', position: 1, deleted: 1 },
+      ],
+    });
+    expect(catalogWithDeletes.food('ghost-food')).toBeUndefined();
+    expect(catalogWithDeletes.meal('ghost-meal')).toBeUndefined();
+    expect(catalogWithDeletes.portions('rice').map((p) => p.id)).toEqual(['rice-cup']);
+    expect(catalogWithDeletes.mealItems('plate').map((i) => i.id)).toEqual(['i1']);
+    expect(itemCarbs(catalogWithDeletes, 'meal', 'plate', 1, 'serving')).toEqual({ carbs_g: 28.2, complete: true });
+  });
+});
+
 describe('cycles', () => {
   it('detects direct and transitive cycles', () => {
     expect(wouldCreateCycle(catalog, 'plate', 'plate')).toBe(true);

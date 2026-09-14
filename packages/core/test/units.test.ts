@@ -18,6 +18,19 @@ describe('densityOf', () => {
   it('is null with no volume information', () => {
     expect(densityOf(bread, [slice])).toBeNull();
   });
+  it('falls through to portion-derived density when explicit density is non-finite', () => {
+    const infMilk: FoodData = { ...milk, density_g_per_ml: Number.POSITIVE_INFINITY };
+    expect(densityOf(infMilk, [riceCup])).toBeCloseTo(158 / 236.5882365, 9);
+  });
+  it('picks the volume portion with the lexicographically smallest id when several match', () => {
+    const cupB: PortionData = { id: 'b-cup', food_id: 'rice', label: 'cup', kind: 'volume', quantity: 1, grams: 300 };
+    const cupA: PortionData = { id: 'a-cup', food_id: 'rice', label: 'cup', kind: 'volume', quantity: 1, grams: 200 };
+    expect(densityOf(rice, [cupB, cupA])).toBeCloseTo(200 / 236.5882365, 9);
+  });
+  it('skips volume portions with invalid quantity or grams', () => {
+    const bad: PortionData = { id: 'a-cup', food_id: 'rice', label: 'cup', kind: 'volume', quantity: 0, grams: 200 };
+    expect(densityOf(rice, [bad, riceCup])).toBeCloseTo(158 / 236.5882365, 9);
+  });
 });
 
 describe('foodAmountToGrams', () => {
@@ -37,6 +50,16 @@ describe('foodAmountToGrams', () => {
     expect(foodAmountToGrams(1, 'p:missing', bread, [slice])).toBeNull();
     expect(foodAmountToGrams(-1, 'g', rice, [])).toBeNull();
     expect(foodAmountToGrams(Number.NaN, 'g', rice, [])).toBeNull();
+  });
+  it('rejects portions with non-finite or non-positive grams or quantity', () => {
+    const zeroGrams: PortionData = { ...slice, grams: 0 };
+    const negQuantity: PortionData = { ...slice, quantity: -1 };
+    const infGrams: PortionData = { ...slice, grams: Number.POSITIVE_INFINITY };
+    const nanQuantity: PortionData = { ...slice, quantity: Number.NaN };
+    expect(foodAmountToGrams(2, 'p:bread-slice', bread, [zeroGrams])).toBeNull();
+    expect(foodAmountToGrams(2, 'p:bread-slice', bread, [negQuantity])).toBeNull();
+    expect(foodAmountToGrams(2, 'p:bread-slice', bread, [infGrams])).toBeNull();
+    expect(foodAmountToGrams(2, 'p:bread-slice', bread, [nanQuantity])).toBeNull();
   });
 });
 

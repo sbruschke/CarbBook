@@ -26,16 +26,22 @@ function groupBy<T>(rows: T[], key: (row: T) => Id): Map<Id, T[]> {
   return map;
 }
 
+type Deletable<T> = T & { deleted?: 0 | 1 };
+
+function notDeleted<T extends { deleted?: 0 | 1 }>(rows: T[]): T[] {
+  return rows.filter((row) => row.deleted !== 1);
+}
+
 export function createCatalog(data: {
-  foods?: FoodData[];
-  portions?: PortionData[];
-  meals?: MealData[];
-  meal_items?: MealItemData[];
+  foods?: Deletable<FoodData>[];
+  portions?: Deletable<PortionData>[];
+  meals?: Deletable<MealData>[];
+  meal_items?: Deletable<MealItemData>[];
 }): Catalog {
-  const foods = new Map((data.foods ?? []).map((f) => [f.id, f]));
-  const meals = new Map((data.meals ?? []).map((m) => [m.id, m]));
-  const portions = groupBy(data.portions ?? [], (p) => p.food_id);
-  const items = groupBy(data.meal_items ?? [], (i) => i.meal_id);
+  const foods = new Map(notDeleted(data.foods ?? []).map((f) => [f.id, f]));
+  const meals = new Map(notDeleted(data.meals ?? []).map((m) => [m.id, m]));
+  const portions = groupBy(notDeleted(data.portions ?? []), (p) => p.food_id);
+  const items = groupBy(notDeleted(data.meal_items ?? []), (i) => i.meal_id);
   for (const list of items.values()) list.sort((a, b) => a.position - b.position);
   return {
     food: (id) => foods.get(id),
@@ -45,9 +51,13 @@ export function createCatalog(data: {
   };
 }
 
+function isValidCarbsPer100g(value: number | null): value is number {
+  return value != null && Number.isFinite(value) && value >= 0 && value <= 100;
+}
+
 function foodItemCarbs(catalog: Catalog, foodId: Id, amount: number, unit: string): CarbResult {
   const food = catalog.food(foodId);
-  if (!food || food.carbs_per_100g == null) return INCOMPLETE;
+  if (!food || !isValidCarbsPer100g(food.carbs_per_100g)) return INCOMPLETE;
   const grams = foodAmountToGrams(amount, unit, food, catalog.portions(foodId));
   if (grams === null) return INCOMPLETE;
   return { carbs_g: (grams * food.carbs_per_100g) / 100, complete: true };
@@ -56,11 +66,11 @@ function foodItemCarbs(catalog: Catalog, foodId: Id, amount: number, unit: strin
 function mealTotalCarbs(catalog: Catalog, mealId: Id, visiting: Set<Id>): CarbResult {
   if (visiting.has(mealId) || !catalog.meal(mealId)) return INCOMPLETE;
   visiting.add(mealId);
-  const total = sumCarbs(
-    catalog
-      .mealItems(mealId)
-      .map((item) => resolveItem(catalog, item.ref_type, item.ref_id, item.amount, item.unit, visiting)),
-  );
+  const mealItems = catalog.mealItems(mealId);
+  const total =
+    mealItems.length === 0
+      ? INCOMPLETE
+      : sumCarbs(mealItems.map((item) => resolveItem(catalog, item.ref_type, item.ref_id, item.amount, item.unit, visiting)));
   visiting.delete(mealId);
   return total;
 }
@@ -69,9 +79,14 @@ function mealItemCarbs(catalog: Catalog, mealId: Id, amount: number, unit: strin
   const meal = catalog.meal(mealId);
   if (!meal || !Number.isFinite(amount) || amount < 0) return INCOMPLETE;
   let factor: number | null = null;
-  if (unit === SERVING_UNIT && meal.yield_servings > 0) {
+  if (unit === SERVING_UNIT && Number.isFinite(meal.yield_servings) && meal.yield_servings > 0) {
     factor = amount / meal.yield_servings;
-  } else if (isMassUnit(unit) && meal.total_weight_g != null && meal.total_weight_g > 0) {
+  } else if (
+    isMassUnit(unit) &&
+    meal.total_weight_g != null &&
+    Number.isFinite(meal.total_weight_g) &&
+    meal.total_weight_g > 0
+  ) {
     factor = (amount * MASS_UNITS[unit]) / meal.total_weight_g;
   }
   if (factor === null) return INCOMPLETE;

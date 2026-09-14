@@ -31,13 +31,24 @@ function isValidAmount(amount: number): boolean {
 }
 
 export function densityOf(food: FoodData, portions: PortionData[]): number | null {
-  if (food.density_g_per_ml != null && food.density_g_per_ml > 0) return food.density_g_per_ml;
+  if (food.density_g_per_ml != null && Number.isFinite(food.density_g_per_ml) && food.density_g_per_ml > 0) {
+    return food.density_g_per_ml;
+  }
+  let best: PortionData | null = null;
   for (const p of portions) {
-    if (p.kind === 'volume' && isVolumeUnit(p.label) && p.quantity > 0 && p.grams > 0) {
-      return p.grams / (p.quantity * VOLUME_UNITS[p.label]);
+    if (
+      p.kind === 'volume' &&
+      isVolumeUnit(p.label) &&
+      Number.isFinite(p.quantity) &&
+      p.quantity > 0 &&
+      Number.isFinite(p.grams) &&
+      p.grams > 0 &&
+      (best === null || p.id < best.id)
+    ) {
+      best = p;
     }
   }
-  return null;
+  return best ? best.grams / (best.quantity * VOLUME_UNITS[best.label as VolumeUnit]) : null;
 }
 
 export function foodUnits(food: FoodData, portions: PortionData[]): string[] {
@@ -69,7 +80,13 @@ export function foodAmountToGrams(
   if (unit.startsWith(PORTION_PREFIX)) {
     const portionId = unit.slice(PORTION_PREFIX.length);
     const portion = portions.find((p) => p.id === portionId);
-    return portion && portion.quantity > 0 ? (amount * portion.grams) / portion.quantity : null;
+    const validPortion =
+      portion != null &&
+      Number.isFinite(portion.grams) &&
+      portion.grams > 0 &&
+      Number.isFinite(portion.quantity) &&
+      portion.quantity > 0;
+    return validPortion ? (amount * portion.grams) / portion.quantity : null;
   }
   return null;
 }
