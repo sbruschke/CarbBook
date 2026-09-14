@@ -46,6 +46,56 @@ describe('Settings', () => {
     expect(await services.db.dose_settings.count()).toBe(1);
   });
 
+  async function editField(label: string, text: string) {
+    services = makeServices();
+    await seedSettings(services.db);
+    const user = userEvent.setup();
+    renderWith(<Settings />, services);
+    await user.click(await screen.findByRole('button', { name: 'Edit dose settings' }));
+    const field = screen.getByLabelText(label);
+    await user.clear(field);
+    if (text !== '') await user.type(field, text);
+    await user.click(screen.getByRole('button', { name: 'Save as new version' }));
+    return field;
+  }
+
+  it.each([
+    ['Window 3 carb ratio (g per unit)', '0x10'],
+    ['Window 3 carb ratio (g per unit)', '1e1'],
+    ['Window 3 carb ratio (g per unit)', ''],
+    ['Units per step', '0x10'],
+    ['Units per step', '1e1'],
+    ['Units per step', ''],
+    ['Round to increment (u)', '1e1'],
+    ['Threshold (mg/dL)', '0x10'],
+    ['Threshold (mg/dL)', '1e1'],
+    ['Threshold (mg/dL)', ''],
+    ['Threshold (mg/dL)', '12,5'],
+    ['Step (mg/dL)', '1e1'],
+    ['Step (mg/dL)', '12,5'],
+    ['Round down when BG is below (mg/dL, optional)', '0x10'],
+    ['Round down when BG is below (mg/dL, optional)', '12,5'],
+  ])('rejects %s = "%s" with a field error and saves nothing', async (label, text) => {
+    const field = await editField(label, text);
+    expect(screen.getByRole('alert')).toHaveTextContent(label.replace(/ \(.*$/, ''));
+    expect(field).toHaveAttribute('aria-invalid', 'true');
+    expect(await services.db.dose_settings.count()).toBe(1);
+  });
+
+  it('accepts a comma decimal in a carb ratio as a decimal', async () => {
+    await editField('Window 3 carb ratio (g per unit)', '12,5');
+    await waitFor(async () => expect(await services.db.dose_settings.count()).toBe(2));
+    const created = (await services.db.dose_settings.toArray()).find((v) => v.id !== SEED_SETTINGS.id)!;
+    expect(created.windows.find((w) => w.name === 'Lunch')?.ratio_g_per_unit).toBe(12.5);
+  });
+
+  it('allows an empty optional round-down BG', async () => {
+    await editField('Round down when BG is below (mg/dL, optional)', '');
+    await waitFor(async () => expect(await services.db.dose_settings.count()).toBe(2));
+    const created = (await services.db.dose_settings.toArray()).find((v) => v.id !== SEED_SETTINGS.id)!;
+    expect(created.rounding.round_down_below_bg).toBeNull();
+  });
+
   it('is read-only for viewers', async () => {
     services = makeServices({ user: VIEWER });
     await seedSettings(services.db);

@@ -124,4 +124,27 @@ describe('Calculator', () => {
       expect.objectContaining({ meal_id: meal!.id, ref_type: 'food', ref_id: 'tortilla', amount: 100, unit: 'g', position: 0 }),
     ]);
   });
+
+  const rejection = (rejectedUpdatedAt: number) => ({
+    key: 'dose_settings:dose-2026-08-12', table: 'dose_settings', id: 'dose-2026-08-12', reason: 'append_only',
+    message: 'overlaps', at: NOW, rejectedUpdatedAt, resolved: false,
+  });
+
+  it('still uses a version whose rejected edit was restored (same exclusion as selectActiveSettings)', async () => {
+    const user = await setup();
+    // The seeded row sits at updated_at 1000; the rejected edit was a different (later) version.
+    await services.db.sync_error.put(rejection(2000));
+    renderWith(<Calculator />, services);
+    await addItem(user, 'tort', /Tortilla/);
+    expect(await screen.findByTestId('dose-units')).toBeInTheDocument();
+  });
+
+  it('excludes a version whose failed restore left it at the rejected version', async () => {
+    const user = await setup();
+    await services.db.sync_error.put(rejection(1000));
+    renderWith(<Calculator />, services);
+    await addItem(user, 'tort', /Tortilla/);
+    expect(await screen.findByText(/no dose settings apply at this time/)).toBeInTheDocument();
+    expect(screen.queryByTestId('dose-units')).not.toBeInTheDocument();
+  });
 });

@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { useServices } from '../app/services';
 import { validateDoseSettings } from '../dose/dose';
 import { uuidv7 } from '../lib/ids';
-import { fromDateTimeLocal, toDateTimeLocal } from '../ui/format';
+import { fromDateTimeLocal, parseNonNegative, parseWholeNumber, toDateTimeLocal } from '../ui/format';
 
 interface WindowDraft {
   key: string;
@@ -13,7 +13,8 @@ interface WindowDraft {
 }
 
 const numText = (n: number | null) => (n !== null && Number.isFinite(n) ? String(n) : '');
-const num = (text: string) => (text.trim() === '' ? Number.NaN : Number(text));
+
+type FieldKey = 'threshold' | 'step' | 'unitsPerStep' | 'increment' | 'roundDown' | `ratio:${string}`;
 
 /**
  * Edits a copy of a version and always saves a NEW dose_settings record (new id + effective
@@ -33,17 +34,54 @@ export function DoseSettingsEditor(props: { initial: DoseSettingsData; onDone: (
   const [roundDown, setRoundDown] = useState(numText(initial.rounding.round_down_below_bg));
   const [effectiveText, setEffectiveText] = useState(() => toDateTimeLocal(now()));
   const [errors, setErrors] = useState<string[]>([]);
+  const [invalid, setInvalid] = useState<Set<FieldKey>>(new Set());
 
   const update = (key: string, patch: Partial<WindowDraft>) =>
     setWindows((rows) => rows.map((row) => (row.key === key ? { ...row, ...patch } : row)));
 
   async function save() {
+    // Strict parsing (no hex, exponents, Infinity or junk): a loosely parsed number here would
+    // silently change every dose estimate. mg/dL values are whole numbers; amounts may be decimal.
+    const fieldErrors: string[] = [];
+    const badFields = new Set<FieldKey>();
+    const field = (key: FieldKey, text: string, parse: (t: string) => number | null, message: string) => {
+      const value = parse(text);
+      if (value === null) {
+        fieldErrors.push(message);
+        badFields.add(key);
+        return Number.NaN;
+      }
+      return value;
+    };
+    const parsedWindows = windows.map((w, i) => ({
+      name: w.name.trim(),
+      start: w.start,
+      ratio_g_per_unit: field(`ratio:${w.key}`, w.ratio, parseNonNegative, `Window ${i + 1} carb ratio must be a number (like 8 or 12.5).`),
+    }));
+    const correction = {
+      threshold: field('threshold', threshold, parseWholeNumber, 'Threshold must be a whole number of mg/dL.'),
+      step: field('step', step, parseWholeNumber, 'Step must be a whole number of mg/dL.'),
+      units_per_step: field('unitsPerStep', unitsPerStep, parseNonNegative, 'Units per step must be a number (like 1 or 0.5).'),
+      mode,
+    };
+    const rounding = {
+      increment: field('increment', increment, parseNonNegative, 'Round to increment must be a number (like 1 or 0.5).'),
+      round_down_below_bg:
+        roundDown.trim() === ''
+          ? null
+          : field('roundDown', roundDown, parseWholeNumber, 'Round down when BG is below must be empty or a whole number of mg/dL.'),
+    };
+    setInvalid(badFields);
+    if (fieldErrors.length > 0) {
+      setErrors(fieldErrors);
+      return;
+    }
     const draft: DoseSettingsData = {
       id: uuidv7(now()),
       effective_from: fromDateTimeLocal(effectiveText) ?? Number.NaN,
-      windows: windows.map((w) => ({ name: w.name.trim(), start: w.start, ratio_g_per_unit: num(w.ratio) })),
-      correction: { threshold: num(threshold), step: num(step), units_per_step: num(unitsPerStep), mode },
-      rounding: { increment: num(increment), round_down_below_bg: roundDown.trim() === '' ? null : num(roundDown) },
+      windows: parsedWindows,
+      correction,
+      rounding,
     };
     const problems = validateDoseSettings(draft);
     if (!Number.isFinite(draft.effective_from)) problems.push('Enter when these settings take effect.');
@@ -71,6 +109,7 @@ export function DoseSettingsEditor(props: { initial: DoseSettingsData; onDone: (
             aria-label={`Window ${i + 1} carb ratio (g per unit)`}
             inputMode="decimal"
             value={w.ratio}
+            aria-invalid={invalid.has(`ratio:${w.key}`) || undefined}
             onChange={(e) => update(w.key, { ratio: e.target.value })}
           />
           <button type="button" aria-label={`Remove window ${i + 1}`} onClick={() => setWindows((rows) => rows.filter((r) => r.key !== w.key))}>
@@ -84,15 +123,15 @@ export function DoseSettingsEditor(props: { initial: DoseSettingsData; onDone: (
       <h3>Correction</h3>
       <label>
         Threshold (mg/dL)
-        <input inputMode="numeric" value={threshold} onChange={(e) => setThreshold(e.target.value)} />
+        <input inputMode="numeric" aria-invalid={invalid.has('threshold') || undefined} value={threshold} onChange={(e) => setThreshold(e.target.value)} />
       </label>
       <label>
         Step (mg/dL)
-        <input inputMode="numeric" value={step} onChange={(e) => setStep(e.target.value)} />
+        <input inputMode="numeric" aria-invalid={invalid.has('step') || undefined} value={step} onChange={(e) => setStep(e.target.value)} />
       </label>
       <label>
         Units per step
-        <input inputMode="decimal" value={unitsPerStep} onChange={(e) => setUnitsPerStep(e.target.value)} />
+        <input inputMode="decimal" aria-invalid={invalid.has('unitsPerStep') || undefined} value={unitsPerStep} onChange={(e) => setUnitsPerStep(e.target.value)} />
       </label>
       <label>
         Mode
@@ -105,11 +144,11 @@ export function DoseSettingsEditor(props: { initial: DoseSettingsData; onDone: (
       <h3>Rounding</h3>
       <label>
         Round to increment (u)
-        <input inputMode="decimal" value={increment} onChange={(e) => setIncrement(e.target.value)} />
+        <input inputMode="decimal" aria-invalid={invalid.has('increment') || undefined} value={increment} onChange={(e) => setIncrement(e.target.value)} />
       </label>
       <label>
         Round down when BG is below (mg/dL, optional)
-        <input inputMode="numeric" value={roundDown} onChange={(e) => setRoundDown(e.target.value)} />
+        <input inputMode="numeric" aria-invalid={invalid.has('roundDown') || undefined} value={roundDown} onChange={(e) => setRoundDown(e.target.value)} />
       </label>
       <label>
         Takes effect

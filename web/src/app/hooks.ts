@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { type BgResult, fetchBg } from '../bg/bg';
 import { type CatalogData, loadCatalogData, loadUsdaFood, type UsdaFoodEntry } from '../db/catalog';
 import { isLive } from '../db/db';
+import { eligibleDoseVersions } from '../db/dose';
 import { buildSearchIndex, lastLoggedByRef, type SearchIndex } from '../search/search';
 import { useServices } from './services';
 
@@ -12,23 +13,16 @@ export function useCatalogData(): CatalogData | undefined {
   return useLiveQuery(() => loadCatalogData(db), [db]);
 }
 
-export function useDoseVersions(): Synced<DoseSettingsData>[] | undefined {
-  const { db } = useServices();
-  return useLiveQuery(() => db.dose_settings.filter(isLive).toArray(), [db]);
-}
-
 /**
- * Live dose_settings versions eligible to drive dosing right now: live and not the subject of a
- * recorded server rejection (mirrors `selectActiveSettings`'s belt-and-braces exclusion, reactively,
- * so a version rejected while a push is in flight can never drive a dose estimate in the meantime).
- * Use this — never the raw `useDoseVersions()` — wherever a screen picks the *active* settings.
+ * Live dose_settings versions eligible to drive dosing right now — reactively, via the same
+ * `eligibleDoseVersions` rule as `selectActiveSettings`. Use this wherever a screen picks the
+ * *active* settings; never read `db.dose_settings` directly for that.
  */
 export function useEligibleDoseVersions(): Synced<DoseSettingsData>[] | undefined {
   const { db } = useServices();
   return useLiveQuery(async () => {
-    const [versions, errors] = await Promise.all([db.dose_settings.filter(isLive).toArray(), db.sync_error.toArray()]);
-    const rejected = new Set(errors.filter((e) => e.table === 'dose_settings').map((e) => e.id));
-    return versions.filter((v) => !rejected.has(v.id));
+    const [versions, errors] = await Promise.all([db.dose_settings.toArray(), db.sync_error.toArray()]);
+    return eligibleDoseVersions(versions, errors);
   }, [db]);
 }
 

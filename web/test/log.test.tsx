@@ -2,6 +2,7 @@ import type { LogEntryData, LogItemData } from '@carbbook/core';
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it } from 'vitest';
+import { REFUSAL_MESSAGES } from '../src/dose/dose';
 import { Log } from '../src/screens/Log';
 import { foodData, synced } from './helpers';
 import { makeServices, NOW, renderWith, SEED_SETTINGS, seedSettings, type TestServices } from './render';
@@ -68,5 +69,53 @@ describe('Log', () => {
     await user.click(await screen.findByRole('button', { name: 'Recalculate from current meal' }));
     expect(screen.getByRole('status')).toHaveTextContent('Kept the logged carbs for Old tortilla');
     expect(screen.getByTestId('entry-carbs')).toHaveTextContent('Total 30 g carbs');
+    expect(screen.getByTestId('dose-refusal')).toHaveTextContent(REFUSAL_MESSAGES.incomplete_carbs);
+    expect(screen.queryByTestId('dose-units')).not.toBeInTheDocument();
+  });
+
+  it('refuses a dose for an item that no longer resolves, and saving notes keeps the stored suggestion', async () => {
+    const user = await setup();
+    await services.db.food.put(synced(foodData({ id: 'tortilla', name: 'Tortilla', carbs_per_100g: null }), { updated_at: 2000 }));
+    renderWith(<Log />, services);
+    await user.click(await screen.findByRole('button', { name: /11:00 Lunch/ }));
+    expect(await screen.findByTestId('dose-refusal')).toHaveTextContent(REFUSAL_MESSAGES.incomplete_carbs);
+    expect(screen.queryByTestId('dose-units')).not.toBeInTheDocument();
+    await user.type(screen.getByLabelText('Notes'), 'felt fine');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(async () => expect((await services.db.log_entry.get('today'))?.notes).toBe('felt fine'));
+    expect(await services.db.log_entry.get('today')).toMatchObject({ suggested_units: 4, taken_units: 4, total_carbs_g: 30 });
+  });
+
+  it('keeps the stored suggestion when only notes change on a complete entry', async () => {
+    const user = await setup();
+    await services.db.log_entry.update('today', { suggested_units: 7 });
+    renderWith(<Log />, services);
+    await user.click(await screen.findByRole('button', { name: /11:00 Lunch/ }));
+    await user.type(await screen.findByLabelText('Notes'), 'note');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(async () => expect((await services.db.log_entry.get('today'))?.notes).toBe('note'));
+    expect(await services.db.log_entry.get('today')).toMatchObject({ suggested_units: 7, taken_units: 4 });
+  });
+
+  it('refuses a dose for an invalid BG instead of dropping the correction', async () => {
+    const user = await setup();
+    renderWith(<Log />, services);
+    await user.click(await screen.findByRole('button', { name: /11:00 Lunch/ }));
+    await user.type(await screen.findByLabelText('BG (mg/dL)'), '26O');
+    expect(screen.getByTestId('dose-refusal')).toHaveTextContent(REFUSAL_MESSAGES.invalid_input);
+    expect(screen.queryByTestId('dose-units')).not.toBeInTheDocument();
+  });
+
+  it('warns about another dose logged in the last 4 hours, ignoring the entry being edited', async () => {
+    const user = await setup();
+    renderWith(<Log />, services);
+    await user.click(await screen.findByRole('button', { name: /11:00 Lunch/ }));
+    await screen.findByTestId('entry-carbs');
+    expect(screen.queryByText(/within the last 4 hours/)).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    await services.db.log_entry.put(entry({ id: 'earlier', eaten_at: NOW - 2 * HOUR, taken_units: 2 }));
+    await user.click(await screen.findByRole('button', { name: /11:00 Lunch/ }));
+    expect(await screen.findByText(/A dose was logged at 10:00, within the last 4 hours/)).toBeInTheDocument();
   });
 });

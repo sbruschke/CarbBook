@@ -1,14 +1,35 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { CarbBookDb } from '../src/db/db';
-import { selectActiveSettings } from '../src/db/dose';
+import { eligibleDoseVersions, selectActiveSettings } from '../src/db/dose';
 import { createStore } from '../src/db/store';
 import { pullAll } from '../src/sync/pull';
 import { pushOutbox } from '../src/sync/push';
 import { doseSettingsData, FakeApi, openTestDb, synced } from './helpers';
 
-let db: CarbBookDb;
+let db: CarbBookDb | undefined;
 afterEach(async () => {
-  await db.delete();
+  await db?.delete();
+  db = undefined;
+});
+
+describe('eligibleDoseVersions', () => {
+  const err = (id: string, rejectedUpdatedAt: number, resolved = false) => ({
+    key: `dose_settings:${id}`, table: 'dose_settings', id, reason: 'append_only', message: 'x', at: 1, rejectedUpdatedAt, resolved,
+  });
+  const v1 = synced(doseSettingsData({ id: 'ds-1' }));
+  const v2 = synced(doseSettingsData({ id: 'ds-2' }), { deleted: 1 });
+
+  it('drops deleted versions and keeps unrejected ones', () => {
+    expect(eligibleDoseVersions([v1, v2], []).map((v) => v.id)).toEqual(['ds-1']);
+  });
+  it('excludes an unresolved rejection only while the row is still at the rejected version', () => {
+    expect(eligibleDoseVersions([v1], [err('ds-1', 1000)])).toEqual([]);
+    expect(eligibleDoseVersions([v1], [err('ds-1', 2000)]).map((v) => v.id)).toEqual(['ds-1']);
+    expect(eligibleDoseVersions([v1], [err('ds-1', 1000, true)]).map((v) => v.id)).toEqual(['ds-1']);
+  });
+  it('ignores rejections for other tables', () => {
+    expect(eligibleDoseVersions([v1], [{ ...err('ds-1', 1000), table: 'food' }]).map((v) => v.id)).toEqual(['ds-1']);
+  });
 });
 
 describe('selectActiveSettings', () => {
