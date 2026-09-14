@@ -54,6 +54,8 @@ export async function pushOutbox(db: CarbBookDb, api: Api, now: () => number = D
             reason: result.reason,
             message: result.message,
             at: now(),
+            rejectedUpdatedAt: record.updated_at,
+            resolved: false,
           });
           if (entry.snapshot) await db.table(entry.table).put(entry.snapshot);
           else await db.table(entry.table).delete(entry.id);

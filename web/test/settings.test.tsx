@@ -62,7 +62,7 @@ describe('Settings', () => {
       { key: 'meal:m1', table: 'meal', id: 'm1', updated_at: 1, snapshot: null },
     ]);
     await setMeta(services.db, 'last_synced_at', NOW);
-    await services.db.sync_error.put({ key: 'food:f2', table: 'food', id: 'f2', reason: 'invalid', message: 'carbs_per_100g must be >= 0', at: NOW });
+    await services.db.sync_error.put({ key: 'food:f2', table: 'food', id: 'f2', reason: 'invalid', message: 'carbs_per_100g must be >= 0', at: NOW, rejectedUpdatedAt: 1, resolved: false });
     const user = userEvent.setup();
     renderWith(<Settings />, services);
     // Live queries resolve after the first render, so wait for the values rather than the elements.

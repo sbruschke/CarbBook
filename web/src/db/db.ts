@@ -63,6 +63,17 @@ export interface SyncErrorRow {
   reason: string;
   message: string;
   at: number;
+  /**
+   * `updated_at` of the record version that was pushed and rejected. Used to tell a successfully
+   * restored/deleted row (safe to use again) from one where the restore itself failed (still at
+   * the rejected version — keep excluding it as a backstop).
+   */
+  rejectedUpdatedAt: number;
+  /**
+   * Set once a pull applies a server row for this key, proving the id is live and synced again.
+   * The row stays for history (Settings → Sync) but no longer affects selection.
+   */
+  resolved: boolean;
 }
 
 export interface UsdaFoodRow {

@@ -71,7 +71,16 @@ describe('pushOutbox', () => {
 
     expect(await pushOutbox(db, api, () => 7000)).toEqual({ sent: 1, accepted: 0, ignored: 0, rejected: 1 });
     expect(await db.sync_error.toArray()).toEqual([
-      { key: 'food:f1', table: 'food', id: 'f1', reason: 'invalid', message: 'carbs_per_100g must be >= 0', at: 7000 },
+      {
+        key: 'food:f1',
+        table: 'food',
+        id: 'f1',
+        reason: 'invalid',
+        message: 'carbs_per_100g must be >= 0',
+        at: 7000,
+        rejectedUpdatedAt: 1000,
+        resolved: false,
+      },
     ]);
     expect(await db.outbox.count()).toBe(0);
 

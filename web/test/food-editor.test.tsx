@@ -131,6 +131,48 @@ describe('FoodEditor', () => {
     ]);
   });
 
+  it('updates the existing label-serving portion instead of leaving a stale one', async () => {
+    services = makeServices();
+    const bar = synced(foodData({ id: 'bar', name: 'Bar', carbs_per_100g: 50 }));
+    const labelPortion = synced(
+      portionData({ id: 'label-portion', food_id: 'bar', label: 'label serving', kind: 'serving', quantity: 1, grams: 30 }),
+    );
+    await services.db.food.put(bar);
+    await services.db.portion.put(labelPortion);
+    const user = userEvent.setup();
+    const done = renderEditor({ existing: { food: bar, portions: [labelPortion] } });
+    await user.click(screen.getByLabelText('From label'));
+    await user.type(screen.getByLabelText('Serving size (g)'), '40');
+    await user.type(screen.getByLabelText('Carbs per serving (g)'), '20');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(done).toEqual(['bar']));
+    const portions = (await services.db.portion.where('food_id').equals('bar').toArray()).filter((p) => p.deleted === 0);
+    expect(portions).toEqual([expect.objectContaining({ id: 'label-portion', label: 'label serving', kind: 'serving', quantity: 1, grams: 40 })]);
+  });
+
+  it('blocks saving when fiber exceeds carbs', async () => {
+    services = makeServices();
+    const user = userEvent.setup();
+    renderEditor();
+    await user.type(screen.getByLabelText('Name'), 'Fiber bar');
+    await user.type(screen.getByLabelText('Carbs per 100 g'), '10');
+    await user.type(screen.getByLabelText('Fiber per 100 g'), '15');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('Fiber per 100 g cannot be more than carbs per 100 g.');
+    expect(await services.db.food.count()).toBe(0);
+  });
+
+  it('hides Delete food for a USDA original', async () => {
+    services = makeServices();
+    const original = synced(foodData({ id: 'usda-1', name: 'Rice', source: 'usda', source_ref: '1', carbs_per_100g: 28 }));
+    const portion = synced(portionData({ id: 'usda-portion-1', food_id: 'usda-1', label: 'cup', kind: 'volume', quantity: 1, grams: 158 }));
+    await services.db.food.put(original);
+    await services.db.portion.put(portion);
+    renderEditor({ existing: { food: original, portions: [portion] } });
+    expect(screen.queryByRole('button', { name: /Delete food/ })).toBeNull();
+  });
+
   it('blocks saving an Open Food Facts draft until missing carbs are typed', async () => {
     services = makeServices();
     const user = userEvent.setup();

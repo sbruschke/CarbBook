@@ -1,6 +1,6 @@
 import type { BgSource } from '@carbbook/core';
 import type { BgPrefill, BgResult } from '../bg/bg';
-import { formatAge, parseNonNegative } from './format';
+import { formatAge, parseWholeNumber } from './format';
 
 export interface BgEntry {
   mgdl: number | null;
@@ -8,11 +8,21 @@ export interface BgEntry {
   trend: string | null;
 }
 
-/** Dexcom prefill unless the user switched to manual entry; manual text otherwise (spec §4.4). */
+/**
+ * Dexcom prefill unless the user switched to manual entry; manual text otherwise (spec §4.4).
+ *
+ * Empty/whitespace manual text means "no BG" (`mgdl: null`) — the dose card shows its
+ * "No BG entered" note and still estimates from carbs alone. Non-empty text that fails to
+ * parse as a whole number ("12O", "-5", "1,5", "0x64", "1e3") is NOT the same thing: it must
+ * not silently become "no BG" either, because that would show a dose number with the
+ * correction silently dropped for a type 1 diabetic. It resolves to `mgdl: NaN` instead, which
+ * core's `estimateDose` refuses outright (`invalid_input`) rather than guess.
+ */
 export function resolveBg(prefill: BgPrefill | null, manualMode: boolean, manualText: string): BgEntry {
   if (prefill && !manualMode) return { mgdl: prefill.mgdl, source: 'dexcom', trend: prefill.trend };
-  const mgdl = parseNonNegative(manualText);
-  return mgdl === null ? { mgdl: null, source: 'none', trend: null } : { mgdl, source: 'manual', trend: null };
+  if (manualText.trim() === '') return { mgdl: null, source: 'none', trend: null };
+  const mgdl = parseWholeNumber(manualText);
+  return { mgdl: mgdl === null ? Number.NaN : mgdl, source: 'manual', trend: null };
 }
 
 function statusNote(status: BgResult | null): string {
@@ -31,6 +41,7 @@ export function BgField(props: {
   onManualTextChange: (text: string) => void;
 }) {
   const { prefill } = props;
+  const manualInvalid = props.manualText.trim() !== '' && parseWholeNumber(props.manualText) === null;
   if (prefill && !props.manualMode) {
     return (
       <div className="bg-field">
@@ -49,6 +60,11 @@ export function BgField(props: {
         BG (mg/dL)
         <input inputMode="numeric" value={props.manualText} onChange={(e) => props.onManualTextChange(e.target.value)} />
       </label>
+      {manualInvalid && (
+        <p className="flag" data-testid="bg-invalid">
+          Invalid BG — enter a whole number in mg/dL
+        </p>
+      )}
       {prefill ? (
         <button type="button" onClick={() => props.onManualModeChange(false)}>
           Use Dexcom {prefill.mgdl}

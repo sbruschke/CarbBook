@@ -8,6 +8,7 @@ import {
   formatUnits,
   fromDateTimeLocal,
   parseNonNegative,
+  parseWholeNumber,
   shiftDay,
   toDateTimeLocal,
   unitLabel,
@@ -50,6 +51,32 @@ describe('format helpers', () => {
     expect(parseNonNegative('')).toBeNull();
     expect(parseNonNegative('-1')).toBeNull();
     expect(parseNonNegative('abc')).toBeNull();
+  });
+
+  it('parses amounts strictly, accepting a comma decimal separator', () => {
+    expect(parseNonNegative('1,5')).toBe(1.5);
+    expect(parseNonNegative(' 1,5 ')).toBe(1.5);
+    expect(parseNonNegative('0x64')).toBeNull();
+    expect(parseNonNegative('1e3')).toBeNull();
+    expect(parseNonNegative('0b1')).toBeNull();
+    expect(parseNonNegative('Infinity')).toBeNull();
+    expect(parseNonNegative(' ')).toBeNull();
+    expect(parseNonNegative('1,5,5')).toBeNull();
+    expect(parseNonNegative('12O')).toBeNull();
+  });
+
+  it('parses whole-number BG strictly, rejecting a comma decimal separator', () => {
+    expect(parseWholeNumber('120')).toBe(120);
+    expect(parseWholeNumber(' 120 ')).toBe(120);
+    expect(parseWholeNumber('')).toBeNull();
+    expect(parseWholeNumber('   ')).toBeNull();
+    expect(parseWholeNumber('12O')).toBeNull();
+    expect(parseWholeNumber('-5')).toBeNull();
+    expect(parseWholeNumber('1,5')).toBeNull();
+    expect(parseWholeNumber('0x64')).toBeNull();
+    expect(parseWholeNumber('1e3')).toBeNull();
+    expect(parseWholeNumber('0b1')).toBeNull();
+    expect(parseWholeNumber('Infinity')).toBeNull();
   });
 
   it('accepts only the barcode codes the server looks up', () => {
