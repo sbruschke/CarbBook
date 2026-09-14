@@ -218,7 +218,7 @@ export function Calculator() {
       <DoseCard estimate={estimate} hasItems={items.length > 0} bg={bg.mgdl} lastDoseAt={lastDoseAt(log.entries)} now={clock} />
       <section className="card">
         <label>
-          Taken dose (u)
+          Taken (units)
           <input
             inputMode="decimal"
             value={takenValue}
@@ -228,6 +228,7 @@ export function Calculator() {
             }}
           />
         </label>
+        {!takenEdited && suggested !== null && <p className="hint">Prefilled from the estimate — change it if you took a different amount</p>}
         <div className="button-row">
           <button type="button" className="primary" disabled={items.length === 0} onClick={() => void logIt()}>
             Log it

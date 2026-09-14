@@ -76,7 +76,8 @@ describe('Calculator', () => {
     await user.selectOptions(screen.getByLabelText(`Unit for ${name}`), 'tbsp');
     await user.type(screen.getByLabelText('BG (mg/dL)'), '120');
     expect(screen.getByTestId('dose-breakdown')).toHaveTextContent('35.7g ÷ 8 = 4.5 + BG 120 → 0u = 4.5 → 4u (rounded down: BG under 130)');
-    expect(screen.getByLabelText('Taken dose (u)')).toHaveValue('4');
+    expect(screen.getByLabelText('Taken (units)')).toHaveValue('4');
+    expect(screen.getByText('Prefilled from the estimate — change it if you took a different amount')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Log it' }));
     expect(await screen.findByRole('status')).toHaveTextContent('Logged 35.7 g carbs at 12:00.');
@@ -104,6 +105,56 @@ describe('Calculator', () => {
     renderWith(<Calculator />, services);
     await addItem(user, 'tort', /Tortilla/);
     expect(await screen.findByText(/A dose was logged at 10:00, within the last 4 hours/)).toBeInTheDocument();
+  });
+
+  it('leaves the taken dose empty and hides the prefill hint when the estimate is a refusal', async () => {
+    const user = await setup();
+    renderWith(<Calculator />, services);
+    await addItem(user, 'mystery', /Mystery stew/);
+    await screen.findByTestId('dose-refusal');
+    expect(screen.getByLabelText('Taken (units)')).toHaveValue('');
+    expect(screen.queryByText('Prefilled from the estimate — change it if you took a different amount')).not.toBeInTheDocument();
+  });
+
+  it('clears an unedited prefill when the estimate turns invalid', async () => {
+    const user = await setup();
+    renderWith(<Calculator />, services);
+    await addItem(user, 'tort', /Tortilla/);
+    await user.type(screen.getByLabelText('BG (mg/dL)'), '120');
+    expect(await screen.findByLabelText('Taken (units)')).not.toHaveValue('');
+
+    await addItem(user, 'mystery', /Mystery stew/);
+    await screen.findByTestId('dose-refusal');
+    expect(screen.getByLabelText('Taken (units)')).toHaveValue('');
+  });
+
+  it('never overwrites a user-edited taken dose when the estimate changes', async () => {
+    const user = await setup();
+    renderWith(<Calculator />, services);
+    await addItem(user, 'tort', /Tortilla/);
+    await user.type(screen.getByLabelText('BG (mg/dL)'), '120');
+    const takenInput = await screen.findByLabelText('Taken (units)');
+    await user.clear(takenInput);
+    await user.type(takenInput, '99');
+
+    await user.clear(screen.getByLabelText('BG (mg/dL)'));
+    await user.type(screen.getByLabelText('BG (mg/dL)'), '250');
+    expect(screen.getByLabelText('Taken (units)')).toHaveValue('99');
+  });
+
+  it('logs carbs only with taken_units null when the taken dose is left empty', async () => {
+    const user = await setup();
+    renderWith(<Calculator />, services);
+    await addItem(user, 'mystery', /Mystery stew/);
+    const amount = await screen.findByLabelText('Amount of Mystery stew');
+    await user.clear(amount);
+    await user.type(amount, '100');
+    expect(screen.getByLabelText('Taken (units)')).toHaveValue('');
+
+    await user.click(screen.getByRole('button', { name: 'Log it' }));
+    expect(await screen.findByRole('status')).toHaveTextContent('Logged');
+    const [entry] = await services.db.log_entry.toArray();
+    expect(entry).toMatchObject({ taken_units: null, suggested_units: null });
   });
 
   it('saves the current items as a meal', async () => {
