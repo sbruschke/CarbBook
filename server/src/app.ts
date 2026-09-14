@@ -9,6 +9,7 @@ import type { Db } from './db';
 import { errorHandler } from './errors';
 import { loginRoutes, sessionRoutes } from './routes/auth';
 import { bgRoutes } from './routes/bg';
+import { registerWebApp } from './static';
 
 export interface BuildAppOptions {
   db: Db;
@@ -54,9 +55,6 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
     await api.register(bgRoutes, ctx);
   });
 
-  app.setNotFoundHandler((request, reply) => {
-    const path = request.url.split('?')[0]!;
-    return reply.code(404).send({ error: 'not_found', message: `No route for ${request.method} ${path}` });
-  });
+  await registerWebApp(app, options.config.webDir);
   return app;
 }
