@@ -29,6 +29,21 @@ public enum NumberParsing {
         return Double(trimmed)
     }
 
+    /// A stored number as editable text that `parseAmount` reads back as the same value: plain
+    /// digits, "." decimal, no grouping, no exponent, trailing zeros trimmed. Locale-formatted text
+    /// must not be put in an amount field: "1,000" would parse back as 1 (comma = decimal separator).
+    /// nil → "". Negative or non-finite values are rendered as-is so they fail validation visibly.
+    public static func editText(_ value: Double?, maxFractionDigits: Int = 10) -> String {
+        guard let value else { return "" }
+        guard value.isFinite else { return String(value) }
+        var text = String(format: "%.\(maxFractionDigits)f", value)
+        if text.contains(".") {
+            while text.hasSuffix("0") { text.removeLast() }
+            if text.hasSuffix(".") { text.removeLast() }
+        }
+        return text == "-0" ? "0" : text
+    }
+
     /// True when the field was typed in (non-empty after trimming) but doesn't parse under `parser`.
     /// Distinguishes "the user left this blank" from "the user typed something invalid" so the latter
     /// can be surfaced as an error instead of silently behaving like the former.

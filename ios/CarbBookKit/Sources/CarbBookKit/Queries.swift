@@ -34,7 +34,7 @@ extension LocalStore {
     public func meals() throws -> [MealData] { try records("meal", "WHERE deleted = 0 ORDER BY name COLLATE NOCASE") }
 
     public func portions(foodId: Id) throws -> [PortionData] {
-        try records("portion", "WHERE deleted = 0 AND food_id = ? ORDER BY grams", [foodId])
+        try records("portion", "WHERE deleted = 0 AND food_id = ? ORDER BY grams IS NULL, grams, id", [foodId])
     }
 
     public func mealItems(mealId: Id) throws -> [MealItemData] {

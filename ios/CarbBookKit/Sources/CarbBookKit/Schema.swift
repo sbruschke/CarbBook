@@ -10,8 +10,36 @@ enum Schema {
         migrator.registerMigration("v1") { db in
             try db.execute(sql: v1)
         }
+        migrator.registerMigration("v2-any-unit-foods") { db in
+            try db.execute(sql: v2AnyUnitFoods)
+        }
         return migrator
     }
+
+    /// Any-unit foods addendum: `food.carbs_per_100ml`, nullable `portion.grams`, `portion.carbs_g`.
+    /// SQLite can't drop NOT NULL in place, so `portion` is rebuilt with every row copied (it has no
+    /// triggers or foreign keys). Rows pulled before this migration may have lost the new server
+    /// columns (the old schema had nowhere to put them, and a null-grams portion couldn't be stored at
+    /// all), so the pull cursor restarts at 0: a full re-pull refreshes them (`shouldApplyPulled`
+    /// re-applies an equal version; newer local edits still win). Rows that were pending at migration
+    /// time were edited without knowledge of the new columns; `sync_legacy_pending` makes their push
+    /// omit those keys (server keeps its stored values) until they are edited again.
+    static let v2AnyUnitFoods = """
+    ALTER TABLE food ADD COLUMN carbs_per_100ml REAL;
+    CREATE TABLE portion_v2 (
+      id TEXT PRIMARY KEY, food_id TEXT NOT NULL, label TEXT NOT NULL, kind TEXT NOT NULL,
+      quantity REAL NOT NULL, grams REAL, carbs_g REAL,
+      updated_at INTEGER NOT NULL, updated_by TEXT NOT NULL, deleted INTEGER NOT NULL DEFAULT 0, server_seq INTEGER
+    );
+    INSERT INTO portion_v2 (id, food_id, label, kind, quantity, grams, carbs_g, updated_at, updated_by, deleted, server_seq)
+      SELECT id, food_id, label, kind, quantity, grams, NULL, updated_at, updated_by, deleted, server_seq FROM portion;
+    DROP TABLE portion;
+    ALTER TABLE portion_v2 RENAME TO portion;
+    CREATE INDEX portion_food ON portion (food_id);
+    CREATE TABLE sync_legacy_pending (key TEXT PRIMARY KEY);
+    INSERT INTO sync_legacy_pending (key) SELECT key FROM sync_pending WHERE table_name IN ('food', 'portion');
+    UPDATE sync_state SET value = '0' WHERE key = 'pull_cursor';
+    """
 
     static let v1 = """
     CREATE TABLE food (

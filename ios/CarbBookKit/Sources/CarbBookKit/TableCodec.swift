@@ -5,8 +5,9 @@ import GRDB
 /// Converts between sync records (`[String: JSONValue]`, wire shape) and SQLite rows.
 enum TableCodec {
     static let dataColumns: [String: [String]] = [
-        "food": ["name", "brand", "source", "source_ref", "derived_from", "carbs_per_100g", "fiber_per_100g", "density_g_per_ml", "notes"],
-        "portion": ["food_id", "label", "kind", "quantity", "grams"],
+        "food": ["name", "brand", "source", "source_ref", "derived_from", "carbs_per_100g", "carbs_per_100ml", "fiber_per_100g",
+                 "density_g_per_ml", "notes"],
+        "portion": ["food_id", "label", "kind", "quantity", "grams", "carbs_g"],
         "barcode": ["code", "food_id"],
         "meal": ["name", "yield_servings", "total_weight_g", "notes"],
         "meal_item": ["meal_id", "ref_type", "ref_id", "amount", "unit", "position"],
@@ -17,6 +18,9 @@ enum TableCodec {
     ]
     /// Stored as JSON text, sent as JSON objects/arrays on the wire. Explicit nulls inside them
     /// (e.g. `rounding.round_down_below_bg`) are preserved: `JSONValue.null` encodes as `null`.
+    /// Columns added by the any-unit foods migration. Omitted from the push of a row that was pending
+    /// before the migration (see `Schema.v2AnyUnitFoods`), so the server keeps its stored values.
+    static let anyUnitColumns: [String: [String]] = ["food": ["carbs_per_100ml"], "portion": ["carbs_g"]]
     static let jsonColumns: Set<String> = ["windows", "correction", "rounding"]
     static let integerColumns: Set<String> = ["eaten_at", "effective_from", "position", "updated_at", "deleted", "server_seq"]
 

@@ -94,6 +94,8 @@ public final class LocalStore: @unchecked Sendable {
             """,
             arguments: ["\(change.table)/\(id)", change.table, id, stamp]
         )
+        // A new local edit carries every column, including the any-unit ones.
+        try db.execute(sql: "DELETE FROM sync_legacy_pending WHERE key = ?", arguments: ["\(change.table)/\(id)"])
         return SyncChange(table: change.table, record: record)
     }
 

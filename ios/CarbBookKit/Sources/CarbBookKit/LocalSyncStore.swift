@@ -23,8 +23,13 @@ extension LocalStore: SyncStore {
         try await dbQueue.read { db in
             let pending = try Row.fetchAll(
                 db, sql: "SELECT table_name, record_id FROM sync_pending ORDER BY queued_at, key LIMIT ?", arguments: [limit])
+            let legacy = Set(try String.fetchAll(db, sql: "SELECT key FROM sync_legacy_pending"))
             return try pending.compactMap { entry -> SyncChange? in
-                try self.change(db, table: entry["table_name"], id: entry["record_id"])
+                guard var change = try self.change(db, table: entry["table_name"], id: entry["record_id"]) else { return nil }
+                if legacy.contains(change.key) {
+                    for column in TableCodec.anyUnitColumns[change.table] ?? [] { change.record.removeValue(forKey: column) }
+                }
+                return change
             }
         }
     }
@@ -67,6 +72,7 @@ extension LocalStore: SyncStore {
                         arguments: [key, sent.table, id, result.reason, result.message, stamp, sent.version?.updatedAt])
                 }
                 try db.execute(sql: "DELETE FROM sync_pending WHERE key = ?", arguments: [key])
+                try db.execute(sql: "DELETE FROM sync_legacy_pending WHERE key = ?", arguments: [key])
             }
         }
     }
@@ -86,6 +92,7 @@ extension LocalStore: SyncStore {
                 try Self.upsertRow(db, change)
                 try Self.saveSnapshot(db, change)
                 try db.execute(sql: "DELETE FROM sync_pending WHERE key = ?", arguments: [change.key])
+                try db.execute(sql: "DELETE FROM sync_legacy_pending WHERE key = ?", arguments: [change.key])
                 // The server has since converged on this key (directly, or via another device): any
                 // earlier rejection recorded for it no longer reflects the current state.
                 try db.execute(sql: "DELETE FROM sync_rejection WHERE key = ?", arguments: [change.key])
