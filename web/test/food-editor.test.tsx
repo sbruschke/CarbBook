@@ -1,3 +1,4 @@
+import { createCatalog, itemCarbs } from '@carbbook/core';
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -55,8 +56,8 @@ describe('FoodEditor', () => {
     const done = renderEditor();
     await user.type(screen.getByLabelText('Name'), 'Granola bar');
     await user.click(screen.getByLabelText('From label'));
-    await user.type(screen.getByLabelText('Serving size (g)'), '40');
-    await user.type(screen.getByLabelText('Carbs per serving (g)'), '20');
+    await user.type(screen.getByLabelText('Amount'), '40');
+    await user.type(screen.getByLabelText('Carbs (g)'), '20');
     expect(screen.getByTestId('label-result')).toHaveTextContent('= 50 g carbs per 100 g');
     await user.click(screen.getByRole('button', { name: 'Save' }));
 
@@ -142,8 +143,8 @@ describe('FoodEditor', () => {
     const user = userEvent.setup();
     const done = renderEditor({ existing: { food: bar, portions: [labelPortion] } });
     await user.click(screen.getByLabelText('From label'));
-    await user.type(screen.getByLabelText('Serving size (g)'), '40');
-    await user.type(screen.getByLabelText('Carbs per serving (g)'), '20');
+    await user.type(screen.getByLabelText('Amount'), '40');
+    await user.type(screen.getByLabelText('Carbs (g)'), '20');
     await user.click(screen.getByRole('button', { name: 'Save' }));
 
     await waitFor(() => expect(done).toEqual(['bar']));
@@ -190,5 +191,172 @@ describe('FoodEditor', () => {
     expect(await services.db.food.get(done[0]!)).toMatchObject({ source: 'off', source_ref: '0737628064502', brand: 'Thai Kitchen', carbs_per_100g: 71.15 });
     expect(await services.db.barcode.toArray()).toEqual([expect.objectContaining({ code: '0737628064502', food_id: done[0] })]);
     expect(await services.db.portion.toArray()).toEqual([expect.objectContaining({ label: 'label serving', grams: 52 })]);
+  });
+});
+
+describe('FoodEditor: any-unit label entry', () => {
+  it('Calrose rice: 1 cup = 48 g carbs -> carbs_per_100ml, and logging 1 cup gives 48 g carbs', async () => {
+    services = makeServices();
+    const user = userEvent.setup();
+    const done = renderEditor();
+    await user.type(screen.getByLabelText('Name'), 'Calrose rice');
+    await user.click(screen.getByLabelText('From label'));
+    await user.selectOptions(screen.getByLabelText('Unit'), 'cup');
+    await user.type(screen.getByLabelText('Amount'), '1');
+    await user.type(screen.getByLabelText('Carbs (g)'), '48');
+    expect(screen.getByTestId('label-result')).toHaveTextContent('= 20.2884136211058 g carbs per 100 ml');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(done).toHaveLength(1));
+    const food = await services.db.food.get(done[0]!);
+    expect(food).toMatchObject({ carbs_per_100g: null, carbs_per_100ml: 20.2884136211058 });
+    expect(await services.db.portion.toArray()).toEqual([]);
+
+    const catalog = createCatalog({ foods: [food!], portions: [], meals: [], meal_items: [] });
+    expect(itemCarbs(catalog, 'food', food!.id, 1, 'cup')).toEqual({ carbs_g: 48, complete: true });
+  });
+
+  it('2 tbsp = 7 g carbs', async () => {
+    services = makeServices();
+    const user = userEvent.setup();
+    const done = renderEditor();
+    await user.type(screen.getByLabelText('Name'), 'Syrup');
+    await user.click(screen.getByLabelText('From label'));
+    await user.selectOptions(screen.getByLabelText('Unit'), 'tbsp');
+    await user.type(screen.getByLabelText('Amount'), '2');
+    await user.type(screen.getByLabelText('Carbs (g)'), '7');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(done).toHaveLength(1));
+    const food = await services.db.food.get(done[0]!);
+    expect(food!.carbs_per_100ml).toBeCloseTo(23.6698158912901, 9);
+  });
+
+  it('a volume label with a weight also stores a volume portion (grams work via density)', async () => {
+    services = makeServices();
+    const user = userEvent.setup();
+    const done = renderEditor();
+    await user.type(screen.getByLabelText('Name'), 'Calrose rice');
+    await user.click(screen.getByLabelText('From label'));
+    await user.selectOptions(screen.getByLabelText('Unit'), 'cup');
+    await user.type(screen.getByLabelText('Amount'), '1');
+    await user.type(screen.getByLabelText('Carbs (g)'), '48');
+    await user.type(screen.getByLabelText('Weighs (g)'), '158');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(done).toHaveLength(1));
+    const food = await services.db.food.get(done[0]!);
+    const portions = await services.db.portion.toArray();
+    expect(portions).toEqual([expect.objectContaining({ label: 'cup', kind: 'volume', quantity: 1, grams: 158 })]);
+    const catalog = createCatalog({ foods: [food!], portions, meals: [], meal_items: [] });
+    expect(itemCarbs(catalog, 'food', food!.id, 158, 'g').complete).toBe(true);
+  });
+
+  it('1 bar = 22 g carbs: a piece portion with no weight, 2 bars gives 44 g carbs', async () => {
+    services = makeServices();
+    const user = userEvent.setup();
+    const done = renderEditor();
+    await user.type(screen.getByLabelText('Name'), 'Granola bar');
+    await user.click(screen.getByLabelText('From label'));
+    await user.selectOptions(screen.getByLabelText('Unit'), 'piece / serving');
+    await user.type(screen.getByLabelText('Portion name'), 'bar');
+    await user.type(screen.getByLabelText('Amount'), '1');
+    await user.type(screen.getByLabelText('Carbs (g)'), '22');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(done).toHaveLength(1));
+    const food = await services.db.food.get(done[0]!);
+    expect(food!.carbs_per_100g).toBeNull();
+    const portions = await services.db.portion.toArray();
+    expect(portions).toEqual([expect.objectContaining({ label: 'bar', kind: 'count', quantity: 1, grams: null, carbs_g: 22 })]);
+    const catalog = createCatalog({ foods: [food!], portions, meals: [], meal_items: [] });
+    expect(itemCarbs(catalog, 'food', food!.id, 2, `p:${portions[0]!.id}`)).toEqual({ carbs_g: 44, complete: true });
+  });
+
+  it('a piece label with a weight also enables grams (sets carbs_per_100g)', async () => {
+    services = makeServices();
+    const user = userEvent.setup();
+    const done = renderEditor();
+    await user.type(screen.getByLabelText('Name'), 'Cookie');
+    await user.click(screen.getByLabelText('From label'));
+    await user.selectOptions(screen.getByLabelText('Unit'), 'piece / serving');
+    await user.type(screen.getByLabelText('Portion name'), 'cookie');
+    await user.type(screen.getByLabelText('Amount'), '1');
+    await user.type(screen.getByLabelText('Carbs (g)'), '20');
+    await user.type(screen.getByLabelText('Weighs (g)'), '30');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(done).toHaveLength(1));
+    const food = await services.db.food.get(done[0]!);
+    expect(food!.carbs_per_100g).toBeCloseTo(66.67, 2);
+    const catalog = createCatalog({ foods: [food!], portions: [], meals: [], meal_items: [] });
+    const result = itemCarbs(catalog, 'food', food!.id, 30, 'g');
+    expect(result.complete).toBe(true);
+    expect(result.carbs_g).toBeCloseTo(20, 1);
+  });
+
+  it('blocks a zero amount and a piece unit with no name', async () => {
+    services = makeServices();
+    const user = userEvent.setup();
+    renderEditor();
+    await user.type(screen.getByLabelText('Name'), 'Broken');
+    await user.click(screen.getByLabelText('From label'));
+    await user.type(screen.getByLabelText('Amount'), '0');
+    await user.type(screen.getByLabelText('Carbs (g)'), '20');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('Enter an amount greater than 0.');
+    expect(await services.db.food.count()).toBe(0);
+  });
+
+  it('is savable with only a portion carb basis, and editing shows it back for re-entry', async () => {
+    services = makeServices();
+    const bar = synced(foodData({ id: 'bar', name: 'Granola bar', carbs_per_100g: null }));
+    const barPortion = synced(portionData({ id: 'bar-p', food_id: 'bar', label: 'bar', kind: 'count', quantity: 1, grams: null, carbs_g: 22 }));
+    await services.db.food.put(bar);
+    await services.db.portion.put(barPortion);
+    const user = userEvent.setup();
+    const done = renderEditor({ existing: { food: bar, portions: [barPortion] } });
+
+    // Editing shows the empty-grams field as empty, not "null" (bug fix).
+    expect(screen.getByLabelText('Portion 1 grams')).toHaveValue('');
+    expect(screen.getByLabelText('Portion 1 carbs (g)')).toHaveValue('22');
+
+    // Re-entering the same label info updates the matching portion rather than duplicating it.
+    expect(screen.getByLabelText('Unit')).toHaveValue('other');
+    expect(screen.getByLabelText('Portion name')).toHaveValue('bar');
+    expect(screen.getByLabelText('Amount')).toHaveValue('1');
+    expect(screen.getByLabelText('Carbs (g)')).toHaveValue('22');
+    await user.clear(screen.getByLabelText('Carbs (g)'));
+    await user.type(screen.getByLabelText('Carbs (g)'), '25');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(done).toEqual(['bar']));
+    const portions = (await services.db.portion.where('food_id').equals('bar').toArray()).filter((p) => p.deleted === 0);
+    expect(portions).toEqual([expect.objectContaining({ id: 'bar-p', label: 'bar', kind: 'count', quantity: 1, grams: null, carbs_g: 25 })]);
+  });
+
+  it('is savable with only a volume carb basis, and editing shows it back for re-entry', async () => {
+    services = makeServices();
+    const rice = synced(foodData({ id: 'rice', name: 'Calrose rice', carbs_per_100g: null, carbs_per_100ml: 20.2884136211058 }));
+    await services.db.food.put(rice);
+    const done = renderEditor({ existing: { food: rice, portions: [] } });
+
+    expect(screen.getByLabelText('Unit')).toHaveValue('ml');
+    expect(screen.getByLabelText('Amount')).toHaveValue('100');
+    expect(screen.getByLabelText('Carbs (g)')).toHaveValue('20.2884136211058');
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(done).toEqual(['rice']));
+    expect(await services.db.food.get('rice')).toMatchObject({ carbs_per_100ml: 20.2884136211058 });
+  });
+
+  it('blocks saving a food with no carb basis at all', async () => {
+    services = makeServices();
+    const user = userEvent.setup();
+    renderEditor();
+    await user.type(screen.getByLabelText('Name'), 'Mystery');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('Carbs are missing');
+    expect(await services.db.food.count()).toBe(0);
   });
 });

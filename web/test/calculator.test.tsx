@@ -42,6 +42,20 @@ describe('Calculator', () => {
     expect(screen.getByText('estimate')).toBeInTheDocument();
   });
 
+  it('logs 1 cup of an any-unit (volume-basis) food as 48 g carbs', async () => {
+    services = makeServices();
+    await seedSettings(services.db);
+    await services.db.food.put(synced(foodData({ id: 'rice', name: 'Calrose rice', carbs_per_100g: null, carbs_per_100ml: 20.2884136211058 })));
+    const user = userEvent.setup();
+    renderWith(<Calculator />, services);
+    await addItem(user, 'calrose', /Calrose rice/);
+    await user.selectOptions(await screen.findByLabelText('Unit for Calrose rice'), 'cup');
+    const amount = screen.getByLabelText('Amount of Calrose rice');
+    await user.clear(amount);
+    await user.type(amount, '1');
+    expect(screen.getByLabelText('Carbs in Calrose rice')).toHaveTextContent('48 g');
+  });
+
   it('shows the refusal reason and no number when carb data is missing', async () => {
     const user = await setup();
     renderWith(<Calculator />, services);
