@@ -10,6 +10,7 @@ import type { Db } from './db';
 import { errorHandler } from './errors';
 import { loginRoutes, sessionRoutes } from './routes/auth';
 import { bgRoutes } from './routes/bg';
+import { syncRoutes } from './routes/sync';
 import { registerWebApp } from './static';
 
 export interface BuildAppOptions {
@@ -58,6 +59,7 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
     api.addHook('onRequest', makeAuthenticate(ctx));
     await api.register(sessionRoutes, ctx);
     await api.register(bgRoutes, ctx);
+    await api.register(syncRoutes, ctx);
   });
 
   await registerWebApp(app, options.config.webDir);
