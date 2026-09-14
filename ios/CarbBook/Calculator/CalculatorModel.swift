@@ -136,12 +136,9 @@ final class CalculatorModel {
     }
 
     func addFood(id: Id, name: String) {
-        let countPortion = catalog.portions(id).first { $0.kind != "volume" }
-        if let countPortion {
-            append(.food, id, name, amount: 1, unit: Units.portionPrefix + countPortion.id)
-        } else {
-            append(.food, id, name, amount: 100, unit: "g")
-        }
+        // First valid portion, else 100 g, else 1 cup (any-unit foods); unknown foods default to 100 g.
+        let initial = catalog.food(id).map { defaultFoodAmountAndUnit($0, catalog.portions(id)) } ?? (amount: 100, unit: "g")
+        append(.food, id, name, amount: initial.amount, unit: initial.unit)
     }
 
     private func append(_ refType: RefType, _ refId: Id, _ name: String, amount: Double, unit: String) {

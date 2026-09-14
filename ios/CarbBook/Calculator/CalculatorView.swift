@@ -176,12 +176,7 @@ struct LineRow: View {
                     .background(Theme.fieldBackground)
                     .clipShape(RoundedRectangle(cornerRadius: 8))
                     .frame(maxWidth: 110)
-                Picker("Unit", selection: $line.unit) {
-                    ForEach(units, id: \.self) { unit in
-                        Text(unitLabel(unit, portions: portions)).tag(unit)
-                    }
-                }
-                .labelsHidden()
+                UnitPicker(unit: $line.unit, units: units, portions: portions)
             }
         }
     }

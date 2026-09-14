@@ -38,13 +38,27 @@ func formatNumber(_ value: Double?, digits: Int = 1) -> String {
     value.map { formatNumber($0, digits: digits) } ?? ""
 }
 
-/// "p:<portion id>" → the portion label; "floz" → "fl oz".
+/// "p:<portion id>" → "slice (30 g)" (just the label when its weight is unknown); "floz" → "fl oz".
 func unitLabel(_ unit: String, portions: [PortionData]) -> String {
-    if unit.hasPrefix(Units.portionPrefix) {
-        let id = String(unit.dropFirst(Units.portionPrefix.count))
-        return portions.first(where: { $0.id == id }).map { "\($0.label) (\(formatNumber($0.grams))g)" } ?? "missing portion"
+    displayUnitName(unit, portions: portions)
+}
+
+/// Unit picker for a line item: valid units from core `foodUnits`/`mealUnits`, plus the current
+/// unit marked "(not valid)" when it isn't one of them (the row then shows "missing data").
+struct UnitPicker: View {
+    @Binding var unit: String
+    let units: [String]
+    let portions: [PortionData]
+
+    var body: some View {
+        Picker("Unit", selection: $unit) {
+            ForEach(unitPickerOptions(units: units, current: unit), id: \.unit) { option in
+                Text(option.valid ? unitLabel(option.unit, portions: portions) : "\(unitLabel(option.unit, portions: portions)) (not valid)")
+                    .tag(option.unit)
+            }
+        }
+        .labelsHidden()
     }
-    return unit == "floz" ? "fl oz" : unit
 }
 
 func nowMs() -> Int64 { Int64(Date().timeIntervalSince1970 * 1000) }

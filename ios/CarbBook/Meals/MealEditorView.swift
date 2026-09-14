@@ -93,10 +93,7 @@ struct MealEditorView: View {
                 TextField("Amount", value: item.amount, format: .number)
                     .keyboardType(.decimalPad)
                     .frame(maxWidth: 110)
-                Picker("Unit", selection: item.unit) {
-                    ForEach(units, id: \.self) { Text(unitLabel($0, portions: catalog.portions(value.refId))).tag($0) }
-                }
-                .labelsHidden()
+                UnitPicker(unit: item.unit, units: units, portions: value.refType == .food ? catalog.portions(value.refId) : [])
             }
         }
     }
@@ -112,8 +109,9 @@ struct MealEditorView: View {
             if let meal {
                 mealId = meal.id
                 name = meal.name
-                yieldText = formatNumber(meal.yieldServings, digits: 2)
-                weightText = formatNumber(meal.totalWeightG, digits: 1)
+                // Plain digits: locale text like "1,200" would parse back as 1.2 (comma = decimal separator).
+                yieldText = NumberParsing.editText(meal.yieldServings)
+                weightText = NumberParsing.editText(meal.totalWeightG)
                 notes = meal.notes ?? ""
                 items = try app.store.mealItems(mealId: meal.id)
             } else {
@@ -143,8 +141,12 @@ struct MealEditorView: View {
                 allFoods = try app.store.records("food")
                 allPortions = try app.store.records("portion")
             }
-            let unit = refType == .meal ? Units.serving : "g"
-            let amount = refType == .meal ? 1.0 : 100.0
+            // Foods: first valid portion, else 100 g, else 1 cup (any-unit foods).
+            let initial = refType == .meal
+                ? (amount: 1.0, unit: Units.serving)
+                : draftCatalog.food(refId).map { defaultFoodAmountAndUnit($0, draftCatalog.portions(refId)) } ?? (amount: 100.0, unit: "g")
+            let unit = initial.unit
+            let amount = initial.amount
             items.append(MealItemData(id: app.store.newId(), mealId: mealId, refType: refType, refId: refId,
                                       amount: amount, unit: unit, position: items.count))
             error = nil

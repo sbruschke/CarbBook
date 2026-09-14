@@ -5,6 +5,7 @@ import SwiftUI
 struct FoodsView: View {
     @Environment(AppModel.self) private var app
     @State private var foods: [FoodData] = []
+    @State private var portionsByFood: [Id: [PortionData]] = [:]
     @State private var query = ""
     @State private var showNew = false
     @State private var showScanner = false
@@ -24,10 +25,11 @@ struct FoodsView: View {
                     } label: {
                         VStack(alignment: .leading) {
                             Text(food.name)
-                            Text([food.brand, food.source, food.carbsPer100g.map { "\(formatNumber($0))g carbs/100g" } ?? "no carb data"]
+                            let basis = FoodLabel.basisSummary(food, portionsByFood[food.id] ?? [])
+                            Text([food.brand, food.source, basis ?? "no carb data"]
                                 .compactMap { $0 }.joined(separator: " · "))
                                 .font(.caption)
-                                .foregroundStyle(food.carbsPer100g == nil ? Color.orange : Color.secondary)
+                                .foregroundStyle(basis == nil ? Color.orange : Color.secondary)
                         }
                     }
                     // USDA-sourced originals are never deleted (spec §3); editing one makes a custom copy instead.
@@ -68,5 +70,7 @@ struct FoodsView: View {
 
     private func load() {
         foods = (try? app.store.foods()) ?? []
+        let portions: [PortionData] = (try? app.store.records("portion")) ?? []
+        portionsByFood = Dictionary(grouping: portions, by: \.foodId)
     }
 }

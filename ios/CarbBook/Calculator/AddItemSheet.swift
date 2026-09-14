@@ -37,9 +37,9 @@ struct AddItemSheet: View {
                                 if let brand = hit.brand { Text(brand).font(.caption).foregroundStyle(.secondary) }
                             }
                             Spacer()
-                            Text(hit.carbsPer100g.map { "\(formatNumber($0))g/100g" } ?? (hit.kind == .meal ? "meal" : "no carb data"))
+                            Text(hit.kind == .meal ? "meal" : (hit.basisText ?? "no carb data"))
                                 .font(.caption)
-                                .foregroundStyle(hit.carbsPer100g == nil && hit.kind != .meal ? Color.orange : Color.secondary)
+                                .foregroundStyle(hit.basisText == nil && hit.kind != .meal ? Color.orange : Color.secondary)
                         }
                     }
                 }

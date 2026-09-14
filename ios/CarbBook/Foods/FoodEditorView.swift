@@ -2,8 +2,10 @@ import CarbBookCore
 import CarbBookKit
 import SwiftUI
 
-/// Create or edit a food and its portions. Editing a USDA food saves a custom copy
-/// (`derived_from` = the USDA copy's id) and leaves the original untouched (spec §3).
+/// Create or edit a food and its portions. Carbs are entered per 100 g or from a label in any unit
+/// (g, ml/l/tsp/tbsp/fl oz/cup, or a named piece/serving), with an optional weight. State and save
+/// rules live in CarbBookKit `FoodForm` (Linux-tested); this view only binds them. Editing a USDA
+/// food saves a custom copy (`derived_from` = the USDA copy's id) and leaves the original untouched.
 struct FoodEditorView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
@@ -12,83 +14,34 @@ struct FoodEditorView: View {
     let barcode: String?
     let onSaved: (FoodData) -> Void
 
-    private struct PortionDraft: Identifiable {
-        var id: String
-        var label: String
-        var kind: String
-        var quantity: String
-        var grams: String
-        var existing: Bool
-    }
-
-    private static let labelServingLabel = "label serving"
-
-    @State private var name = ""
-    @State private var brand = ""
-    @State private var carbs = ""
-    @State private var fiber = ""
-    @State private var density = ""
-    @State private var notes = ""
-    @State private var servingGrams = ""
-    @State private var carbsPerServing = ""
-    @State private var portions: [PortionDraft] = []
-    @State private var removedPortionIds: [String] = []
-    @State private var error: String?
+    @State private var form = FoodForm(food: nil, portions: [])
+    @State private var errors: [String] = []
     @State private var loaded = false
 
     var body: some View {
         Form {
             Section("Food") {
-                TextField("Name", text: $name)
-                TextField("Brand", text: $brand)
-                NumberField(label: "Carbs", text: $carbs, unit: "g/100g")
-                NumberField(label: "Fiber", text: $fiber, unit: "g/100g")
-                NumberField(label: "Density (optional)", text: $density, unit: "g/ml")
-                TextField("Notes", text: $notes, axis: .vertical)
-                if food?.source == "usda" {
+                TextField("Name", text: $form.name)
+                TextField("Brand", text: $form.brand)
+                if let summary = currentSummary {
+                    LabeledContent("Saved as", value: summary)
+                }
+                if form.isUsdaCopy {
                     Text("Saving creates your own copy; the USDA entry stays as it is.")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
             }
-            Section {
-                NumberField(label: "Serving size", text: $servingGrams, unit: "g")
-                NumberField(label: "Carbs per serving", text: $carbsPerServing, unit: "g")
-                Button("Use label values") { applyLabel() }
-            } header: {
-                Text("From a nutrition label")
-            } footer: {
-                Text("Sets carbs per 100 g and adds (or updates) a \"\(Self.labelServingLabel)\" portion.")
+            carbsSection
+            Section("More") {
+                NumberField(label: "Fiber", text: $form.fiber, unit: "g/100g")
+                NumberField(label: "Density (optional)", text: $form.density, unit: "g/ml")
+                TextField("Notes", text: $form.notes, axis: .vertical)
             }
-            Section("Portions") {
-                ForEach($portions) { $portion in
-                    VStack(alignment: .leading) {
-                        Picker("Kind", selection: $portion.kind) {
-                            Text("Count").tag("count")
-                            Text("Serving").tag("serving")
-                            Text("Volume").tag("volume")
-                        }
-                        .pickerStyle(.segmented)
-                        if portion.kind == "volume" {
-                            Picker("Unit", selection: $portion.label) {
-                                ForEach(Units.volumeOrder, id: \.self) { Text(unitLabel($0, portions: [])).tag($0) }
-                            }
-                        } else {
-                            TextField("Label (e.g. slice)", text: $portion.label)
-                        }
-                        NumberField(label: "Quantity", text: $portion.quantity)
-                        NumberField(label: "Weighs", text: $portion.grams, unit: "g")
-                    }
+            portionsSection
+            if !errors.isEmpty {
+                Section {
+                    ForEach(errors, id: \.self) { Text($0).foregroundStyle(.red) }
                 }
-                .onDelete { offsets in
-                    removedPortionIds += offsets.map { portions[$0] }.filter(\.existing).map(\.id)
-                    portions.remove(atOffsets: offsets)
-                }
-                Button("Add portion") {
-                    portions.append(PortionDraft(id: app.store.newId(), label: "", kind: "count", quantity: "1", grams: "", existing: false))
-                }
-            }
-            if let error {
-                Section { Text(error).foregroundStyle(.red) }
             }
         }
         .navigationTitle(food == nil ? "New food" : "Edit food")
@@ -98,117 +51,123 @@ struct FoodEditorView: View {
         .onAppear(perform: load)
     }
 
+    /// "48 g carbs per cup" for the stored food (edit only).
+    private var currentSummary: String? {
+        guard let food else { return nil }
+        return FoodLabel.basisSummary(food, (try? app.store.portions(foodId: food.id)) ?? [])
+    }
+
+    private var carbsSection: some View {
+        Section {
+            Picker("Carbs", selection: $form.carbsMode) {
+                Text("Per 100 g").tag(FoodForm.CarbsMode.per100g)
+                Text("From label").tag(FoodForm.CarbsMode.label)
+            }
+            .pickerStyle(.segmented)
+            switch form.carbsMode {
+            case .per100g:
+                NumberField(label: "Carbs", text: $form.carbsText, unit: "g/100g")
+                if form.carbsText.trimmingCharacters(in: .whitespaces).isEmpty {
+                    Text("Carbs missing: enter them from the label").font(.footnote).foregroundStyle(.orange)
+                }
+            case .label:
+                NumberField(label: "Amount", text: $form.labelAmount)
+                Picker("Unit", selection: $form.labelUnit) {
+                    ForEach(FoodLabel.units, id: \.self) { Text(FoodLabel.unitName($0)).tag($0) }
+                }
+                if form.labelUnit == FoodLabel.other {
+                    TextField("Portion name (e.g. bar)", text: $form.labelName)
+                }
+                NumberField(label: "Carbs", text: $form.labelCarbs, unit: "g")
+                if form.labelUnit != "g" {
+                    NumberField(label: "Weighs (optional)", text: $form.labelWeight, unit: "g")
+                }
+                Text(form.labelResultText).font(.footnote).foregroundStyle(.secondary)
+            }
+            if let keptG = form.keptG {
+                keptBasisRow("Also saved: \(NumberParsing.editText(keptG, maxFractionDigits: 2)) g carbs per 100 g",
+                             remove: "Remove carbs per 100 g") { form.removedBaseG = true }
+            }
+            if let keptMl = form.keptMl {
+                keptBasisRow("Also saved: \(NumberParsing.editText(keptMl, maxFractionDigits: 2)) g carbs per 100 ml",
+                             remove: "Remove carbs per 100 ml") { form.removedBaseMl = true }
+            }
+        } header: {
+            Text("Carbs")
+        } footer: {
+            Text("From label: amount [unit] contains N g carbs, e.g. 1 cup = 48 g, or 1 bar = 22 g.")
+        }
+    }
+
+    private func keptBasisRow(_ text: String, remove: String, action: @escaping () -> Void) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(text).font(.footnote)
+            Button(remove, role: .destructive, action: action).font(.footnote)
+        }
+    }
+
+    private var portionsSection: some View {
+        Section("Portions") {
+            ForEach($form.portions) { $portion in
+                VStack(alignment: .leading) {
+                    Picker("Kind", selection: $portion.kind) {
+                        Text("Count").tag("count")
+                        Text("Serving").tag("serving")
+                        Text("Volume").tag("volume")
+                    }
+                    .pickerStyle(.segmented)
+                    .onChange(of: portion.kind) { old, new in
+                        if new == "volume" && !isVolumeUnit(portion.label) { portion.label = "cup" }
+                        if old == "volume" && new != "volume" { portion.label = "" }
+                    }
+                    if portion.kind == "volume" {
+                        Picker("Unit", selection: $portion.label) {
+                            ForEach(Units.volumeOrder, id: \.self) { Text(unitLabel($0, portions: [])).tag($0) }
+                        }
+                    } else {
+                        TextField("Label (e.g. slice)", text: $portion.label)
+                    }
+                    NumberField(label: "Quantity", text: $portion.quantity)
+                    NumberField(label: portion.kind == "volume" ? "Weighs" : "Weighs (optional)", text: $portion.grams, unit: "g")
+                    if portion.kind != "volume" {
+                        NumberField(label: "Carbs (optional)", text: $portion.carbsG, unit: "g")
+                    }
+                }
+            }
+            .onDelete { form.portions.remove(atOffsets: $0) }
+            Button("Add portion") {
+                form.portions.append(FoodForm.Portion(id: app.store.newId(), label: "", kind: "count", quantity: "1", grams: "", carbsG: ""))
+            }
+        }
+    }
+
     private func load() {
         guard !loaded else { return }
         loaded = true
-        guard let food else { return }
-        name = food.name
-        brand = food.brand ?? ""
-        carbs = formatNumber(food.carbsPer100g, digits: 2)
-        fiber = formatNumber(food.fiberPer100g, digits: 2)
-        density = formatNumber(food.densityGPerMl, digits: 3)
-        notes = food.notes ?? ""
-        portions = ((try? app.store.portions(foodId: food.id)) ?? []).map {
-            PortionDraft(id: $0.id, label: $0.label, kind: $0.kind, quantity: formatNumber($0.quantity, digits: 3),
-                         grams: formatNumber($0.grams, digits: 2), existing: true)
-        }
-    }
-
-    private func applyLabel() {
-        guard let grams = parseNumber(servingGrams), let perServing = parseNumber(carbsPerServing),
-              let per100 = carbsPer100gFromLabel(servingGrams: grams, carbsPerServing: perServing) else {
-            error = "Serving size must be above 0 g and carbs can't exceed the serving weight."
-            return
-        }
-        carbs = formatNumber(per100, digits: 2)
-        // Re-entering label info updates the existing "label serving" portion rather than adding a
-        // duplicate one.
-        if let index = portions.firstIndex(where: { $0.label == Self.labelServingLabel && $0.kind == "serving" }) {
-            portions[index].grams = formatNumber(grams, digits: 2)
-            portions[index].quantity = "1"
-        } else {
-            portions.append(PortionDraft(id: app.store.newId(), label: Self.labelServingLabel, kind: "serving", quantity: "1",
-                                         grams: formatNumber(grams, digits: 2), existing: false))
-        }
-        error = nil
+        let portions = food.map { (try? app.store.portions(foodId: $0.id)) ?? [] } ?? []
+        form = FoodForm(food: food, portions: portions)
     }
 
     private func save() {
-        guard let carbsValue = parseNumber(carbs) else {
-            error = carbs.trimmingCharacters(in: .whitespaces).isEmpty
-                ? "Carbs per 100 g are required."
-                : "Carbs isn't a valid number."
-            return
-        }
-        let fiberText = fiber.trimmingCharacters(in: .whitespaces)
-        let fiberValue: Double?
-        if fiberText.isEmpty {
-            fiberValue = nil
-        } else if let parsed = parseNumber(fiber) {
-            fiberValue = parsed
-        } else {
-            error = "Fiber isn't a valid number."
-            return
-        }
-        if let fiberValue, fiberValue > carbsValue {
-            error = "Fiber can't be more than carbs."
-            return
-        }
-
-        let copyOfUsda = food?.source == "usda"
-        var saved = food ?? FoodData(id: app.store.newId(), name: "", source: "custom", carbsPer100g: nil)
-        if copyOfUsda {
-            saved.derivedFrom = food?.id
-            saved.id = app.store.newId()
-            saved.source = "custom"
-            saved.sourceRef = nil
-        }
-        saved.name = name.trimmingCharacters(in: .whitespaces)
-        saved.brand = brand.isEmpty ? nil : brand
-        saved.carbsPer100g = carbsValue
-        saved.fiberPer100g = fiberValue
-        let densityText = density.trimmingCharacters(in: .whitespaces)
-        if densityText.isEmpty {
-            saved.densityGPerMl = nil
-        } else if let parsed = parseNumber(density) {
-            saved.densityGPerMl = parsed
-        } else {
-            error = "Density isn't a valid number."
-            return
-        }
-        saved.notes = notes.isEmpty ? nil : notes
-        saved.deleted = nil
-        if let message = validateFood(saved) {
-            error = message
-            return
-        }
-        var changes: [SyncChange] = []
-        do {
-            changes.append(try SyncChange.encode("food", saved))
-            for draft in portions {
-                guard let quantity = parseNumber(draft.quantity), quantity > 0,
-                      let grams = parseNumber(draft.grams), grams > 0,
-                      !draft.label.trimmingCharacters(in: .whitespaces).isEmpty,
-                      draft.kind != "volume" || isVolumeUnit(draft.label) else {
-                    error = "Every portion needs a label (a volume unit for volume portions), a quantity above 0 and grams above 0."
-                    return
+        switch form.build(newId: { app.store.newId() }) {
+        case .failure(let failure):
+            errors = failure.messages
+        case .success(let output):
+            do {
+                var changes = [try SyncChange.encode("food", output.food)]
+                changes += try output.portions.map { try SyncChange.encode("portion", $0) }
+                if let barcode {
+                    changes.append(try SyncChange.encode("barcode", BarcodeData(id: app.store.newId(), code: barcode, foodId: output.food.id)))
                 }
-                let id = copyOfUsda ? app.store.newId() : draft.id
-                changes.append(try SyncChange.encode("portion", PortionData(
-                    id: id, foodId: saved.id, label: draft.label, kind: draft.kind, quantity: quantity, grams: grams)))
+                try app.save(changes)
+                for id in output.removedPortionIds { try app.delete("portion", id: id) }
+                if let barcode { try? app.store.removeQueuedBarcode(barcode) }
+                errors = []
+                onSaved(output.food)
+                dismiss()
+            } catch {
+                errors = ["Could not save: \(error)"]
             }
-            if let barcode {
-                changes.append(try SyncChange.encode("barcode", BarcodeData(id: app.store.newId(), code: barcode, foodId: saved.id)))
-            }
-            try app.save(changes)
-            if !copyOfUsda {
-                for id in removedPortionIds { try app.delete("portion", id: id) }
-            }
-            if let barcode { try? app.store.removeQueuedBarcode(barcode) }
-            onSaved(saved)
-            dismiss()
-        } catch {
-            self.error = "Could not save: \(error)"
         }
     }
 }
