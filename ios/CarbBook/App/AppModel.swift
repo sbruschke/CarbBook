@@ -46,7 +46,7 @@ final class AppModel {
         })
         usdaInstaller = UsdaInstaller(api: api, store: store, directory: support.appendingPathComponent("usda"))
         needsLogin = Keychain.loadToken() == nil
-        user = UserDefaults.standard.data(forKey: "user").flatMap { try? JSONDecoder().decode(ApiUser.self, from: $0) }
+        user = UserCache.load()
         usda = try? usdaInstaller.installedLibrary()
         if let version = usda?.version { usdaStatus = "USDA library \(version)" }
         relay.model = self
@@ -93,16 +93,19 @@ final class AppModel {
         let response = try await api.login(username: username, password: password, deviceName: UIDevice.current.name)
         try Keychain.saveToken(response.token)
         user = response.user
-        UserDefaults.standard.set(try JSONEncoder().encode(response.user), forKey: "user")
+        try UserCache.save(response.user)
         needsLogin = false
         await coordinator.signedIn()
         await updateUsda()
     }
 
-    /// Revokes this device's token when reachable. Local data and pending changes stay on the phone.
+    /// Revokes this device's token when reachable and forgets the cached user. Local data and
+    /// pending changes stay on the phone.
     func signOut() async {
         try? await api.logout()
         Keychain.deleteToken()
+        UserCache.clear()
+        user = nil
         await coordinator.stop()
         needsLogin = true
     }

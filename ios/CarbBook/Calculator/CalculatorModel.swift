@@ -3,6 +3,10 @@ import CarbBookKit
 import Foundation
 import Observation
 
+struct InvalidAmountError: LocalizedError {
+    var errorDescription: String? { "\(AmountInput.invalidMessage). Fix it before saving." }
+}
+
 @Observable
 @MainActor
 final class CalculatorModel {
@@ -10,18 +14,18 @@ final class CalculatorModel {
     var useNow = true
     var eatenAt = Date()
     var windowOverride: String?
-    var dexcom: BgInput = .none
-    var bgNote = "Checking Dexcom…"
+    /// The last Dexcom fetch. Re-validated against the clock on every recompute (`recomputeCalculator`),
+    /// so a reading that goes stale while the screen is open stops feeding the estimate.
+    private(set) var dexcomFetch: DexcomFetch = .notLoaded
+    /// `.dexcom` only while the loaded reading is usable now, otherwise `.none`.
+    private(set) var dexcom: BgInput = .none
+    private(set) var bgNote = "Checking Dexcom…"
     var manualBg = ""
-    var taken = ""
     var notes = ""
     var message: String?
     private(set) var result: CalculatorResult?
-    /// The last value `recompute` auto-filled into `taken`. Comparing the field against this (rather
-    /// than a one-shot "was it edited" flag) tells whether the user has since typed something of
-    /// their own: once `taken != lastAutoTaken`, it stays user-owned even as this keeps chasing the
-    /// current estimate, so a later edit is never silently overwritten by a new auto-fill.
-    private var lastAutoTaken = ""
+    /// "Taken": prefilled from the estimate until the user types in it (see `TakenField`).
+    private(set) var takenField = TakenField()
     private(set) var catalog = InMemoryCatalog()
     private(set) var settingsVersions: [DoseSettingsData] = []
     /// Ids of dose_settings versions with a push rejection still in effect. Always threaded through
@@ -29,27 +33,27 @@ final class CalculatorModel {
     /// estimate — the one shared source for this is `LocalStore.rejectedDoseSettingsIds()`.
     private(set) var rejectedSettingsIds: Set<Id> = []
 
-    /// Dexcom when a usable reading is loaded, otherwise the typed BG (or nil if left blank),
-    /// otherwise none. A typed value that isn't a whole number is never silently dropped: it is fed
-    /// through as a non-finite BG so core's `evaluateCalculator` refuses with `invalid_input` instead
-    /// of behaving as if no BG had been entered (`manualBgIsInvalid` drives the inline "Invalid BG").
+    /// Dexcom when a usable reading is loaded, otherwise the typed BG (or none if left blank). A typed
+    /// value that isn't a whole number is fed through as a non-finite BG so core refuses with
+    /// `invalid_input` (`manualBgIsInvalid` drives the inline "Invalid BG").
     var bg: BgInput {
         if case .dexcom = dexcom { return dexcom }
-        let trimmed = manualBg.trimmingCharacters(in: .whitespaces)
-        if trimmed.isEmpty { return .none }
-        if let value = parseWholeNumber(manualBg) { return .manual(mgdl: value) }
-        return .manual(mgdl: .infinity)
+        return manualBgInput(manualBg)
     }
 
-    var manualBgIsInvalid: Bool {
-        let trimmed = manualBg.trimmingCharacters(in: .whitespaces)
-        return !trimmed.isEmpty && parseWholeNumber(manualBg) == nil
-    }
+    var manualBgIsInvalid: Bool { NumberParsing.isMalformed(manualBg, using: NumberParsing.parseWholeNumber) }
 
     var activeSettings: DoseSettingsData? { result?.settings }
 
-    /// True once the user has typed something into "Taken" that the model didn't put there itself.
-    var takenEditedByUser: Bool { taken != lastAutoTaken }
+    var taken: String { takenField.text }
+
+    /// Called only from the text field's binding, i.e. when the user types.
+    func setTaken(_ text: String) { takenField.userTyped(text) }
+
+    var takenIsMalformed: Bool { NumberParsing.isMalformed(taken) }
+
+    /// True whenever the user has typed in "Taken", even if the text equals the estimate.
+    var takenEditedByUser: Bool { takenField.editedByUser }
 
     func reload(_ app: AppModel) {
         do {
@@ -62,44 +66,56 @@ final class CalculatorModel {
         recompute(app)
     }
 
+    /// Clock tick (every 30 s while visible, and on returning to the foreground): re-validates the
+    /// Dexcom reading and recomputes the estimate and recent-dose warning for the current time.
+    func tick(_ app: AppModel) {
+        recompute(app)
+    }
+
     func recompute(_ app: AppModel) {
-        if useNow { eatenAt = Date() }
         let lastDose = (try? app.store.lastDoseAtMs()) ?? nil
-        result = evaluateCalculator(
-            lines: lines, catalog: catalog, settingsVersions: settingsVersions, eatenAt: eatenAt,
-            windowOverride: windowOverride, bg: bg, lastDoseAtMs: lastDose, nowMs: nowMs(),
-            rejectedSettingsIds: rejectedSettingsIds)
-        // "Taken" is prefilled from an ok estimate only, and only while the user hasn't typed their
-        // own value; any other outcome (refusal, incomplete carbs, invalid BG) leaves it empty rather
-        // than showing a stale or misleading number.
-        let wasEdited = takenEditedByUser
-        let auto: String
-        if case .ok(let suggestion)? = result?.estimate {
-            auto = formatNumber(suggestion.units, digits: 2)
+        let now = nowMs()
+        let snapshot = recomputeCalculator(
+            CalculatorInputs(lines: lines, catalog: catalog, settingsVersions: settingsVersions, useNow: useNow,
+                             eatenAt: eatenAt, windowOverride: windowOverride, manualBg: manualBg,
+                             lastDoseAtMs: lastDose, rejectedSettingsIds: rejectedSettingsIds),
+            dexcom: dexcomFetch, nowMs: now)
+        if useNow { eatenAt = snapshot.eatenAt }
+        if dexcom != snapshot.dexcomBg { dexcom = snapshot.dexcomBg }
+        let note = bgNoteText(snapshot.bgStatus, nowMs: now)
+        if bgNote != note { bgNote = note }
+        result = snapshot.result
+        // "Taken" is prefilled from an ok estimate only, and only while the user hasn't typed in it;
+        // any other outcome (refusal, incomplete carbs, invalid BG) leaves it empty rather than
+        // showing a stale or misleading number.
+        if case .ok(let suggestion) = snapshot.result.estimate {
+            takenField.applyEstimate(formatNumber(suggestion.units, digits: 2))
         } else {
-            auto = ""
+            takenField.applyEstimate("")
         }
-        if !wasEdited { taken = auto }
-        lastAutoTaken = auto
+    }
+
+    private func bgNoteText(_ status: BgStatus, nowMs: Int64) -> String {
+        switch status {
+        case .checking:
+            return "Checking Dexcom…"
+        case .usable(let minutesAgo):
+            guard case .reading(let reading) = dexcomFetch else { return "" }
+            return "Dexcom \(formatNumber(reading.mgdl, digits: 0)) \(reading.arrow ?? "") · \(minutesAgo) min ago"
+        case .future:
+            return "Dexcom reading is timestamped in the future. Enter BG manually."
+        case .stale(let minutesOld):
+            return "Latest Dexcom reading is \(minutesOld) min old. Enter BG manually."
+        case .unavailable:
+            return "Dexcom unavailable (offline or no data). Enter BG manually."
+        }
     }
 
     func refreshBg(_ app: AppModel) async {
         do {
-            let reading = try await app.api.bg()
-            let now = nowMs()
-            if reading.fresh && isBgReadingUsable(readAtMs: reading.readAt, nowMs: now) {
-                dexcom = .dexcom(mgdl: reading.mgdl, trend: reading.trend)
-                bgNote = "Dexcom \(formatNumber(reading.mgdl, digits: 0)) \(reading.arrow ?? "") · \(max(0, now - reading.readAt) / 60_000) min ago"
-            } else if reading.readAt > now {
-                dexcom = .none
-                bgNote = "Dexcom reading is timestamped in the future. Enter BG manually."
-            } else {
-                dexcom = .none
-                bgNote = "Latest Dexcom reading is \((now - reading.readAt) / 60_000) min old. Enter BG manually."
-            }
+            dexcomFetch = .reading(try await app.api.bg())
         } catch {
-            dexcom = .none
-            bgNote = "Dexcom unavailable (offline or no data). Enter BG manually."
+            dexcomFetch = .failed
         }
         recompute(app)
     }
@@ -151,14 +167,24 @@ final class CalculatorModel {
     func logIt(_ app: AppModel) throws {
         recompute(app)
         guard let result, !lines.isEmpty else { return }
+        guard !AmountInput.hasInvalidAmount(lines) else {
+            message = "\(AmountInput.invalidMessage). Fix it before logging."
+            return
+        }
+        let takenUnits: Double?
+        do {
+            takenUnits = try TakenDoseInput.unitsForLog(taken)
+        } catch {
+            message = TakenDoseError.malformed.message
+            return
+        }
         let records = buildLogRecords(
-            lines: lines, result: result, bg: bg, eatenAt: eatenAt, takenUnits: parseNumber(taken),
+            lines: lines, result: result, bg: bg, eatenAt: eatenAt, takenUnits: takenUnits,
             notes: notes.isEmpty ? nil : notes, newId: app.store.newId)
         try app.save([SyncChange.encode("log_entry", records.entry)] + records.items.map { try SyncChange.encode("log_item", $0) })
         message = "Logged \(formatNumber(records.entry.totalCarbsG))g" + (records.entry.takenUnits.map { ", \(formatNumber($0, digits: 2))u taken" } ?? "")
         lines = []
-        taken = ""
-        lastAutoTaken = ""
+        takenField.reset()
         notes = ""
         manualBg = ""
         windowOverride = nil
@@ -167,6 +193,7 @@ final class CalculatorModel {
     }
 
     func saveMeal(name: String, yieldServings: Double, totalWeightG: Double?, _ app: AppModel) throws {
+        guard !AmountInput.hasInvalidAmount(lines) else { throw InvalidAmountError() }
         let records = buildMealRecords(name: name, yieldServings: yieldServings, totalWeightG: totalWeightG, lines: lines, newId: app.store.newId)
         try app.save([SyncChange.encode("meal", records.meal)] + records.items.map { try SyncChange.encode("meal_item", $0) })
         message = "Saved meal \(name)"

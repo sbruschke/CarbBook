@@ -42,6 +42,9 @@ struct LogEntryView: View {
                 LabeledContent("Carbs", value: "\(formatNumber(current.totalCarbsG))g")
                 LabeledContent("Suggested", value: current.suggestedUnits.map { "\(formatNumber($0, digits: 2))u" } ?? "—")
                 NumberField(label: "Taken", text: $taken, unit: "u")
+                if takenEdited && NumberParsing.isMalformed(taken) {
+                    Text(TakenDoseError.malformed.message).font(.caption).foregroundStyle(.red)
+                }
                 TextField("Notes", text: $notes, axis: .vertical)
             }
             if showsRecentDoseWarning {
@@ -112,6 +115,14 @@ struct LogEntryView: View {
             message = "Invalid BG. Enter a whole number of mg/dL, or clear the field."
             return
         }
+        // Unedited → stored value verbatim; edited but malformed → blocked, never wiping takenUnits.
+        let takenUnits: Double?
+        do {
+            takenUnits = try TakenDoseInput.unitsForEdit(text: taken, loadedText: loadedTakenText, stored: current.takenUnits)
+        } catch {
+            message = TakenDoseError.malformed.message
+            return
+        }
         var updated = current
         updated.eatenAt = ms(eatenAt)
         if bgEdited {
@@ -120,9 +131,7 @@ struct LogEntryView: View {
             updated.bgSource = bgValue == nil ? "none" : "manual"
             updated.bgTrend = nil
         }
-        if takenEdited {
-            updated.takenUnits = parseNumber(taken)
-        }
+        updated.takenUnits = takenUnits
         updated.notes = notes.isEmpty ? nil : notes
         do {
             try app.save([SyncChange.encode("log_entry", updated)] + items.map { try SyncChange.encode("log_item", $0) })
