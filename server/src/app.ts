@@ -2,11 +2,13 @@ import cookie from '@fastify/cookie';
 import rateLimit from '@fastify/rate-limit';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { makeAuthenticate } from './auth/plugin';
+import { createDexcomApiClient } from './bg/client';
 import type { Config } from './config';
 import type { AppContext, AppDeps } from './context';
 import type { Db } from './db';
 import { errorHandler } from './errors';
 import { loginRoutes, sessionRoutes } from './routes/auth';
+import { bgRoutes } from './routes/bg';
 
 export interface BuildAppOptions {
   db: Db;
@@ -15,8 +17,16 @@ export interface BuildAppOptions {
   logger?: boolean;
 }
 
-export function defaultDeps(_config: Config): AppDeps {
-  return { now: () => Date.now() };
+export function defaultDeps(config: Config): AppDeps {
+  return {
+    now: () => Date.now(),
+    bg: createDexcomApiClient({
+      baseUrl: config.dexcomApiUrl,
+      token: config.dexcomApiToken,
+      timeoutMs: config.httpTimeoutMs,
+      fetch: globalThis.fetch,
+    }),
+  };
 }
 
 export async function buildApp(options: BuildAppOptions): Promise<FastifyInstance> {
@@ -41,6 +51,7 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
   await app.register(async (api) => {
     api.addHook('onRequest', makeAuthenticate(ctx));
     await api.register(sessionRoutes, ctx);
+    await api.register(bgRoutes, ctx);
   });
 
   app.setNotFoundHandler((request, reply) => {

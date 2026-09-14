@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../src/app';
 import { createUser, type Role, type User } from '../src/auth/users';
+import type { BgClient } from '../src/bg/client';
 import { type Config, loadConfig } from '../src/config';
 import type { AppDeps } from '../src/context';
 import type { Db } from '../src/db';
@@ -17,6 +18,10 @@ export class TestClock {
   }
 }
 
+export const unusedBg: BgClient = {
+  latest: () => Promise.reject(new Error('bg client not stubbed in this test')),
+};
+
 export interface TestApp {
   app: FastifyInstance;
   db: Db;
@@ -30,7 +35,7 @@ export async function makeTestApp(
   const config = loadConfig({ DATABASE_PATH: ':memory:', COOKIE_SECURE: 'false', ...options.env });
   const db = initDatabase(':memory:');
   const clock = new TestClock();
-  const app = await buildApp({ db, config, deps: { now: clock.now, ...options.deps } });
+  const app = await buildApp({ db, config, deps: { now: clock.now, bg: unusedBg, ...options.deps } });
   return { app, db, clock, config };
 }
 
