@@ -15,6 +15,8 @@ struct RootView: View {
                 .tabItem { Label("Meals", systemImage: "fork.knife") }
             LogView()
                 .tabItem { Label("Log", systemImage: "list.bullet.rectangle") }
+            SettingsView()
+                .tabItem { Label("Settings", systemImage: "gearshape") }
         }
         .fullScreenCover(isPresented: Binding(get: { app.needsLogin }, set: { _ in })) {
             LoginView()

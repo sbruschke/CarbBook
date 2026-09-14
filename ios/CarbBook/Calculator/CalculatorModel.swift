@@ -17,6 +17,11 @@ final class CalculatorModel {
     var notes = ""
     var message: String?
     private(set) var result: CalculatorResult?
+    /// The last value `recompute` auto-filled into `taken`. Comparing the field against this (rather
+    /// than a one-shot "was it edited" flag) tells whether the user has since typed something of
+    /// their own: once `taken != lastAutoTaken`, it stays user-owned even as this keeps chasing the
+    /// current estimate, so a later edit is never silently overwritten by a new auto-fill.
+    private var lastAutoTaken = ""
     private(set) var catalog = InMemoryCatalog()
     private(set) var settingsVersions: [DoseSettingsData] = []
     /// Ids of dose_settings versions with a push rejection still in effect. Always threaded through
@@ -43,6 +48,9 @@ final class CalculatorModel {
 
     var activeSettings: DoseSettingsData? { result?.settings }
 
+    /// True once the user has typed something into "Taken" that the model didn't put there itself.
+    var takenEditedByUser: Bool { taken != lastAutoTaken }
+
     func reload(_ app: AppModel) {
         do {
             catalog = try app.store.catalog()
@@ -61,6 +69,18 @@ final class CalculatorModel {
             lines: lines, catalog: catalog, settingsVersions: settingsVersions, eatenAt: eatenAt,
             windowOverride: windowOverride, bg: bg, lastDoseAtMs: lastDose, nowMs: nowMs(),
             rejectedSettingsIds: rejectedSettingsIds)
+        // "Taken" is prefilled from an ok estimate only, and only while the user hasn't typed their
+        // own value; any other outcome (refusal, incomplete carbs, invalid BG) leaves it empty rather
+        // than showing a stale or misleading number.
+        let wasEdited = takenEditedByUser
+        let auto: String
+        if case .ok(let suggestion)? = result?.estimate {
+            auto = formatNumber(suggestion.units, digits: 2)
+        } else {
+            auto = ""
+        }
+        if !wasEdited { taken = auto }
+        lastAutoTaken = auto
     }
 
     func refreshBg(_ app: AppModel) async {
@@ -138,6 +158,7 @@ final class CalculatorModel {
         message = "Logged \(formatNumber(records.entry.totalCarbsG))g" + (records.entry.takenUnits.map { ", \(formatNumber($0, digits: 2))u taken" } ?? "")
         lines = []
         taken = ""
+        lastAutoTaken = ""
         notes = ""
         manualBg = ""
         windowOverride = nil

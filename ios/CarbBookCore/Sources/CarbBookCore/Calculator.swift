@@ -77,9 +77,7 @@ public func evaluateCalculator(
     let lineCarbs = lines.map { itemCarbs(catalog, $0.refType, $0.refId, $0.amount, $0.unit) }
     let total = sumCarbs(lineCarbs)
     let eatenMs = Int64((eatenAt.timeIntervalSince1970 * 1000).rounded())
-    let usableSettings = rejectedSettingsIds.isEmpty
-        ? settingsVersions
-        : settingsVersions.filter { !rejectedSettingsIds.contains($0.id) }
+    let usableSettings = eligibleDoseSettingsVersions(settingsVersions, rejectedIds: rejectedSettingsIds)
     let settings = activeSettings(usableSettings, eatenMs)
     var result = CalculatorResult(lineCarbs: lineCarbs, total: total, settings: settings, estimate: nil,
                                   breakdown: nil, refusal: nil,

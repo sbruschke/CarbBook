@@ -128,12 +128,14 @@ struct CalculatorView: View {
                 Label("A dose was logged in the last 4 hours. Insulin on board is not subtracted.", systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(.red)
             }
-            NumberField(label: "Taken", text: $model.taken, unit: "u")
+            NumberField(label: "Taken (units)", text: $model.taken, unit: "u")
             TextField("Notes", text: $model.notes)
         } header: {
             Text("Dose estimate")
         } footer: {
-            Text("An estimate from your dose settings. Check it before you dose.")
+            Text((!model.takenEditedByUser && !model.taken.isEmpty)
+                 ? "An estimate from your dose settings. Check it before you dose. Prefilled from the estimate — change it if you took a different amount."
+                 : "An estimate from your dose settings. Check it before you dose.")
         }
     }
 

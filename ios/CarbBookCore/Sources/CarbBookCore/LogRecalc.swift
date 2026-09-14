@@ -18,9 +18,7 @@ public func recalculateLogEntry(
     rejectedSettingsIds: Set<Id> = [],
     calendar: Calendar = .current
 ) -> (entry: LogEntryData, items: [LogItemData], complete: Bool) {
-    let usableSettings = rejectedSettingsIds.isEmpty
-        ? settingsVersions
-        : settingsVersions.filter { !rejectedSettingsIds.contains($0.id) }
+    let usableSettings = eligibleDoseSettingsVersions(settingsVersions, rejectedIds: rejectedSettingsIds)
 
     var newItems: [LogItemData] = []
     var itemsComplete = true
