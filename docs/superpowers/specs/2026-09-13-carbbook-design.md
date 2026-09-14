@@ -108,7 +108,7 @@ older versions for record keeping.
 - Volume: ml, l, tsp, tbsp, fl oz, cup — available when the food has `density_g_per_ml`
   or any `volume` portion (density derived from it).
 - Count/serving: the food's own `count`/`serving` portions.
-- Meals: `serving` always; `g` when `total_weight_g` is set.
+- Meals: `serving` always; mass units (g, kg, oz, lb) when `total_weight_g` is set.
 - Unit picker shows only units valid for the item.
 
 ### 4.2 Carbs
