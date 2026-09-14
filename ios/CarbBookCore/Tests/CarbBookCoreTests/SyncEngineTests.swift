@@ -6,6 +6,9 @@ actor MemorySyncStore: SyncStore {
     let deviceId: String
     var rows: [String: SyncChange] = [:]
     var pending: [String] = []
+    /// Last server-acknowledged copy of each row that has ever been synced (accepted, or pulled).
+    /// Absence means the row has never been synced — a rejection of it deletes the row.
+    var synced: [String: SyncChange] = [:]
     var rejections: [PushResult] = []
     var cursor: Int64 = 0
     var lastSynced: Int64?
@@ -24,18 +27,28 @@ actor MemorySyncStore: SyncStore {
 
     func name(_ key: String) -> String? { rows[key]?.record["name"]?.stringValue }
     func isDeleted(_ key: String) -> Bool { rows[key]?.record["deleted"] == .number(1) }
+    func exists(_ key: String) -> Bool { rows[key] != nil }
 
     func pendingChanges(limit: Int) -> [SyncChange] { pending.prefix(limit).compactMap { rows[$0] } }
 
+    /// `pushed` and `results` are matched by index, per the protocol contract — never by
+    /// `result.id`, which may be null.
     func recordPushResults(_ pushed: [SyncChange], _ results: [PushResult]) {
-        let byKey = Dictionary(uniqueKeysWithValues: pushed.map { ($0.key, $0) })
-        for result in results {
-            guard let sent = byKey[result.key] else { continue }
+        for (sent, result) in zip(pushed, results) {
+            let key = sent.key
+            let noNewerLocalEdit = rows[key]?.version == sent.version
             if result.status == "rejected" {
+                guard noNewerLocalEdit else { continue } // newer local edit: leave queued, untouched
+                if let snapshot = synced[key] {
+                    rows[key] = snapshot
+                } else {
+                    rows.removeValue(forKey: key) // never synced: delete
+                }
+                pending.removeAll { $0 == key }
                 rejections.append(result)
-                pending.removeAll { $0 == result.key }
-            } else if rows[result.key]?.version == sent.version {
-                pending.removeAll { $0 == result.key }
+            } else if noNewerLocalEdit {
+                pending.removeAll { $0 == key }
+                if result.status == "accepted" { synced[key] = sent }
             }
         }
     }
@@ -49,7 +62,9 @@ actor MemorySyncStore: SyncStore {
             if shouldApplyPulled(incoming: incoming, local: rows[change.key]?.version, localPending: isPending) {
                 var record = change.record
                 record.removeValue(forKey: "server_seq")
-                rows[change.key] = SyncChange(table: change.table, record: record)
+                let applied = SyncChange(table: change.table, record: record)
+                rows[change.key] = applied
+                synced[change.key] = applied
                 pending.removeAll { $0 == change.key }
             }
         }
@@ -69,7 +84,7 @@ actor FakeServer: SyncTransport {
         if let error = failNextWith { failNextWith = nil; throw error }
         var results: [PushResult] = []
         for change in changes {
-            let id = change.id ?? ""
+            let id = change.id
             guard SyncTables.all.contains(change.table) else {
                 results.append(PushResult(table: change.table, id: id, status: "rejected", reason: "unknown_table", message: "unknown table"))
                 continue
@@ -181,6 +196,62 @@ final class SyncEngineTests: XCTestCase {
         XCTAssertEqual(pullReport.pulled, 1_203)
         let cursor = await laptop.cursor
         XCTAssertEqual(cursor, 1_203)
+    }
+
+    /// Item 1/2: a rejection uses the same updated_at version check as accepted results, and
+    /// restores the last server-acknowledged snapshot rather than leaving the row diverged.
+    func testRejectedEditOfSyncedRowRestoresServerCopy() async throws {
+        let phone = MemorySyncStore(deviceId: "phone")
+        await phone.write("food", ["id": .string("f1"), "name": .string("Rice")], at: 1_000)
+        await phone.recordPushResults(await phone.pendingChanges(limit: 10),
+                                       [PushResult(table: "food", id: "f1", status: "accepted", serverSeq: 1)])
+        let nameAfterSync = await phone.name("food/f1")
+        XCTAssertEqual(nameAfterSync, "Rice")
+
+        await phone.write("food", ["id": .string("f1"), "name": .string("Brown rice")], at: 2_000)
+        let pushed = await phone.pendingChanges(limit: 10)
+        await phone.recordPushResults(pushed, [PushResult(table: "food", id: "f1", status: "rejected", reason: "invalid", message: "bad")])
+
+        let name = await phone.name("food/f1")
+        let pending = await phone.pending
+        let rejections = await phone.rejections
+        XCTAssertEqual(name, "Rice") // restored to the last server-acknowledged copy
+        XCTAssertEqual(pending, [])
+        XCTAssertEqual(rejections.map(\.reason), ["invalid"])
+    }
+
+    /// Item 2: a row that was never synced is deleted on rejection, not left diverged forever.
+    func testRejectedNeverSyncedRowIsDeleted() async throws {
+        let phone = MemorySyncStore(deviceId: "phone")
+        await phone.write("food", ["id": .string("f1"), "name": .string("Rice")], at: 1_000)
+        let pushed = await phone.pendingChanges(limit: 10)
+        await phone.recordPushResults(pushed, [PushResult(table: "food", id: "f1", status: "rejected", reason: "invalid", message: "bad")])
+
+        let exists = await phone.exists("food/f1")
+        let pending = await phone.pending
+        XCTAssertFalse(exists)
+        XCTAssertEqual(pending, [])
+    }
+
+    /// Item 2: if the row was edited again while the rejected push was in flight, the rejection
+    /// must not clobber that newer edit — it stays queued for the next sync.
+    func testRejectionWhileNewerLocalEditExistsKeepsNewerEditQueued() async throws {
+        let phone = MemorySyncStore(deviceId: "phone")
+        await phone.write("food", ["id": .string("f1"), "name": .string("Rice")], at: 1_000)
+        await phone.recordPushResults(await phone.pendingChanges(limit: 10),
+                                       [PushResult(table: "food", id: "f1", status: "accepted", serverSeq: 1)])
+
+        await phone.write("food", ["id": .string("f1"), "name": .string("Brown rice")], at: 2_000)
+        let pushed = await phone.pendingChanges(limit: 10) // captures the 2_000 edit as "in flight"
+        await phone.write("food", ["id": .string("f1"), "name": .string("Jasmine rice")], at: 3_000)
+        await phone.recordPushResults(pushed, [PushResult(table: "food", id: "f1", status: "rejected", reason: "invalid", message: "bad")])
+
+        let name = await phone.name("food/f1")
+        let pending = await phone.pending
+        let rejections = await phone.rejections
+        XCTAssertEqual(name, "Jasmine rice") // newer local edit is untouched
+        XCTAssertEqual(pending, ["food/f1"]) // still queued to retry
+        XCTAssertEqual(rejections, [])
     }
 
     func testFailedPushKeepsPendingAndCursor() async throws {

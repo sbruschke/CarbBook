@@ -1,11 +1,28 @@
 import Foundation
 
 /// Local persistence the sync engine drives. The iOS app implements it with GRDB; tests use an actor.
+///
+/// `pushed` and `results` are matched by index (as `pushOutbox` in the web client does), not by
+/// id or key: the server sends `id: null` in a `PushResult` for a record it couldn't identify, so
+/// key-based matching is unsafe.
+///
+/// Contract for a queued (pending) record: the store keeps the last server-acknowledged snapshot
+/// of that row (or records that it has never been synced). This is what makes rejection handling
+/// safe — see `recordPushResults` below.
 public protocol SyncStore: Sendable {
     /// Unpushed local changes (full records), oldest first, at most `limit`.
     func pendingChanges(limit: Int) async throws -> [SyncChange]
-    /// accepted/ignored: clear the pending mark if the row still has the pushed version.
-    /// rejected: keep the row, save the rejection for Settings → Sync, clear the pending mark.
+    /// - accepted: clear the pending mark if the row still has the pushed version (no newer local
+    ///   edit landed while the push was in flight), and record the accepted content as the new
+    ///   last-server-acknowledged snapshot.
+    /// - ignored: clear the pending mark under the same version check; the snapshot is left alone
+    ///   (the server has something else — a pull will bring the true current state).
+    /// - rejected: under the same version check (no newer local edit since this record was queued),
+    ///   the local row must not stay diverged from the server — restore the last-acknowledged
+    ///   snapshot, or delete the row if it was never synced, clear the pending mark, and record the
+    ///   rejection (table, id, reason) for Settings → Sync display. If a newer local edit exists
+    ///   (the version check fails), do nothing: the row, its pending mark, and no rejection record
+    ///   are left as-is so the newer edit is retried on the next sync.
     func recordPushResults(_ pushed: [SyncChange], _ results: [PushResult]) async throws
     func pullCursor() async throws -> Int64
     /// Applies pulled records using `shouldApplyPulled` and stores `nextSince`, atomically.

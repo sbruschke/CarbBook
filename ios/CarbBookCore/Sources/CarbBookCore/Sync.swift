@@ -20,10 +20,13 @@ public func isNewer(_ incoming: RecordVersion, than stored: RecordVersion?) -> B
     return JS.greater(incoming.updatedBy, stored.updatedBy)
 }
 
-/// A pulled record overwrites the local row unless the local row has an unpushed change that
-/// beats it under LWW (that change is pushed on the next sync and wins on the server too).
+/// A pulled record overwrites the local row unless the local row beats it under LWW. This is
+/// checked whether or not the local row has an unpushed change (`localPending`): a stale/older
+/// pull page must never clobber a newer local row, pending or not — a pending change that beats
+/// the incoming row is pushed on the next sync and wins on the server too, and a non-pending row
+/// that is (unexpectedly) newer than the incoming row must not be regressed by an out-of-order page.
 public func shouldApplyPulled(incoming: RecordVersion, local: RecordVersion?, localPending: Bool) -> Bool {
-    guard let local, localPending else { return true }
+    guard let local else { return true }
     return !isNewer(local, than: incoming)
 }
 
@@ -57,20 +60,22 @@ public struct PushRequest: Codable, Equatable, Sendable {
 
 public struct PushResult: Codable, Equatable, Sendable {
     public var table: String
-    public var id: String
+    /// The server sends `id: null` for records it couldn't even identify (e.g. `unknown_table`
+    /// with a non-string/missing id) — results are matched back to sent records by index, not id.
+    public var id: String?
     /// "accepted" | "ignored" | "rejected"
     public var status: String
     public var serverSeq: Int64?
-    /// "unknown_table" | "invalid" | "forbidden" | "cycle" when rejected
+    /// "unknown_table" | "invalid" | "forbidden" | "cycle" | "append_only" when rejected
     public var reason: String?
     public var message: String?
 
-    public init(table: String, id: String, status: String, serverSeq: Int64? = nil, reason: String? = nil, message: String? = nil) {
+    public init(table: String, id: String?, status: String, serverSeq: Int64? = nil, reason: String? = nil, message: String? = nil) {
         self.table = table; self.id = id; self.status = status; self.serverSeq = serverSeq
         self.reason = reason; self.message = message
     }
 
-    public var key: String { "\(table)/\(id)" }
+    public var key: String { "\(table)/\(id ?? "")" }
 
     enum CodingKeys: String, CodingKey {
         case table, id, status, reason, message

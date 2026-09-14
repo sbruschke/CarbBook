@@ -22,6 +22,15 @@ final class DoseSettingsDraftTests: XCTestCase {
         XCTAssertEqual(validateDoseSettings(s), "rounding.round_down_below_bg must be null or >= 0")
     }
 
+    /// Item 7: effective_from is validated first, with the server's exact message, before
+    /// windows/correction/rounding (server field order in tables.ts).
+    func testEffectiveFromValidatedFirstWithServerMessage() {
+        var s = seedSettings
+        s.effectiveFrom = -1
+        s.windows = [] // would also fail windows-empty, but effective_from must be reported first
+        XCTAssertEqual(validateDoseSettings(s), "effective_from must be >= 0")
+    }
+
     func testNewVersionSortsWindowsAndNeverReusesId() {
         var draft = seedSettings
         draft.windows.reverse()

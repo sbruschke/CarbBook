@@ -3,6 +3,8 @@ import Foundation
 /// The server's dose_settings push checks (server-data plan, sync/tables.ts), so the Settings
 /// editor refuses to save a version the server would reject. Messages match the server's.
 public func validateDoseSettings(_ s: DoseSettingsData) -> String? {
+    // Server field order (tables.ts dose_settings spec): effective_from, windows, correction, rounding.
+    if s.effectiveFrom < 0 { return "effective_from must be >= 0" }
     if s.windows.isEmpty || s.windows.count > 24 { return "windows must be an array of 1-24 windows" }
     var starts = Set<Int>()
     for window in s.windows {
@@ -25,7 +27,6 @@ public func validateDoseSettings(_ s: DoseSettingsData) -> String? {
     if let below = r.roundDownBelowBg, !below.isFinite || below < 0 {
         return "rounding.round_down_below_bg must be null or >= 0"
     }
-    if s.effectiveFrom < 0 { return "effective_from must be a non-negative integer (ms)" }
     return nil
 }
 
