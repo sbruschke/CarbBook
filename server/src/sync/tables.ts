@@ -1,0 +1,185 @@
+import { isVolumeUnit, parseHHMM, VOLUME_UNITS } from '@carbbook/core';
+
+export const SYNC_TABLES = [
+  'food',
+  'portion',
+  'barcode',
+  'meal',
+  'meal_item',
+  'log_entry',
+  'log_item',
+  'dose_settings',
+] as const;
+
+export type SyncTable = (typeof SYNC_TABLES)[number];
+
+export type FieldSpec =
+  | { type: 'text'; nullable?: boolean; max?: number }
+  | { type: 'number'; nullable?: boolean; min?: number; positive?: boolean; integer?: boolean }
+  | { type: 'enum'; values: readonly string[] }
+  | { type: 'json'; check: (value: unknown) => string | null };
+
+export interface TableSpec {
+  name: SyncTable;
+  /** Data columns in schema order, excluding id and sync metadata. */
+  fields: Record<string, FieldSpec>;
+  /** Only the owner may write (spec §7: viewers cannot change dose settings). */
+  ownerOnly?: boolean;
+  /** Cross-field rule run after every field is valid. */
+  check?: (record: Record<string, unknown>) => string | null;
+}
+
+export const META_COLUMNS = ['updated_at', 'updated_by', 'deleted', 'server_seq'] as const;
+
+const isObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+const isFiniteNumber = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
+
+export function checkWindows(value: unknown): string | null {
+  if (!Array.isArray(value) || value.length === 0 || value.length > 24) {
+    return 'windows must be an array of 1-24 windows';
+  }
+  const starts = new Set<number>();
+  for (const window of value) {
+    if (!isObject(window) || typeof window.name !== 'string' || window.name.trim() === '') {
+      return 'every window needs a name';
+    }
+    let minutes: number;
+    try {
+      minutes = parseHHMM(String(window.start));
+    } catch {
+      return `window "${window.name}" has invalid start "${String(window.start)}"`;
+    }
+    if (starts.has(minutes)) return `duplicate window start ${String(window.start)}`;
+    starts.add(minutes);
+    if (!isFiniteNumber(window.ratio_g_per_unit) || window.ratio_g_per_unit <= 0) {
+      return `window "${window.name}" needs ratio_g_per_unit > 0`;
+    }
+  }
+  return null;
+}
+
+export function checkCorrection(value: unknown): string | null {
+  if (!isObject(value)) return 'correction must be an object';
+  if (!isFiniteNumber(value.threshold) || value.threshold < 0) return 'correction.threshold must be >= 0';
+  if (!isFiniteNumber(value.step) || value.step <= 0) return 'correction.step must be > 0';
+  if (!isFiniteNumber(value.units_per_step) || value.units_per_step < 0) return 'correction.units_per_step must be >= 0';
+  if (!['started', 'full', 'proportional'].includes(value.mode as string)) {
+    return 'correction.mode must be started, full or proportional';
+  }
+  return null;
+}
+
+export function checkRounding(value: unknown): string | null {
+  if (!isObject(value)) return 'rounding must be an object';
+  if (!isFiniteNumber(value.increment) || value.increment <= 0) return 'rounding.increment must be > 0';
+  const below = value.round_down_below_bg;
+  if (below !== null && (!isFiniteNumber(below) || below < 0)) {
+    return 'rounding.round_down_below_bg must be null or >= 0';
+  }
+  return null;
+}
+
+const text = (max = 200): FieldSpec => ({ type: 'text', max });
+const optionalText = (max = 200): FieldSpec => ({ type: 'text', nullable: true, max });
+const REF_TYPES = ['food', 'meal'] as const;
+
+export const TABLE_SPECS: Record<SyncTable, TableSpec> = {
+  food: {
+    name: 'food',
+    fields: {
+      name: text(),
+      brand: optionalText(),
+      source: { type: 'enum', values: ['usda', 'off', 'custom'] },
+      source_ref: optionalText(64),
+      derived_from: optionalText(64),
+      carbs_per_100g: { type: 'number', nullable: true, min: 0 },
+      fiber_per_100g: { type: 'number', nullable: true, min: 0 },
+      density_g_per_ml: { type: 'number', nullable: true, positive: true },
+      notes: optionalText(4000),
+    },
+  },
+  portion: {
+    name: 'portion',
+    fields: {
+      food_id: text(64),
+      label: text(),
+      kind: { type: 'enum', values: ['volume', 'count', 'serving'] },
+      quantity: { type: 'number', positive: true },
+      grams: { type: 'number', positive: true },
+    },
+    check: (r) =>
+      r.kind === 'volume' && !isVolumeUnit(String(r.label))
+        ? `volume portion label must be one of ${Object.keys(VOLUME_UNITS).join(', ')}`
+        : null,
+  },
+  barcode: {
+    name: 'barcode',
+    fields: { code: text(32), food_id: text(64) },
+  },
+  meal: {
+    name: 'meal',
+    fields: {
+      name: text(),
+      yield_servings: { type: 'number', positive: true },
+      total_weight_g: { type: 'number', nullable: true, positive: true },
+      notes: optionalText(4000),
+    },
+  },
+  meal_item: {
+    name: 'meal_item',
+    fields: {
+      meal_id: text(64),
+      ref_type: { type: 'enum', values: REF_TYPES },
+      ref_id: text(64),
+      amount: { type: 'number', min: 0 },
+      unit: text(64),
+      position: { type: 'number', integer: true, min: 0 },
+    },
+  },
+  log_entry: {
+    name: 'log_entry',
+    fields: {
+      eaten_at: { type: 'number', integer: true, min: 0 },
+      window_name: optionalText(),
+      bg_mgdl: { type: 'number', nullable: true, min: 0 },
+      bg_source: { type: 'enum', values: ['dexcom', 'manual', 'none'] },
+      bg_trend: optionalText(64),
+      total_carbs_g: { type: 'number', min: 0 },
+      suggested_units: { type: 'number', nullable: true, min: 0 },
+      taken_units: { type: 'number', nullable: true, min: 0 },
+      settings_version_id: optionalText(64),
+      notes: optionalText(4000),
+    },
+  },
+  log_item: {
+    name: 'log_item',
+    fields: {
+      log_entry_id: text(64),
+      ref_type: { type: 'enum', values: REF_TYPES },
+      ref_id: text(64),
+      display_name: text(),
+      amount: { type: 'number', min: 0 },
+      unit: text(64),
+      carbs_g: { type: 'number', min: 0 },
+    },
+  },
+  dose_settings: {
+    name: 'dose_settings',
+    ownerOnly: true,
+    fields: {
+      effective_from: { type: 'number', integer: true, min: 0 },
+      windows: { type: 'json', check: checkWindows },
+      correction: { type: 'json', check: checkCorrection },
+      rounding: { type: 'json', check: checkRounding },
+    },
+  },
+};
+
+export function isSyncTable(name: unknown): name is SyncTable {
+  return typeof name === 'string' && (SYNC_TABLES as readonly string[]).includes(name);
+}
+
+export function columnsOf(spec: TableSpec): string[] {
+  return ['id', ...Object.keys(spec.fields), ...META_COLUMNS];
+}
