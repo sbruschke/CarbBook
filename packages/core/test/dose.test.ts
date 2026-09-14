@@ -105,6 +105,12 @@ describe('activeSettings', () => {
     expect(activeSettings([a, b], Date.UTC(2026, 8, 14))?.id).toBe('b');
     expect(activeSettings([b, a], Date.UTC(2026, 8, 14))?.id).toBe('b');
   });
+  it('skips soft-deleted rows, even when they would otherwise be the newest match', () => {
+    const live = { id: 'live', effective_from: Date.UTC(2026, 6, 1), deleted: 0 as const };
+    const deleted = { id: 'deleted', effective_from: Date.UTC(2026, 7, 1), deleted: 1 as const };
+    expect(activeSettings([live, deleted], Date.UTC(2026, 8, 14))?.id).toBe('live');
+    expect(activeSettings([deleted], Date.UTC(2026, 8, 14))).toBeNull();
+  });
 });
 
 describe('recentDoseWarning', () => {

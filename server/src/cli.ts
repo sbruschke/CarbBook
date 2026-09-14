@@ -9,7 +9,7 @@ export interface CliIo {
   env: Env;
   stdout: (line: string) => void;
   stderr: (line: string) => void;
-  readPassword: () => Promise<string>;
+  readPassword: (prompt: string) => Promise<string>;
   /** Tests pass an in-memory database; otherwise DATABASE_PATH is opened. */
   db?: Db;
   now?: () => number;
@@ -31,8 +31,29 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
       io.stderr(USAGE);
       return 2;
     }
-    const role = (flag(rest, '--role') ?? 'viewer') as Role;
-    const password = io.env.CARBBOOK_PASSWORD ?? (await io.readPassword());
+    const VALID_ROLES: Role[] = ['owner', 'viewer'];
+    const roleFlagIndex = rest.indexOf('--role');
+    let role: Role = 'viewer';
+    if (roleFlagIndex >= 0) {
+      const roleValue = flag(rest, '--role');
+      if (!roleValue || !(VALID_ROLES as string[]).includes(roleValue)) {
+        io.stderr(USAGE);
+        return 2;
+      }
+      role = roleValue as Role;
+    }
+    let password: string;
+    if (io.env.CARBBOOK_PASSWORD) {
+      password = io.env.CARBBOOK_PASSWORD;
+    } else {
+      const typed = await io.readPassword('Password: ');
+      const confirmed = await io.readPassword('Confirm password: ');
+      if (typed !== confirmed) {
+        io.stderr('Passwords do not match');
+        return 1;
+      }
+      password = typed;
+    }
     const db = io.db ?? initDatabase(loadConfig(io.env).databasePath);
     try {
       const user = await createUser(db, { username, password, role }, (io.now ?? Date.now)());
@@ -52,10 +73,40 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
   return 2;
 }
 
-async function promptPassword(): Promise<string> {
-  const rl = createInterface({ input: process.stdin, output: process.stderr });
+/**
+ * Replaces `stream.write` with a no-op and returns a function that restores the original.
+ * Used to hide keystroke echo while a password is typed; tested directly against a fake stream.
+ */
+export function muteWritable(stream: NodeJS.WritableStream): () => void {
+  const original = stream.write.bind(stream);
+  (stream as { write: NodeJS.WritableStream['write'] }).write = (() => true) as NodeJS.WritableStream['write'];
+  return () => {
+    (stream as { write: NodeJS.WritableStream['write'] }).write = original;
+  };
+}
+
+/**
+ * Prompts on `stdout` and reads a line from `stdin`. When both ends are a TTY, the typed
+ * characters are not echoed: the prompt text is written first, then the output stream is muted
+ * for the duration of the read (readline still re-renders the line on every keystroke, it just
+ * writes nowhere), and a newline is printed after Enter once unmuted.
+ */
+export async function promptPassword(
+  prompt: string,
+  streams: { stdin: NodeJS.ReadableStream; stdout: NodeJS.WritableStream } = { stdin: process.stdin, stdout: process.stderr },
+): Promise<string> {
+  const isTTY = Boolean((streams.stdin as NodeJS.ReadStream).isTTY && (streams.stdout as NodeJS.WriteStream).isTTY);
+  const rl = createInterface({ input: streams.stdin, output: streams.stdout, terminal: isTTY });
   try {
-    return await rl.question('Password: ');
+    if (!isTTY) return await rl.question(prompt);
+    streams.stdout.write(prompt);
+    const unmute = muteWritable(streams.stdout);
+    try {
+      return await rl.question('');
+    } finally {
+      unmute();
+      streams.stdout.write('\n');
+    }
   } finally {
     rl.close();
   }
@@ -66,6 +117,6 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     env: process.env,
     stdout: (line) => console.log(line),
     stderr: (line) => console.error(line),
-    readPassword: promptPassword,
+    readPassword: (prompt) => promptPassword(prompt),
   }).then((code) => process.exit(code));
 }

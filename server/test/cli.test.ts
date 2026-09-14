@@ -1,6 +1,7 @@
+import { Readable } from 'node:stream';
 import { describe, expect, it } from 'vitest';
 import { findUserByUsername } from '../src/auth/users';
-import { runCli, type CliIo } from '../src/cli';
+import { muteWritable, promptPassword, runCli, type CliIo } from '../src/cli';
 import { initDatabase } from '../src/init';
 
 function io(overrides: Partial<CliIo> = {}) {
@@ -46,5 +47,79 @@ describe('carbbook user add', () => {
     expect(t.err[0]).toMatch(/at least 8/);
     expect(await runCli(['bogus'], t.io)).toBe(2);
     expect(t.err[1]).toMatch(/Usage/);
+  });
+
+  it('rejects --role with a missing or invalid value instead of defaulting to viewer', async () => {
+    const t = io();
+    expect(await runCli(['user', 'add', 'brett', '--role'], t.io)).toBe(2);
+    expect(t.err[0]).toMatch(/Usage/);
+    expect(findUserByUsername(t.io.db!, 'brett')).toBeUndefined();
+
+    const t2 = io();
+    expect(await runCli(['user', 'add', 'brett', '--role', 'admin'], t2.io)).toBe(2);
+    expect(t2.err[0]).toMatch(/Usage/);
+    expect(findUserByUsername(t2.io.db!, 'brett')).toBeUndefined();
+  });
+
+  it('prefers CARBBOOK_PASSWORD and never prompts twice for confirmation (non-TTY/env path)', async () => {
+    let calls = 0;
+    const t = io({
+      env: { CARBBOOK_PASSWORD: 'from env var' },
+      readPassword: async () => {
+        calls++;
+        return 'unused';
+      },
+    });
+    expect(await runCli(['user', 'add', 'kim'], t.io)).toBe(0);
+    expect(calls).toBe(0);
+  });
+
+  it('rejects a mismatched password confirmation without creating the user', async () => {
+    let call = 0;
+    const t = io({
+      readPassword: async () => {
+        call++;
+        return call === 1 ? 'first password' : 'different password';
+      },
+    });
+    expect(await runCli(['user', 'add', 'brett'], t.io)).toBe(1);
+    expect(t.err[0]).toMatch(/do not match/i);
+    expect(findUserByUsername(t.io.db!, 'brett')).toBeUndefined();
+  });
+
+  it('prompts for the password and its confirmation, and they must match to succeed', async () => {
+    const prompts: string[] = [];
+    const t = io({
+      readPassword: async (prompt: string) => {
+        prompts.push(prompt);
+        return 'matching password';
+      },
+    });
+    expect(await runCli(['user', 'add', 'brett'], t.io)).toBe(0);
+    expect(prompts).toEqual(['Password: ', 'Confirm password: ']);
+  });
+});
+
+describe('muteWritable', () => {
+  it('suppresses writes until unmuted, using a fake writable stream', () => {
+    const chunks: unknown[] = [];
+    const fake = { write: (chunk: unknown) => { chunks.push(chunk); return true; } } as unknown as NodeJS.WritableStream;
+    const unmute = muteWritable(fake);
+    fake.write('secret-keystrokes');
+    expect(chunks).toEqual([]);
+    unmute();
+    fake.write('visible');
+    expect(chunks).toEqual(['visible']);
+  });
+});
+
+describe('promptPassword', () => {
+  it('reads via readline without muting when stdin is not a TTY', async () => {
+    const input = Readable.from(['s3cret\n']);
+    const chunks: string[] = [];
+    const output = { write: (chunk: unknown) => { chunks.push(String(chunk)); return true; } } as unknown as NodeJS.WritableStream;
+    const value = await promptPassword('Password: ', { stdin: input, stdout: output });
+    expect(value).toBe('s3cret');
+    expect(chunks.join('')).toContain('Password: ');
   });
 });

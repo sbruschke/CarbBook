@@ -18,13 +18,13 @@ function loadSettings(db: ReturnType<typeof openDb>): DoseSettingsData[] {
 }
 
 describe('seedDoseSettings', () => {
-  it('inserts the current version plus two historical versions, idempotently', () => {
+  it('inserts the current version, idempotently', () => {
     const db = openDb(':memory:');
     migrate(db);
-    expect(seedDoseSettings(db)).toBe(3);
+    expect(seedDoseSettings(db)).toBe(1);
     expect(seedDoseSettings(db)).toBe(0);
     const seqs = db.prepare('SELECT server_seq FROM dose_settings ORDER BY effective_from').pluck().all();
-    expect(seqs).toEqual([1, 2, 3]);
+    expect(seqs).toEqual([1]);
   });
 
   it('stores the owner history exactly as specified', () => {
@@ -33,8 +33,6 @@ describe('seedDoseSettings', () => {
       loadSettings(db).map((s) => [new Date(s.effective_from).toISOString(), s.correction]),
     );
     expect(byDate).toEqual({
-      '2025-07-19T05:00:00.000Z': { threshold: 120, step: 10, units_per_step: 8, mode: 'started' },
-      '2025-08-20T05:00:00.000Z': { threshold: 120, step: 10, units_per_step: 6, mode: 'started' },
       '2026-08-12T05:00:00.000Z': { threshold: 200, step: 50, units_per_step: 1, mode: 'started' },
     });
   });
@@ -42,7 +40,7 @@ describe('seedDoseSettings', () => {
   it('makes the 2026-08-12 row drive dosing today (spec §10 vectors)', () => {
     const db = initDatabase(':memory:');
     const active = activeSettings(loadSettings(db), Date.parse('2026-09-14T12:00:00Z'));
-    expect(active?.id).toBe(SEED_DOSE_SETTINGS[2]!.id);
+    expect(active?.id).toBe(SEED_DOSE_SETTINGS[0]!.id);
     const dose = (bg: number) =>
       estimateDose({ settings: active!, minutes: 12 * 60, carbs: { carbs_g: 0, complete: true }, bg });
     expect(dose(200)).toMatchObject({ ok: true, units: 0 });

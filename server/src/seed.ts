@@ -19,24 +19,13 @@ const SEED_ROUNDING: RoundingRule = { increment: 1, round_down_below_bg: 130 };
 const at = (isoDate: string) => Date.parse(`${isoDate}T00:00:00-05:00`);
 
 /**
- * Oldest first. The 2025 rows come from the owner's sliding-scale file: "BG fix" is stored as
- * units_per_step and "iteration" as step — see the plan notes; only the 2026-08-12 row is active.
+ * Oldest first. The two 2025 rows from the owner's sliding-scale file ("BG fix" stored as
+ * units_per_step, "iteration" as step) are deliberately NOT seeded here: their meaning is
+ * unconfirmed, and as transcribed they would suggest dangerous doses if a client ever picked
+ * them as the active version. Pending clarification from the owner — only the confirmed
+ * 2026-08-12 row is seeded.
  */
 export const SEED_DOSE_SETTINGS: DoseSettingsData[] = [
-  {
-    id: '0198210d-a880-7000-8000-000000000001',
-    effective_from: at('2025-07-19'),
-    windows: SEED_WINDOWS,
-    correction: { threshold: 120, step: 10, units_per_step: 8, mode: 'started' },
-    rounding: SEED_ROUNDING,
-  },
-  {
-    id: '0198c5d9-2880-7000-8000-000000000002',
-    effective_from: at('2025-08-20'),
-    windows: SEED_WINDOWS,
-    correction: { threshold: 120, step: 10, units_per_step: 6, mode: 'started' },
-    rounding: SEED_ROUNDING,
-  },
   {
     id: '019ff457-7480-7000-8000-000000000003',
     effective_from: at('2026-08-12'),
