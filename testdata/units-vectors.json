@@ -12,7 +12,11 @@
     { "id": "syrup-ml", "name": "Syrup, volume basis + density", "carbs_per_100g": null, "carbs_per_100ml": 116, "density_g_per_ml": 1.42 },
     { "id": "cookies", "name": "Cookies", "carbs_per_100g": 60 },
     { "id": "bad-ml", "name": "Invalid carbs per 100 ml", "carbs_per_100g": null, "carbs_per_100ml": 151 },
-    { "id": "bad-portion-food", "name": "Invalid portion carbs", "carbs_per_100g": null }
+    { "id": "bad-portion-food", "name": "Invalid portion carbs", "carbs_per_100g": null },
+    { "id": "vol-fallback", "name": "Invalid carbs per 100 ml, valid per 100 g + density", "carbs_per_100g": 50, "carbs_per_100ml": 151, "density_g_per_ml": 2 },
+    { "id": "mass-fallback", "name": "Invalid carbs per 100 g, valid per 100 ml + density", "carbs_per_100g": 101, "carbs_per_100ml": 50, "density_g_per_ml": 1 },
+    { "id": "portion-fallback", "name": "Invalid portion carbs, valid portion grams", "carbs_per_100g": 40 },
+    { "id": "vol-portion-carbs", "name": "carbs_g on a volume portion is ignored", "carbs_per_100g": 40 }
   ],
   "portions": [
     { "id": "rice-cup", "food_id": "rice", "label": "cup", "kind": "volume", "quantity": 1, "grams": 158 },
@@ -20,7 +24,9 @@
     { "id": "bread-slice", "food_id": "bread", "label": "slice", "kind": "count", "quantity": 1, "grams": 25 },
     { "id": "bar", "food_id": "granola-bar", "label": "bar", "kind": "count", "quantity": 1, "grams": null, "carbs_g": 22 },
     { "id": "cookie", "food_id": "cookies", "label": "cookie", "kind": "count", "quantity": 1, "grams": 30, "carbs_g": 20 },
-    { "id": "bad-carbs", "food_id": "bad-portion-food", "label": "piece", "kind": "count", "quantity": 1, "grams": null, "carbs_g": -1 }
+    { "id": "bad-carbs", "food_id": "bad-portion-food", "label": "piece", "kind": "count", "quantity": 1, "grams": null, "carbs_g": -1 },
+    { "id": "big", "food_id": "portion-fallback", "label": "big", "kind": "count", "quantity": 2, "grams": 50, "carbs_g": 501 },
+    { "id": "vp-cup", "food_id": "vol-portion-carbs", "label": "cup", "kind": "volume", "quantity": 1, "grams": 100, "carbs_g": 99 }
   ],
   "meals": [
     { "id": "rice-corn", "name": "Rice and cream style corn", "yield_servings": 2, "total_weight_g": 414 },
@@ -72,7 +78,13 @@
     { "name": "portion carbs win over portion grams", "ref_type": "food", "ref_id": "cookies", "amount": 1, "unit": "p:cookie", "expect": { "carbs_g": 20, "complete": true } },
     { "name": "grams of a food with portion carbs", "ref_type": "food", "ref_id": "cookies", "amount": 30, "unit": "g", "expect": { "carbs_g": 18, "complete": true } },
     { "name": "invalid carbs per 100 ml", "ref_type": "food", "ref_id": "bad-ml", "amount": 1, "unit": "cup", "expect": { "carbs_g": 0, "complete": false } },
-    { "name": "invalid portion carbs without grams", "ref_type": "food", "ref_id": "bad-portion-food", "amount": 1, "unit": "p:bad-carbs", "expect": { "carbs_g": 0, "complete": false } }
+    { "name": "invalid portion carbs without grams", "ref_type": "food", "ref_id": "bad-portion-food", "amount": 1, "unit": "p:bad-carbs", "expect": { "carbs_g": 0, "complete": false } },
+    { "name": "invalid carbs per 100 ml does not fall back to per 100 g", "ref_type": "food", "ref_id": "vol-fallback", "amount": 10, "unit": "ml", "expect": { "carbs_g": 0, "complete": false } },
+    { "name": "invalid carbs per 100 ml leaves grams on per 100 g", "ref_type": "food", "ref_id": "vol-fallback", "amount": 10, "unit": "g", "expect": { "carbs_g": 5, "complete": true } },
+    { "name": "invalid carbs per 100 g does not fall back to per 100 ml", "ref_type": "food", "ref_id": "mass-fallback", "amount": 100, "unit": "g", "expect": { "carbs_g": 0, "complete": false } },
+    { "name": "invalid carbs per 100 g leaves volume on per 100 ml", "ref_type": "food", "ref_id": "mass-fallback", "amount": 100, "unit": "ml", "expect": { "carbs_g": 50, "complete": true } },
+    { "name": "invalid portion carbs do not fall back to portion grams", "ref_type": "food", "ref_id": "portion-fallback", "amount": 1, "unit": "p:big", "expect": { "carbs_g": 0, "complete": false } },
+    { "name": "volume portion carbs_g is ignored", "ref_type": "food", "ref_id": "vol-portion-carbs", "amount": 1, "unit": "p:vp-cup", "expect": { "carbs_g": 40, "complete": true } }
   ],
   "unit_list_cases": [
     { "ref_type": "food", "ref_id": "rice", "expect": ["g", "kg", "oz", "lb", "ml", "l", "tsp", "tbsp", "floz", "cup"] },
@@ -85,8 +97,12 @@
     { "ref_type": "food", "ref_id": "syrup", "expect": ["g", "kg", "oz", "lb", "ml", "l", "tsp", "tbsp", "floz", "cup"] },
     { "ref_type": "food", "ref_id": "syrup-ml", "expect": ["g", "kg", "oz", "lb", "ml", "l", "tsp", "tbsp", "floz", "cup"] },
     { "ref_type": "food", "ref_id": "cookies", "expect": ["g", "kg", "oz", "lb", "p:cookie"] },
-    { "ref_type": "food", "ref_id": "bad-ml", "expect": ["g", "kg", "oz", "lb"] },
-    { "ref_type": "food", "ref_id": "bad-portion-food", "expect": ["g", "kg", "oz", "lb"] }
+    { "ref_type": "food", "ref_id": "bad-ml", "expect": [] },
+    { "ref_type": "food", "ref_id": "bad-portion-food", "expect": ["g", "kg", "oz", "lb"] },
+    { "ref_type": "food", "ref_id": "vol-fallback", "expect": ["g", "kg", "oz", "lb"] },
+    { "ref_type": "food", "ref_id": "mass-fallback", "expect": ["ml", "l", "tsp", "tbsp", "floz", "cup"] },
+    { "ref_type": "food", "ref_id": "portion-fallback", "expect": ["g", "kg", "oz", "lb"] },
+    { "ref_type": "food", "ref_id": "vol-portion-carbs", "expect": ["g", "kg", "oz", "lb", "ml", "l", "tsp", "tbsp", "floz", "cup"] }
   ],
   "cycle_cases": [
     { "meal_id": "plate", "candidate": "plate", "expect": true },

@@ -4,8 +4,8 @@ import { useServices } from '../app/services';
 import { type BarcodeResolution, resolveBarcode } from '../barcode/resolve';
 import { isLive } from '../db/db';
 import { FoodEditor } from '../foods/FoodEditor';
-import { type FoodPrefill, prefillFromDraft } from '../foods/label';
-import { formatCarbs, formatTime } from '../ui/format';
+import { foodBasisSummary, type FoodPrefill, prefillFromDraft } from '../foods/label';
+import { formatTime } from '../ui/format';
 import { ScannerDialog } from '../ui/ScannerDialog';
 
 type Mode = { kind: 'list' } | { kind: 'edit'; id: string } | { kind: 'new'; prefill?: FoodPrefill };
@@ -15,6 +15,7 @@ const SOURCE = { custom: 'My food', off: 'Open Food Facts', usda: 'USDA' } as co
 export function Foods() {
   const { db, api, now } = useServices();
   const foods = useLiveQuery(() => db.food.filter(isLive).toArray(), [db]);
+  const portions = useLiveQuery(() => db.portion.filter(isLive).toArray(), [db]);
   const pending = useLiveQuery(() => db.pending_barcode.toArray(), [db]);
   const [mode, setMode] = useState<Mode>({ kind: 'list' });
   const [filter, setFilter] = useState('');
@@ -115,7 +116,11 @@ export function Foods() {
             <button type="button" className="list-item" onClick={() => setMode({ kind: 'edit', id: food.id })}>
               <span>{food.name}</span>
               <span className="muted">
-                {[food.brand, SOURCE[food.source ?? 'custom'], food.carbs_per_100g === null ? 'no carb data' : `${formatCarbs(food.carbs_per_100g)} / 100 g`]
+                {[
+                  food.brand,
+                  SOURCE[food.source ?? 'custom'],
+                  foodBasisSummary(food, (portions ?? []).filter((p) => p.food_id === food.id)) ?? 'no carb data',
+                ]
                   .filter(Boolean)
                   .join(' · ')}
               </span>

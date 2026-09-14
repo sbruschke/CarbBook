@@ -7,9 +7,11 @@ export interface FoodDraft {
     source: 'off';
     source_ref: string;
     carbs_per_100g: number | null;
+    /** Volume carb basis (any-unit foods addendum). OFF never supplies this; always null here. */
+    carbs_per_100ml: null;
     fiber_per_100g: number | null;
   };
-  portions: { label: string; kind: 'serving'; quantity: number; grams: number }[];
+  portions: { label: string; kind: 'serving'; quantity: number; grams: number; carbs_g: null }[];
   barcode: string;
   /** OFF's free-text serving size, shown so the user can sanity-check the portion. */
   serving_size: string | null;
@@ -42,9 +44,13 @@ export function normalizeOffProduct(product: OffProduct, scannedCode: string): F
       source: 'off',
       source_ref: code,
       carbs_per_100g: carbsPer100g,
+      carbs_per_100ml: null,
       fiber_per_100g: fiberPer100g,
     },
-    portions: grams !== null && grams > 0 && unit === 'g' ? [{ label: 'label serving', kind: 'serving', quantity: 1, grams }] : [],
+    portions:
+      grams !== null && grams > 0 && unit === 'g'
+        ? [{ label: 'label serving', kind: 'serving', quantity: 1, grams, carbs_g: null }]
+        : [],
     barcode: code,
     serving_size: product.serving_size?.trim() || null,
   };

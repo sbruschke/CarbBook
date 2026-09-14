@@ -1,4 +1,4 @@
-import { isVolumeUnit, parseHHMM, VOLUME_UNITS } from '@carbbook/core';
+import { isVolumeUnit, MAX_CARBS_PER_100ML, MAX_PORTION_CARBS_G, parseHHMM, VOLUME_UNITS } from '@carbbook/core';
 
 export const SYNC_TABLES = [
   'food',
@@ -120,6 +120,7 @@ export const TABLE_SPECS: Record<SyncTable, TableSpec> = {
       source_ref: optionalText(64),
       derived_from: optionalText(64),
       carbs_per_100g: { type: 'number', nullable: true, min: 0, max: 100 },
+      carbs_per_100ml: { type: 'number', nullable: true, min: 0, max: MAX_CARBS_PER_100ML },
       fiber_per_100g: { type: 'number', nullable: true, min: 0, max: 100 },
       density_g_per_ml: { type: 'number', nullable: true, positive: true },
       notes: optionalText(4000),
@@ -132,12 +133,19 @@ export const TABLE_SPECS: Record<SyncTable, TableSpec> = {
       label: text(),
       kind: { type: 'enum', values: ['volume', 'count', 'serving'] },
       quantity: { type: 'number', positive: true },
-      grams: { type: 'number', positive: true },
+      grams: { type: 'number', nullable: true, positive: true },
+      carbs_g: { type: 'number', nullable: true, min: 0, max: MAX_PORTION_CARBS_G },
     },
-    check: (r) =>
-      r.kind === 'volume' && !isVolumeUnit(String(r.label))
-        ? `volume portion label must be one of ${Object.keys(VOLUME_UNITS).join(', ')}`
-        : null,
+    check: (r) => {
+      if (r.kind === 'volume' && !isVolumeUnit(String(r.label))) {
+        return `volume portion label must be one of ${Object.keys(VOLUME_UNITS).join(', ')}`;
+      }
+      if (r.grams == null && r.carbs_g == null) return 'portion must have grams or carbs_g';
+      if (r.kind === 'volume' && r.grams == null) return 'volume portions require grams';
+      // Volume portions only carry a weight (density); their carbs come from the food's bases.
+      if (r.kind === 'volume' && r.carbs_g != null) return 'volume portions cannot have carbs_g';
+      return null;
+    },
   },
   barcode: {
     name: 'barcode',
