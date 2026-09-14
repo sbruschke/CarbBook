@@ -78,19 +78,33 @@ export function densityOf(food: FoodData, portions: PortionData[]): number | nul
   return best ? best.density : null;
 }
 
+/**
+ * Units a food can be entered in. Fail closed (any-unit foods addendum): a carb basis that is
+ * present but invalid hides its unit family instead of falling back to another basis; only an
+ * absent (null/undefined) basis falls through. Mirrors foodItemCarbs in carbs.ts.
+ */
 export function foodUnits(food: FoodData, portions: PortionData[]): string[] {
   const density = densityOf(food, portions);
+  const gPresent = food.carbs_per_100g != null;
+  const mlPresent = food.carbs_per_100ml != null;
   const validG = isValidCarbsPer100g(food.carbs_per_100g);
   const validMl = isValidCarbsPer100ml(food.carbs_per_100ml);
-  const listedPortions = portions.filter(
-    (p) => p.kind !== 'volume' && (isValidPortionCarbs(p.carbs_g) || isValidPortionGrams(p.grams)),
-  );
-  const hasMassPath = validG || (validMl && density !== null);
-  const hasAnyBasis = validG || validMl || portions.some((p) => p.kind !== 'volume' && isValidPortionCarbs(p.carbs_g));
+  // carbs_g on a volume portion is ignored everywhere.
+  const pieceCarbs = portions.filter((p) => p.kind !== 'volume' && p.carbs_g != null);
+  const hasValidPieceBasis = pieceCarbs.some((p) => isValidPortionCarbs(p.carbs_g));
+  // Mass: per-100 g if present; else per-100 ml + density if present; else (no basis) a placeholder
+  // list, unless a valid portion carb basis makes the food portion-only.
+  const massListed = gPresent ? validG : mlPresent ? validMl && density !== null : !hasValidPieceBasis;
+  // Volume: per-100 ml if present; else convertible via density, unless per-100 g is present but invalid.
+  const volumeListed = mlPresent ? validMl : density !== null && (!gPresent || validG);
   const units: string[] = [];
-  if (hasMassPath || !hasAnyBasis) units.push(...Object.keys(MASS_UNITS));
-  if (validMl || density !== null) units.push(...Object.keys(VOLUME_UNITS));
-  for (const p of listedPortions) units.push(PORTION_PREFIX + p.id);
+  if (massListed) units.push(...Object.keys(MASS_UNITS));
+  if (volumeListed) units.push(...Object.keys(VOLUME_UNITS));
+  for (const p of portions) {
+    if (p.kind === 'volume') continue;
+    const listed = p.carbs_g != null ? isValidPortionCarbs(p.carbs_g) : isValidPortionGrams(p.grams) && massListed;
+    if (listed) units.push(PORTION_PREFIX + p.id);
+  }
   return units;
 }
 

@@ -85,9 +85,32 @@ describe('any-unit foods: units', () => {
     const bad: PortionData = { id: 'bad', food_id: 'bread', label: 'x', kind: 'count', quantity: 1, grams: null, carbs_g: Number.NaN };
     expect(foodUnits(bread, [slice, bad])).toEqual(['g', 'kg', 'oz', 'lb', 'p:bread-slice']);
   });
-  it('lists mass units when per-100 g is invalid but per-100 ml and density give a mass path', () => {
+  it('omits mass units (and gram portions) when per-100 g is present but invalid, even with per-100 ml + density', () => {
     const food: FoodData = { id: 'x', name: 'X', carbs_per_100g: 101, carbs_per_100ml: 50, density_g_per_ml: 1 };
-    expect(foodUnits(food, [])).toEqual(['g', 'kg', 'oz', 'lb', 'ml', 'l', 'tsp', 'tbsp', 'floz', 'cup']);
+    const piece: PortionData = { id: 'piece', food_id: 'x', label: 'piece', kind: 'count', quantity: 1, grams: 30 };
+    expect(foodUnits(food, [piece])).toEqual(['ml', 'l', 'tsp', 'tbsp', 'floz', 'cup']);
+  });
+  it('omits volume units when per-100 ml is present but invalid, even with per-100 g + density', () => {
+    const food: FoodData = { id: 'x', name: 'X', carbs_per_100g: 50, carbs_per_100ml: 151, density_g_per_ml: 2 };
+    expect(foodUnits(food, [])).toEqual(['g', 'kg', 'oz', 'lb']);
+    expect(foodUnits({ ...food, carbs_per_100ml: Number.NaN }, [])).toEqual(['g', 'kg', 'oz', 'lb']);
+  });
+  it('omits volume units when the only volume path is density + an invalid per-100 g', () => {
+    const food: FoodData = { id: 'x', name: 'X', carbs_per_100g: -1, density_g_per_ml: 1 };
+    expect(foodUnits(food, [])).toEqual([]);
+  });
+  it('lists nothing when the only basis is an invalid per-100 ml', () => {
+    const food: FoodData = { id: 'x', name: 'X', carbs_per_100g: null, carbs_per_100ml: 151 };
+    expect(foodUnits(food, [])).toEqual([]);
+  });
+  it('omits a portion whose carbs_g is present but invalid, even when its grams are valid', () => {
+    const bad: PortionData = { id: 'bad', food_id: 'bread', label: 'x', kind: 'count', quantity: 1, grams: 25, carbs_g: 501 };
+    expect(foodUnits(bread, [slice, bad])).toEqual(['g', 'kg', 'oz', 'lb', 'p:bread-slice']);
+  });
+  it('does not count carbs_g on a volume portion as a carb basis', () => {
+    const food: FoodData = { id: 'x', name: 'X', carbs_per_100g: null };
+    const cup: PortionData = { id: 'cup', food_id: 'x', label: 'cup', kind: 'volume', quantity: 1, grams: 158, carbs_g: 48 };
+    expect(foodUnits(food, [cup])).toEqual(['g', 'kg', 'oz', 'lb', 'ml', 'l', 'tsp', 'tbsp', 'floz', 'cup']);
   });
 });
 
