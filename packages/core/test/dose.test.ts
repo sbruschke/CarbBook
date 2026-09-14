@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { DoseSettingsData } from '../src/types';
 import {
   activeSettings,
+  DOSE_LIMITS,
   correctionUnits,
   estimateDose,
   formatBreakdown,
@@ -179,5 +180,69 @@ describe('estimateDose validation', () => {
     const badRoundDownBg = { ...settings, rounding: { ...settings.rounding, round_down_below_bg: NaN } };
     expect(estimateDose({ settings: badRoundDownBg, minutes: 600, carbs: { carbs_g: 10, complete: true }, bg: null }))
       .toEqual({ ok: false, reason: 'invalid_settings', window: null });
+  });
+});
+
+describe('estimateDose sanity limits', () => {
+  const at = (s: DoseSettingsData, carbs: number, bg: number | null, minutes = 600) =>
+    estimateDose({ settings: s, minutes, carbs: { carbs_g: carbs, complete: true }, bg });
+  const refused = (reason: string, window: unknown = null) => ({ ok: false, reason, window });
+
+  it('exports the limits', () => {
+    expect(DOSE_LIMITS).toEqual({
+      maxCarbsG: 2000,
+      maxBg: 1000,
+      maxRatioGPerUnit: 1000,
+      maxCorrectionThreshold: 1000,
+      maxCorrectionStep: 1000,
+      maxUnitsPerStep: 50,
+      maxRoundingIncrement: 10,
+      maxRoundDownBelowBg: 1000,
+      maxRawUnits: 50,
+    });
+  });
+
+  it('refuses carbs over 2000 g and BG over 1000 as invalid_input', () => {
+    expect(at(settings, 2000, null)).not.toMatchObject({ reason: 'invalid_input' }); // 200u → exceeds_limit
+    expect(at(settings, 2001, null)).toEqual(refused('invalid_input'));
+    expect(at(settings, 10, 1000).ok).toBe(true);
+    expect(at(settings, 10, 1001)).toEqual(refused('invalid_input'));
+  });
+
+  it('refuses out-of-range settings as invalid_settings', () => {
+    const cases: DoseSettingsData[] = [
+      { ...settings, windows: [...settings.windows.slice(1), { name: 'Huge', start: '05:00', ratio_g_per_unit: 1001 }] },
+      { ...settings, correction: { ...settings.correction, threshold: 1001 } },
+      { ...settings, correction: { ...settings.correction, step: 1001 } },
+      { ...settings, correction: { ...settings.correction, units_per_step: 51 } },
+      { ...settings, rounding: { ...settings.rounding, increment: 11 } },
+      { ...settings, rounding: { ...settings.rounding, round_down_below_bg: 1001 } },
+    ];
+    for (const s of cases) expect(at(s, 10, null)).toEqual(refused('invalid_settings'));
+    const atLimits: DoseSettingsData = {
+      ...settings,
+      windows: [{ name: 'All', start: '00:00', ratio_g_per_unit: 1000 }],
+      correction: { threshold: 1000, step: 1000, units_per_step: 50, mode: 'started' },
+      rounding: { increment: 10, round_down_below_bg: 1000 },
+    };
+    expect(at(atLimits, 10, null).ok).toBe(true);
+  });
+
+  it('refuses a raw dose over 50 units with exceeds_limit and the window', () => {
+    const dinner = settings.windows[4];
+    expect(at(settings, 400, null, 1080)).toMatchObject({ ok: true, raw_units: 50, units: 50 });
+    expect(at(settings, 401, null, 1080)).toEqual(refused('exceeds_limit', dinner));
+    // meal 45 + correction 6 (BG 500 → 6 started steps) = 51
+    expect(at(settings, 360, 500, 1080)).toEqual(refused('exceeds_limit', dinner));
+  });
+
+  it('checks limits in order: input, settings, window, ratio, carbs, then exceeds_limit', () => {
+    const badSettings = { ...settings, rounding: { ...settings.rounding, increment: 11 } };
+    expect(at(badSettings, 2001, null)).toEqual(refused('invalid_input'));
+    expect(at({ ...badSettings, windows: [] }, 5000 / 3, null)).toEqual(refused('invalid_settings'));
+    expect(estimateDose({ settings, minutes: 1080, carbs: { carbs_g: 1000, complete: false }, bg: null }))
+      .toEqual(refused('incomplete_carbs', settings.windows[4]));
+    const zero = { ...settings, windows: [{ name: 'Z', start: '00:00', ratio_g_per_unit: 0 }] };
+    expect(at(zero, 1000, null)).toEqual(refused('invalid_ratio', zero.windows[0]));
   });
 });
