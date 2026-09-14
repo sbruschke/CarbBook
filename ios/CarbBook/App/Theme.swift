@@ -1,4 +1,5 @@
 import CarbBookCore
+import CarbBookKit
 import SwiftUI
 
 /// Visual language borrowed from ChaosControl: system forms, grey input wells, bordered-prominent
@@ -17,11 +18,16 @@ enum Theme {
     }
 }
 
-/// Parses user-typed numbers, accepting "," as the decimal separator.
+/// Parses user-typed amounts strictly (`NumberParsing.parseAmount`, in CarbBookKit so it has
+/// Linux-runnable tests): only plain decimal digits with an optional fractional part, "," accepted
+/// as the decimal separator. Malformed text (hex, exponents, "Infinity", empty…) is never silently 0.
 func parseNumber(_ text: String) -> Double? {
-    let trimmed = text.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: ",", with: ".")
-    guard !trimmed.isEmpty, let value = Double(trimmed), value.isFinite else { return nil }
-    return value
+    NumberParsing.parseAmount(text)
+}
+
+/// Whole-number-only fields (BG): rejects a typed decimal instead of rounding or truncating it.
+func parseWholeNumber(_ text: String) -> Double? {
+    NumberParsing.parseWholeNumber(text)
 }
 
 func formatNumber(_ value: Double, digits: Int = 1) -> String {
