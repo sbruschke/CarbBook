@@ -10,6 +10,7 @@ import type { Db } from './db';
 import { errorHandler } from './errors';
 import { loginRoutes, sessionRoutes } from './routes/auth';
 import { bgRoutes } from './routes/bg';
+import { searchRoutes } from './routes/search';
 import { syncRoutes } from './routes/sync';
 import { usdaRoutes } from './routes/usda';
 import { registerWebApp } from './static';
@@ -62,6 +63,7 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
     await api.register(bgRoutes, ctx);
     await api.register(syncRoutes, ctx);
     await api.register(usdaRoutes, ctx);
+    await api.register(searchRoutes, ctx);
   });
 
   await registerWebApp(app, options.config.webDir);
