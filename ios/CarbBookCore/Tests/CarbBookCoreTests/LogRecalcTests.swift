@@ -77,4 +77,17 @@ final class LogRecalcTests: XCTestCase {
         XCTAssertEqual(result.entry.settingsVersionId, "s1") // kept, not replaced
         XCTAssertNil(result.entry.suggestedUnits) // but not used to compute a dose
     }
+
+    /// An entry with no settings id, recalculated at a time when no dose_settings version is in
+    /// effect, must be marked incomplete rather than silently reported complete.
+    func testNoSettingsIdAndNoneInEffectIsIncomplete() {
+        let catalog = InMemoryCatalog(foods: [FoodData(id: "rice", name: "Rice", carbsPer100g: 30)])
+        let entry = LogEntryData(id: "e1", eatenAt: 1_789_408_800_000, windowName: nil, bgMgdl: nil, bgSource: "none",
+                                 bgTrend: nil, totalCarbsG: 30, suggestedUnits: nil, takenUnits: nil, settingsVersionId: nil, notes: nil)
+        let items = [LogItemData(id: "x1", logEntryId: "e1", refType: .food, refId: "rice", displayName: "Rice", amount: 100, unit: "g", carbsG: 30)]
+        let result = recalculateLogEntry(entry: entry, items: items, catalog: catalog, settingsVersions: [])
+        XCTAssertFalse(result.complete)
+        XCTAssertNil(result.entry.settingsVersionId)
+        XCTAssertNil(result.entry.suggestedUnits)
+    }
 }

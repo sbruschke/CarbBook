@@ -60,6 +60,32 @@ final class CalculatorTests: XCTestCase {
         XCTAssertFalse(isBgReadingUsable(readAtMs: now + 2 * 60_000 + 1, nowMs: now))
     }
 
+    /// Item (d): a dose_settings version the server rejected must never be selected for a dose
+    /// estimate, even when it is still present in the local `settingsVersions` list.
+    func testRejectedSettingsVersionIsNeverSelected() {
+        let lines = [CalculatorLine(id: "l1", refType: .food, refId: "rice", displayName: "Rice", amount: 100, unit: "g")]
+        var newer = seedSettings
+        newer.id = "s2"
+        newer.effectiveFrom = 1_787_000_000_000 // newer than s1, still <= eatenMs
+
+        let withOlderAccepted = evaluateCalculator(
+            lines: lines, catalog: catalog, settingsVersions: [seedSettings, newer], eatenAt: dinner,
+            calendar: utc, windowOverride: nil, bg: .none, lastDoseAtMs: nil, nowMs: 0,
+            rejectedSettingsIds: ["s2"])
+        XCTAssertEqual(withOlderAccepted.settings?.id, "s1")
+
+        let (entry, _) = buildLogRecords(lines: lines, result: withOlderAccepted, bg: .none, eatenAt: dinner,
+                                         takenUnits: nil, notes: nil, newId: { "x" })
+        XCTAssertEqual(entry.settingsVersionId, "s1")
+
+        let onlyRejected = evaluateCalculator(
+            lines: lines, catalog: catalog, settingsVersions: [newer], eatenAt: dinner,
+            calendar: utc, windowOverride: nil, bg: .none, lastDoseAtMs: nil, nowMs: 0,
+            rejectedSettingsIds: ["s2"])
+        XCTAssertNil(onlyRejected.settings)
+        XCTAssertEqual(onlyRejected.refusal, noSettingsMessage)
+    }
+
     func testBuildMealRecords() {
         let lines = [
             CalculatorLine(id: "a", refType: .food, refId: "rice", displayName: "Rice", amount: 1, unit: "cup"),

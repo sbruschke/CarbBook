@@ -51,7 +51,7 @@ public func recalculateLogEntry(
         settings = activeSettings(usableSettings, entry.eatenAt)
         newEntry.settingsVersionId = settings?.id
     }
-    let settingsComplete = entry.settingsVersionId == nil || settings != nil
+    let settingsComplete = settings != nil
     newEntry.suggestedUnits = nil
     if let settings {
         let eatenAt = Date(timeIntervalSince1970: Double(entry.eatenAt) / 1000)

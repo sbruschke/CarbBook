@@ -71,12 +71,16 @@ public func evaluateCalculator(
     windowOverride: String?,
     bg: BgInput,
     lastDoseAtMs: Int64?,
-    nowMs: Int64
+    nowMs: Int64,
+    rejectedSettingsIds: Set<Id> = []
 ) -> CalculatorResult {
     let lineCarbs = lines.map { itemCarbs(catalog, $0.refType, $0.refId, $0.amount, $0.unit) }
     let total = sumCarbs(lineCarbs)
     let eatenMs = Int64((eatenAt.timeIntervalSince1970 * 1000).rounded())
-    let settings = activeSettings(settingsVersions, eatenMs)
+    let usableSettings = rejectedSettingsIds.isEmpty
+        ? settingsVersions
+        : settingsVersions.filter { !rejectedSettingsIds.contains($0.id) }
+    let settings = activeSettings(usableSettings, eatenMs)
     var result = CalculatorResult(lineCarbs: lineCarbs, total: total, settings: settings, estimate: nil,
                                   breakdown: nil, refusal: nil,
                                   recentDoseWarning: recentDoseWarning(lastDoseAtMs, nowMs))
