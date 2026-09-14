@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { requireAuth, SESSION_COOKIE, sessionCookieOptions } from '../auth/plugin';
 import { hashPassword, verifyPassword } from '../auth/passwords';
-import { createSession, revokeSession } from '../auth/sessions';
+import { createSession, listBearerTokens, revokeSession } from '../auth/sessions';
 import { findUserByUsername } from '../auth/users';
 import type { AppContext } from '../context';
 import { ApiError } from '../errors';
@@ -85,6 +85,19 @@ export async function sessionRoutes(app: FastifyInstance, ctx: AppContext): Prom
     const auth = requireAuth(request);
     revokeSession(ctx.db, auth.sessionId, auth.user.id);
     reply.clearCookie(SESSION_COOKIE, { path: '/' });
+    return { ok: true };
+  });
+
+  app.get('/api/auth/tokens', async (request) => {
+    const auth = requireAuth(request);
+    return { tokens: listBearerTokens(ctx.db, auth.user.id) };
+  });
+
+  app.delete<{ Params: { id: string } }>('/api/auth/tokens/:id', async (request) => {
+    const auth = requireAuth(request);
+    if (!revokeSession(ctx.db, request.params.id, auth.user.id)) {
+      throw new ApiError(404, 'not_found', 'No such token');
+    }
     return { ok: true };
   });
 }
