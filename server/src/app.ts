@@ -11,6 +11,7 @@ import { errorHandler } from './errors';
 import { loginRoutes, sessionRoutes } from './routes/auth';
 import { bgRoutes } from './routes/bg';
 import { syncRoutes } from './routes/sync';
+import { usdaRoutes } from './routes/usda';
 import { registerWebApp } from './static';
 
 export interface BuildAppOptions {
@@ -60,6 +61,7 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
     await api.register(sessionRoutes, ctx);
     await api.register(bgRoutes, ctx);
     await api.register(syncRoutes, ctx);
+    await api.register(usdaRoutes, ctx);
   });
 
   await registerWebApp(app, options.config.webDir);

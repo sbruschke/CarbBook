@@ -4,6 +4,8 @@ import { createUser, type Role, UserError } from './auth/users';
 import { type Env, loadConfig } from './config';
 import type { Db } from './db';
 import { initDatabase } from './init';
+import { buildUsdaBundles } from './usda/bundle';
+import { importUsda } from './usda/import';
 
 export interface CliIo {
   env: Env;
@@ -16,7 +18,8 @@ export interface CliIo {
 }
 
 const USAGE = `Usage:
-  carbbook user add <username> [--role owner|viewer]   (password from CARBBOOK_PASSWORD or prompt)`;
+  carbbook user add <username> [--role owner|viewer]   (password from CARBBOOK_PASSWORD or prompt)
+  carbbook import-usda <csv-dir> [<csv-dir>...]        (extracted FoodData Central CSV folders)`;
 
 function flag(args: string[], name: string): string | undefined {
   const index = args.indexOf(name);
@@ -65,6 +68,26 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
         return 1;
       }
       throw error;
+    } finally {
+      if (!io.db) db.close();
+    }
+  }
+  if (group === 'import-usda') {
+    const dirs = [command, ...rest].filter((d): d is string => Boolean(d));
+    if (dirs.length === 0) {
+      io.stderr(USAGE);
+      return 2;
+    }
+    const config = loadConfig(io.env);
+    const db = io.db ?? initDatabase(config.databasePath);
+    try {
+      const stats = await importUsda(db, dirs);
+      const manifest = buildUsdaBundles(db, config.usdaDir, (io.now ?? Date.now)());
+      io.stdout(
+        `Imported ${stats.foods} foods and ${stats.portions} portions (${stats.skipped_portions} skipped) from ${stats.datasets} datasets`,
+      );
+      io.stdout(`USDA bundle ${manifest.version} written to ${config.usdaDir}`);
+      return 0;
     } finally {
       if (!io.db) db.close();
     }
