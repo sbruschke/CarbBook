@@ -173,6 +173,8 @@ describe('pushOutbox', () => {
     expect(await db.outbox.toArray()).toEqual([
       { key: 'food:f1', table: 'food', id: 'f1', updated_at: 2000, snapshot: null },
     ]);
+    // The stale rejection is neither recorded nor user-visible: the newer edit is judged on its own.
+    expect(await db.sync_error.count()).toBe(0);
   });
 
   it('leaves the previously active dose_settings active when a new version is rejected', async () => {

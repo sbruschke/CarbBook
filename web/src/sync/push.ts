@@ -14,10 +14,11 @@ export interface PushSummary {
 
 /**
  * Pushes one batch of pending changes. The outbox entry is removed only if the record was not
- * edited again while the request was in flight. Rejected records are stored as sync errors and
- * not retried until edited again; if no newer edit is queued behind the rejected one, the local
- * table row is restored to the last server-acknowledged snapshot (or deleted if it was never
- * synced), so a refused edit never lingers in local data.
+ * edited again while the request was in flight. A rejection is recorded as a sync error and the
+ * local table row is restored to the last server-acknowledged snapshot (or deleted if it was
+ * never synced) only when the stored version still equals the one that was pushed — matching the
+ * iOS core: if a newer local edit is already queued behind the rejected one, that edit will be
+ * pushed and judged on its own next pass, so the old rejection is neither recorded nor acted on.
  */
 export async function pushOutbox(db: CarbBookDb, api: Api, now: () => number = Date.now): Promise<PushSummary> {
   const summary: PushSummary = { sent: 0, accepted: 0, ignored: 0, rejected: 0 };
@@ -42,17 +43,18 @@ export async function pushOutbox(db: CarbBookDb, api: Api, now: () => number = D
       const unchanged = pending !== undefined && pending.updated_at === record.updated_at;
       if (result.status === 'rejected') {
         summary.rejected++;
-        await db.sync_error.put({
-          key: entry.key,
-          table: entry.table,
-          id: entry.id,
-          reason: result.reason,
-          message: result.message,
-          at: now(),
-        });
-        // Only restore when no newer local edit is queued behind this one — that edit will be
-        // pushed on the next pass and must not be clobbered by the rejected version's snapshot.
+        // Only record + act on the rejection when no newer local edit is queued behind this one —
+        // that edit will be pushed and judged on its own next pass, so the stale rejection is
+        // neither recorded nor allowed to restore/delete over it.
         if (unchanged) {
+          await db.sync_error.put({
+            key: entry.key,
+            table: entry.table,
+            id: entry.id,
+            reason: result.reason,
+            message: result.message,
+            at: now(),
+          });
           if (entry.snapshot) await db.table(entry.table).put(entry.snapshot);
           else await db.table(entry.table).delete(entry.id);
         }
