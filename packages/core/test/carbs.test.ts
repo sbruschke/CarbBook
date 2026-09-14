@@ -100,6 +100,48 @@ describe('invalid stored values', () => {
   });
 });
 
+describe('any-unit foods: carbs', () => {
+  const c = createCatalog({
+    foods: [
+      { id: 'vol-fallback', name: 'Per-100 ml invalid, per-100 g + density', carbs_per_100g: 50, carbs_per_100ml: 151, density_g_per_ml: 2 },
+      { id: 'ml-edges', name: 'Edges', carbs_per_100g: null, carbs_per_100ml: 150 },
+      { id: 'ml-nan', name: 'NaN', carbs_per_100g: null, carbs_per_100ml: Number.NaN, density_g_per_ml: 1 },
+      { id: 'ml-neg', name: 'Neg', carbs_per_100g: null, carbs_per_100ml: -1 },
+      { id: 'portion-fallback', name: 'Portion carbs invalid, grams valid', carbs_per_100g: 40 },
+      { id: 'portion-none', name: 'Portion carbs, no basis', carbs_per_100g: null },
+    ],
+    portions: [
+      { id: 'big', food_id: 'portion-fallback', label: 'big', kind: 'count', quantity: 2, grams: 50, carbs_g: 501 },
+      { id: 'zero-q', food_id: 'portion-none', label: 'zq', kind: 'count', quantity: 0, grams: null, carbs_g: 10 },
+      { id: 'serv', food_id: 'portion-none', label: 'serving', kind: 'serving', quantity: 2, grams: null, carbs_g: 500 },
+      { id: 'grams-only', food_id: 'portion-none', label: 'g', kind: 'count', quantity: 1, grams: 30, carbs_g: null },
+    ],
+  });
+  it('falls back to per-100 g + density for volume when per-100 ml is invalid', () => {
+    const r = itemCarbs(c, 'food', 'vol-fallback', 10, 'ml');
+    expect(r.complete).toBe(true);
+    expect(r.carbs_g).toBeCloseTo(10, 9);
+  });
+  it('validates per-100 ml range and finiteness', () => {
+    expect(itemCarbs(c, 'food', 'ml-edges', 100, 'ml')).toEqual({ carbs_g: 150, complete: true });
+    expect(itemCarbs(c, 'food', 'ml-nan', 100, 'ml').complete).toBe(false);
+    expect(itemCarbs(c, 'food', 'ml-nan', 100, 'g').complete).toBe(false);
+    expect(itemCarbs(c, 'food', 'ml-neg', 100, 'ml').complete).toBe(false);
+  });
+  it('uses portion grams when portion carbs are out of range', () => {
+    const r = itemCarbs(c, 'food', 'portion-fallback', 1, 'p:big');
+    expect(r.complete).toBe(true);
+    expect(r.carbs_g).toBeCloseTo(10, 9);
+  });
+  it('requires a valid quantity for portion carbs and scales by quantity', () => {
+    expect(itemCarbs(c, 'food', 'portion-none', 1, 'p:zero-q')).toEqual({ carbs_g: 0, complete: false });
+    expect(itemCarbs(c, 'food', 'portion-none', 1, 'p:serv')).toEqual({ carbs_g: 250, complete: true });
+    expect(itemCarbs(c, 'food', 'portion-none', 1, 'p:grams-only')).toEqual({ carbs_g: 0, complete: false });
+    expect(itemCarbs(c, 'food', 'portion-none', -1, 'p:serv').complete).toBe(false);
+    expect(itemCarbs(c, 'food', 'portion-none', Number.NaN, 'p:serv').complete).toBe(false);
+  });
+});
+
 describe('soft-deleted rows', () => {
   it('excludes deleted foods, portions, meals and meal_items from the catalog', () => {
     const catalogWithDeletes = createCatalog({

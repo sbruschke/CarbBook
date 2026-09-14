@@ -1,5 +1,18 @@
 import type { FoodData, Id, MealData, MealItemData, PortionData, RefType } from './types';
-import { MASS_UNITS, SERVING_UNIT, foodAmountToGrams, isMassUnit } from './units';
+import {
+  MASS_UNITS,
+  PORTION_PREFIX,
+  SERVING_UNIT,
+  VOLUME_UNITS,
+  densityOf,
+  foodAmountToGrams,
+  isMassUnit,
+  isValidAmount,
+  isValidCarbsPer100g,
+  isValidCarbsPer100ml,
+  isValidPortionCarbs,
+  isVolumeUnit,
+} from './units';
 
 export interface Catalog {
   food(id: Id): FoodData | undefined;
@@ -51,16 +64,48 @@ export function createCatalog(data: {
   };
 }
 
-function isValidCarbsPer100g(value: number | null): value is number {
-  return value != null && Number.isFinite(value) && value >= 0 && value <= 100;
+/** Mass path: carbs_per_100g if valid; else carbs_per_100ml + density; else incomplete. */
+function carbsForGrams(food: FoodData, portions: PortionData[], grams: number): CarbResult {
+  if (isValidCarbsPer100g(food.carbs_per_100g)) {
+    return { carbs_g: (grams * food.carbs_per_100g) / 100, complete: true };
+  }
+  if (isValidCarbsPer100ml(food.carbs_per_100ml)) {
+    const density = densityOf(food, portions);
+    if (density !== null) return { carbs_g: ((grams / density) * food.carbs_per_100ml) / 100, complete: true };
+  }
+  return INCOMPLETE;
 }
 
 function foodItemCarbs(catalog: Catalog, foodId: Id, amount: number, unit: string): CarbResult {
   const food = catalog.food(foodId);
-  if (!food || !isValidCarbsPer100g(food.carbs_per_100g)) return INCOMPLETE;
-  const grams = foodAmountToGrams(amount, unit, food, catalog.portions(foodId));
+  if (!food || !isValidAmount(amount)) return INCOMPLETE;
+  const portions = catalog.portions(foodId);
+  if (isVolumeUnit(unit) && isValidCarbsPer100ml(food.carbs_per_100ml)) {
+    return { carbs_g: (amount * VOLUME_UNITS[unit] * food.carbs_per_100ml) / 100, complete: true };
+  }
+  if (unit.startsWith(PORTION_PREFIX)) {
+    const portionId = unit.slice(PORTION_PREFIX.length);
+    const portion = portions.find((p) => p.id === portionId);
+    if (
+      portion != null &&
+      isValidPortionCarbs(portion.carbs_g) &&
+      Number.isFinite(portion.quantity) &&
+      portion.quantity > 0
+    ) {
+      return { carbs_g: (amount / portion.quantity) * portion.carbs_g, complete: true };
+    }
+  }
+  // Mass units, volume without a valid per-100 ml basis, and portions without valid carbs
+  // all go through a known weight.
+  const grams = foodAmountToGrams(amount, unit, food, portions);
   if (grams === null) return INCOMPLETE;
-  return { carbs_g: (grams * food.carbs_per_100g) / 100, complete: true };
+  if (isVolumeUnit(unit)) {
+    // Volume fallback is per-100 g + density only (per-100 ml was invalid above).
+    return isValidCarbsPer100g(food.carbs_per_100g)
+      ? { carbs_g: (grams * food.carbs_per_100g) / 100, complete: true }
+      : INCOMPLETE;
+  }
+  return carbsForGrams(food, portions, grams);
 }
 
 function mealTotalCarbs(catalog: Catalog, mealId: Id, visiting: Set<Id>): CarbResult {

@@ -26,37 +26,71 @@ export function isVolumeUnit(unit: string): unit is VolumeUnit {
   return Object.hasOwn(VOLUME_UNITS, unit);
 }
 
-function isValidAmount(amount: number): boolean {
+/** Upper bounds shared by core math and server/web validation. */
+export const MAX_CARBS_PER_100G = 100;
+export const MAX_CARBS_PER_100ML = 150;
+export const MAX_PORTION_CARBS_G = 500;
+
+export function isValidAmount(amount: number): boolean {
   return Number.isFinite(amount) && amount >= 0;
+}
+
+function inRange(value: number | null | undefined, max: number): value is number {
+  return value != null && Number.isFinite(value) && value >= 0 && value <= max;
+}
+
+export function isValidCarbsPer100g(value: number | null | undefined): value is number {
+  return inRange(value, MAX_CARBS_PER_100G);
+}
+
+export function isValidCarbsPer100ml(value: number | null | undefined): value is number {
+  return inRange(value, MAX_CARBS_PER_100ML);
+}
+
+export function isValidPortionCarbs(value: number | null | undefined): value is number {
+  return inRange(value, MAX_PORTION_CARBS_G);
+}
+
+export function isValidPortionGrams(value: number | null | undefined): value is number {
+  return value != null && Number.isFinite(value) && value > 0;
+}
+
+function isValidQuantity(value: number): boolean {
+  return Number.isFinite(value) && value > 0;
 }
 
 export function densityOf(food: FoodData, portions: PortionData[]): number | null {
   if (food.density_g_per_ml != null && Number.isFinite(food.density_g_per_ml) && food.density_g_per_ml > 0) {
     return food.density_g_per_ml;
   }
-  let best: PortionData | null = null;
+  let best: { id: string; density: number } | null = null;
   for (const p of portions) {
     if (
       p.kind === 'volume' &&
       isVolumeUnit(p.label) &&
-      Number.isFinite(p.quantity) &&
-      p.quantity > 0 &&
-      Number.isFinite(p.grams) &&
-      p.grams > 0 &&
+      isValidQuantity(p.quantity) &&
+      isValidPortionGrams(p.grams) &&
       (best === null || p.id < best.id)
     ) {
-      best = p;
+      best = { id: p.id, density: p.grams / (p.quantity * VOLUME_UNITS[p.label]) };
     }
   }
-  return best ? best.grams / (best.quantity * VOLUME_UNITS[best.label as VolumeUnit]) : null;
+  return best ? best.density : null;
 }
 
 export function foodUnits(food: FoodData, portions: PortionData[]): string[] {
-  const units: string[] = Object.keys(MASS_UNITS);
-  if (densityOf(food, portions) !== null) units.push(...Object.keys(VOLUME_UNITS));
-  for (const p of portions) {
-    if (p.kind !== 'volume') units.push(PORTION_PREFIX + p.id);
-  }
+  const density = densityOf(food, portions);
+  const validG = isValidCarbsPer100g(food.carbs_per_100g);
+  const validMl = isValidCarbsPer100ml(food.carbs_per_100ml);
+  const listedPortions = portions.filter(
+    (p) => p.kind !== 'volume' && (isValidPortionCarbs(p.carbs_g) || isValidPortionGrams(p.grams)),
+  );
+  const hasMassPath = validG || (validMl && density !== null);
+  const hasAnyBasis = validG || validMl || portions.some((p) => p.kind !== 'volume' && isValidPortionCarbs(p.carbs_g));
+  const units: string[] = [];
+  if (hasMassPath || !hasAnyBasis) units.push(...Object.keys(MASS_UNITS));
+  if (validMl || density !== null) units.push(...Object.keys(VOLUME_UNITS));
+  for (const p of listedPortions) units.push(PORTION_PREFIX + p.id);
   return units;
 }
 
@@ -80,13 +114,8 @@ export function foodAmountToGrams(
   if (unit.startsWith(PORTION_PREFIX)) {
     const portionId = unit.slice(PORTION_PREFIX.length);
     const portion = portions.find((p) => p.id === portionId);
-    const validPortion =
-      portion != null &&
-      Number.isFinite(portion.grams) &&
-      portion.grams > 0 &&
-      Number.isFinite(portion.quantity) &&
-      portion.quantity > 0;
-    return validPortion ? (amount * portion.grams) / portion.quantity : null;
+    if (portion == null || !isValidPortionGrams(portion.grams) || !isValidQuantity(portion.quantity)) return null;
+    return (amount * portion.grams) / portion.quantity;
   }
   return null;
 }
