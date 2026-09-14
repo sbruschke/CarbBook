@@ -33,8 +33,9 @@ export function Login(props: { db: CarbBookDb; api: Api; message: string | null;
       <main className="login">
         <h1>CarbBook</h1>
         <p role="alert">
-          Another user's unsynced changes are on this device. They are not being uploaded. Sign in as that user first to sync
-          them, or continue as {conflict.user.username} and leave them queued for later.
+          {conflict.held!.count} unsynced change{conflict.held!.count === 1 ? '' : 's'} from {conflict.held!.username} are on this
+          device. They are not being uploaded. Sign in as {conflict.held!.username} first to sync them, or continue as{' '}
+          {conflict.user.username} and leave them queued for later.
         </p>
         <div className="button-row">
           <button type="button" className="primary" onClick={() => props.onSignedIn(conflict.user)}>

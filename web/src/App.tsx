@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Login } from './app/Login';
 import { type Services, ServicesProvider } from './app/services';
 import { Shell } from './app/Shell';
@@ -20,8 +20,17 @@ export function App(props: { db: CarbBookDb; api: Api; startScanner?: StartScann
   const [boot, setBoot] = useState<Boot>({ phase: 'loading' });
   const signOutLocally = () => setBoot((b) => (b.phase === 'ready' ? { ...b, session: { status: 'signed_out' } } : b));
 
+  // `run` reads `sessionUserId.current` at call time, not a value captured when the engine was
+  // built, so a user switch (session state above) is honored on the very next sync pass without
+  // rebuilding the engine — `pushOutbox` filters by this live session id, never by whatever
+  // `meta.user` currently caches, since the two can briefly diverge right after "Continue as" on a
+  // login conflict (spec: sync-integrity).
+  const sessionUserId = useRef<number | undefined>(undefined);
   // Auth expiry keeps IndexedDB (and the outbox) intact and just shows the login screen (spec §9).
-  const engine = useMemo(() => new SyncEngine({ run: () => syncOnce(db, api), onAuthExpired: signOutLocally }), [db, api]);
+  const engine = useMemo(
+    () => new SyncEngine({ run: () => syncOnce(db, api, undefined, sessionUserId.current), onAuthExpired: signOutLocally }),
+    [db, api],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -38,6 +47,7 @@ export function App(props: { db: CarbBookDb; api: Api; startScanner?: StartScann
   const deviceId = boot.phase === 'ready' ? boot.deviceId : null;
   const user = boot.phase === 'ready' && boot.session.status === 'signed_in' ? boot.session.user : null;
   const userId = user?.id ?? null;
+  sessionUserId.current = userId ?? undefined;
 
   useEffect(() => {
     if (userId === null) return;
@@ -47,7 +57,12 @@ export function App(props: { db: CarbBookDb; api: Api; startScanner?: StartScann
     return () => engine.stop();
   }, [userId, engine, db, api]);
 
-  const store = useMemo(() => (deviceId ? createStore(db, deviceId, { onWrite: engine.requestSync }) : null), [db, deviceId, engine]);
+  // Recreated when `user` changes so a user switch tags every new outbox entry with the new
+  // owner (spec: sync-integrity) — a stale store would keep stamping the previous user's id.
+  const store = useMemo(
+    () => (deviceId && user ? createStore(db, deviceId, { onWrite: engine.requestSync, owner: user }) : null),
+    [db, deviceId, engine, user],
+  );
 
   const services = useMemo<Services | null>(
     () =>
@@ -70,7 +85,7 @@ export function App(props: { db: CarbBookDb; api: Api; startScanner?: StartScann
     [db, api, store, engine, user, startScanner],
   );
 
-  if (boot.phase === 'loading' || !store) return <p className="boot">Loading CarbBook…</p>;
+  if (boot.phase === 'loading' || !deviceId) return <p className="boot">Loading CarbBook…</p>;
   if (!services) {
     return (
       <Login

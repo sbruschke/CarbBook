@@ -8,7 +8,7 @@ import { createStore } from '../src/db/store';
 import { ApiError, NetworkError } from '../src/lib/api';
 import { SIGNED_OUT_MESSAGE } from '../src/sync/engine';
 import { FakeApi, foodData, openTestDb } from './helpers';
-import { noScanner, OWNER } from './render';
+import { noScanner, OWNER, VIEWER } from './render';
 
 let db: CarbBookDb;
 afterEach(async () => {
@@ -89,5 +89,65 @@ describe('App', () => {
     expect(await screen.findByText(SIGNED_OUT_MESSAGE)).toBeInTheDocument();
     expect(screen.getByLabelText('Username')).toBeInTheDocument();
     expect(await db.outbox.count()).toBe(1);
+  });
+
+  it('holds a different user’s unsynced changes instead of pushing them under a new session, even across a reload', async () => {
+    db = openTestDb();
+    // brett has an unsynced edit queued and cached locally, as if signed in on this device already.
+    await setMeta(db, 'user', OWNER);
+    await createStore(db, 'device-old', { owner: OWNER }).save('food', foodData({ id: 'f1' }));
+
+    let pushedTables: string[] = [];
+    const api = serverApi()
+      .on('GET', '/api/auth/me', () => {
+        throw new ApiError(401, 'unauthorized', 'Sign in required');
+      })
+      .on('POST', '/api/auth/login', () => ({ user: VIEWER }))
+      .on('POST', '/api/sync/push', (body) => {
+        const changes = (body as { changes: { table: string; record: { id: string } }[] }).changes;
+        pushedTables.push(...changes.map((c) => c.table));
+        return { results: changes.map((c) => ({ table: c.table, id: c.record.id, status: 'accepted', server_seq: 1 })), server_seq: 1 };
+      });
+    const user = userEvent.setup();
+    const { unmount } = render(<App db={db} api={api} startScanner={noScanner} />);
+    await user.type(await screen.findByLabelText('Username'), 'kim');
+    await user.type(screen.getByLabelText('Password'), 'pw');
+    await user.click(screen.getByRole('button', { name: 'Sign in' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('1 unsynced change from brett');
+    await user.click(screen.getByRole('button', { name: 'Continue as kim' }));
+    expect(await screen.findByRole('heading', { name: 'Calculator' })).toBeInTheDocument();
+    await waitFor(() => expect(api.calls.some((c) => c.path.startsWith('/api/sync/pull'))).toBe(true));
+
+    // Never pushed under kim's session; still queued, still owned by brett.
+    expect(pushedTables).toEqual([]);
+    expect(await db.outbox.count()).toBe(1);
+    expect((await db.outbox.toArray())[0]).toMatchObject({ ownerId: OWNER.id });
+    unmount();
+
+    // Reload: the server now answers /api/auth/me as kim (the live cookie), so restoreSession
+    // overwrites the cached local user to kim — but ownership lives on the outbox entry, not the
+    // cache, so brett's change is still held.
+    api.on('GET', '/api/auth/me', () => ({ user: VIEWER }));
+    const { unmount: unmount2 } = render(<App db={db} api={api} startScanner={noScanner} />);
+    expect(await screen.findByRole('heading', { name: 'Calculator' })).toBeInTheDocument();
+    await user.click(screen.getByRole('link', { name: 'Settings' }));
+    expect(await screen.findByText(/1 unsynced change from brett is held on this device/)).toBeInTheDocument();
+    unmount2();
+    window.history.replaceState(null, '', '/');
+
+    // brett signs back in: no false conflict, and their held change now pushes normally.
+    pushedTables = [];
+    api.on('GET', '/api/auth/me', () => {
+      throw new ApiError(401, 'unauthorized', 'Sign in required');
+    }).on('POST', '/api/auth/login', () => ({ user: OWNER }));
+    render(<App db={db} api={api} startScanner={noScanner} />);
+    await user.type(await screen.findByLabelText('Username'), 'brett');
+    await user.type(screen.getByLabelText('Password'), 'pw');
+    await user.click(screen.getByRole('button', { name: 'Sign in' }));
+    expect(await screen.findByRole('heading', { name: 'Calculator' })).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    await waitFor(() => expect(pushedTables).toEqual(['food']));
+    await waitFor(async () => expect(await db.outbox.count()).toBe(0));
   });
 });

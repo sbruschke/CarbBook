@@ -11,6 +11,7 @@ import type {
   Synced,
 } from '@carbbook/core';
 import Dexie, { type Table } from 'dexie';
+import type { User } from '../lib/wire';
 
 /** Tables synced with carbs-server (spec §3), in the server's order. */
 export const SYNC_TABLES = [
@@ -48,6 +49,17 @@ export interface OutboxRow {
   updated_at: number;
   /** Last server-acknowledged copy of the record, or null if it was never synced. Restored on rejection. */
   snapshot: AnySyncRecord | null;
+  /**
+   * Id of the signed-in user who queued this entry (unindexed: only ever read via a full-table
+   * scan of the outbox, which stays small). `null` for rows migrated in before this field existed
+   * whose owner could not be determined (no cached user at migration time) — treated as owned by
+   * whoever is currently signed in, never stranded as foreign. Never mutated after being queued:
+   * ownership travels with the entry so a later `restoreSession` overwriting the cached user can't
+   * make it look like the current session's own change (spec: sync-integrity, multi-user device).
+   */
+  ownerId: number | null;
+  /** Username of `ownerId` at queue time, kept only for display (e.g. "held from brett"). */
+  ownerUsername: string | null;
 }
 
 export interface MetaRow {
@@ -141,6 +153,39 @@ export class CarbBookDb extends Dexie {
       usda_portion: 'id, fdc_id',
       pending_barcode: 'code',
     });
+    // v2 adds `ownerId`/`ownerUsername` to outbox rows (data-only change: `ownerId` stays
+    // unindexed, so the store definition below is unchanged from v1). Existing rows queued before
+    // this field existed are backfilled from whichever user was cached locally at migration time —
+    // the only user those pre-existing entries could have belonged to, since per-entry ownership
+    // didn't exist yet.
+    this.version(2)
+      .stores({
+        food: 'id, source_ref',
+        portion: 'id, food_id',
+        barcode: 'id, code, food_id',
+        meal: 'id',
+        meal_item: 'id, meal_id, ref_id',
+        log_entry: 'id, eaten_at',
+        log_item: 'id, log_entry_id, ref_id',
+        dose_settings: 'id, effective_from',
+        outbox: 'key',
+        meta: 'key',
+        sync_error: 'key, at',
+        usda_food: 'fdc_id',
+        usda_portion: 'id, fdc_id',
+        pending_barcode: 'code',
+      })
+      .upgrade(async (tx) => {
+        const cached = (await tx.table('meta').get('user')) as { value: User } | undefined;
+        const owner = cached?.value;
+        await tx
+          .table('outbox')
+          .toCollection()
+          .modify((row: OutboxRow) => {
+            row.ownerId = owner?.id ?? null;
+            row.ownerUsername = owner?.username ?? null;
+          });
+      });
   }
 
   /** Every synced table, for read-write transactions that touch records and the outbox. */

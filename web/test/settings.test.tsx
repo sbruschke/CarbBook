@@ -108,8 +108,8 @@ describe('Settings', () => {
   it('shows pending count, last sync and server rejections', async () => {
     services = makeServices();
     await services.db.outbox.bulkPut([
-      { key: 'food:f1', table: 'food', id: 'f1', updated_at: 1, snapshot: null },
-      { key: 'meal:m1', table: 'meal', id: 'm1', updated_at: 1, snapshot: null },
+      { key: 'food:f1', table: 'food', id: 'f1', updated_at: 1, snapshot: null, ownerId: null, ownerUsername: null },
+      { key: 'meal:m1', table: 'meal', id: 'm1', updated_at: 1, snapshot: null, ownerId: null, ownerUsername: null },
     ]);
     await setMeta(services.db, 'last_synced_at', NOW);
     await services.db.sync_error.put({ key: 'food:f2', table: 'food', id: 'f2', reason: 'invalid', message: 'carbs_per_100g must be >= 0', at: NOW, rejectedUpdatedAt: 1, resolved: false });
@@ -121,6 +121,45 @@ describe('Settings', () => {
     expect(await screen.findByText('food f2: carbs_per_100g must be >= 0')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Dismiss' }));
     await waitFor(async () => expect(await services.db.sync_error.count()).toBe(0));
+  });
+
+  it('shows another user’s held changes and discards them on confirm', async () => {
+    services = makeServices();
+    await services.db.outbox.put({
+      key: 'food:f1',
+      table: 'food',
+      id: 'f1',
+      updated_at: 1,
+      snapshot: null,
+      ownerId: 99,
+      ownerUsername: 'dana',
+    });
+    await services.db.food.put({
+      id: 'f1',
+      name: 'Dana’s food',
+      brand: null,
+      source: 'custom',
+      source_ref: null,
+      derived_from: null,
+      carbs_per_100g: 10,
+      fiber_per_100g: null,
+      density_g_per_ml: null,
+      notes: null,
+      updated_at: 1,
+      updated_by: 'device-dana',
+      deleted: 0,
+    });
+    const user = userEvent.setup();
+    renderWith(<Settings />, services);
+
+    expect(await screen.findByText(/1 unsynced change from dana is held on this device/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Discard held changes' }));
+    expect(screen.getByText(/Discard 1 change from dana\?/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Discard held changes' }));
+
+    await waitFor(async () => expect(await services.db.outbox.count()).toBe(0));
+    expect(await services.db.food.get('f1')).toBeUndefined();
+    await waitFor(() => expect(screen.queryByText(/held on this device/)).not.toBeInTheDocument());
   });
 
   it('reports when the server has no USDA library', async () => {
@@ -136,7 +175,7 @@ describe('Settings', () => {
 
   it('warns about unsynced changes before signing out', async () => {
     services = makeServices();
-    await services.db.outbox.put({ key: 'food:f1', table: 'food', id: 'f1', updated_at: 1, snapshot: null });
+    await services.db.outbox.put({ key: 'food:f1', table: 'food', id: 'f1', updated_at: 1, snapshot: null, ownerId: null, ownerUsername: null });
     const user = userEvent.setup();
     renderWith(<Settings />, services);
     await screen.findByText('1 pending change');

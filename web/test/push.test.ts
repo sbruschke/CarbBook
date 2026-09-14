@@ -53,7 +53,7 @@ describe('pushOutbox', () => {
 
     await pushOutbox(db, api);
     expect(await db.outbox.toArray()).toEqual([
-      { key: 'food:f1', table: 'food', id: 'f1', updated_at: 2000, snapshot: null },
+      { key: 'food:f1', table: 'food', id: 'f1', updated_at: 2000, snapshot: null, ownerId: null, ownerUsername: null },
     ]);
     expect(await db.food.get('f1')).toMatchObject({ name: 'Edited', updated_at: 2000 });
     expect((await db.food.get('f1'))?.server_seq).toBeUndefined();
@@ -180,7 +180,7 @@ describe('pushOutbox', () => {
 
     expect((await db.food.get('f1'))?.name).toBe('Newer edit');
     expect(await db.outbox.toArray()).toEqual([
-      { key: 'food:f1', table: 'food', id: 'f1', updated_at: 2000, snapshot: null },
+      { key: 'food:f1', table: 'food', id: 'f1', updated_at: 2000, snapshot: null, ownerId: null, ownerUsername: null },
     ]);
     // The stale rejection is neither recorded nor user-visible: the newer edit is judged on its own.
     expect(await db.sync_error.count()).toBe(0);

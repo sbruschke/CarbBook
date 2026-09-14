@@ -7,6 +7,7 @@ import { getMeta } from '../db/meta';
 import { NetworkError } from '../lib/api';
 import { DoseSettingsEditor } from '../settings/DoseSettingsEditor';
 import type { SyncPhase } from '../sync/engine';
+import { discardForeignPending, foreignPendingSummary } from '../sync/ownership';
 import { dayKey, formatTime } from '../ui/format';
 import { syncUsdaLibrary } from '../usda/bundle';
 
@@ -92,6 +93,52 @@ function DoseSettingsSection() {
   );
 }
 
+function HeldChangesNotice() {
+  const { db, user } = useServices();
+  const held = useLiveQuery(() => foreignPendingSummary(db, user.id), [db, user.id]);
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  if (!held) return null;
+
+  async function discard() {
+    setBusy(true);
+    try {
+      await discardForeignPending(db, user.id);
+      setConfirming(false);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="held-changes" role="alert">
+      <p>
+        {held.count} unsynced change{held.count === 1 ? '' : 's'} from {held.ownerUsername} {held.count === 1 ? 'is' : 'are'} held on
+        this device. Sign in as {held.ownerUsername} to sync them.
+      </p>
+      {confirming ? (
+        <>
+          <p>
+            Discard {held.count} change{held.count === 1 ? '' : 's'} from {held.ownerUsername}? This cannot be undone.
+          </p>
+          <div className="button-row">
+            <button type="button" className="danger" disabled={busy} onClick={() => void discard()}>
+              Discard held changes
+            </button>
+            <button type="button" disabled={busy} onClick={() => setConfirming(false)}>
+              Cancel
+            </button>
+          </div>
+        </>
+      ) : (
+        <button type="button" onClick={() => setConfirming(true)}>
+          Discard held changes
+        </button>
+      )}
+    </div>
+  );
+}
+
 function SyncSection() {
   const { db, engine } = useServices();
   const status = useSyncExternalStore(engine.subscribe, engine.getStatus);
@@ -108,6 +155,7 @@ function SyncSection() {
       <button type="button" onClick={() => void engine.syncNow()}>
         Sync now
       </button>
+      <HeldChangesNotice />
       {errors.length > 0 && (
         <>
           <h3>Rejected by the server</h3>

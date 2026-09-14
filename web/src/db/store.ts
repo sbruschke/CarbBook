@@ -29,10 +29,18 @@ export interface StoreOptions {
   now?: () => number;
   /** Called after every committed write; the sync engine debounces a push from it. */
   onWrite?: () => void;
+  /**
+   * The signed-in user this store writes on behalf of, stamped onto every outbox entry it queues
+   * so a later sync only ever pushes this user's own changes (spec: sync-integrity). Omitted in
+   * tests that don't exercise multi-user ownership.
+   */
+  owner?: { id: number; username: string };
 }
 
 export function createStore(db: CarbBookDb, deviceId: string, options: StoreOptions = {}): Store {
   const now = options.now ?? Date.now;
+  const ownerId = options.owner?.id ?? null;
+  const ownerUsername = options.owner?.username ?? null;
   const tables = () => [...db.syncTables(), db.outbox];
 
   async function stamp(table: SyncTable, id: string, fields: object, deleted: 0 | 1): Promise<AnySyncRecord> {
@@ -47,7 +55,7 @@ export function createStore(db: CarbBookDb, deviceId: string, options: StoreOpti
     const key = outboxKey(table, id);
     const queued = await db.outbox.get(key);
     const snapshot = queued ? queued.snapshot : (existing ?? null);
-    await db.outbox.put({ key, table, id, updated_at: updatedAt, snapshot });
+    await db.outbox.put({ key, table, id, updated_at: updatedAt, snapshot, ownerId, ownerUsername });
     return record;
   }
 

@@ -19,11 +19,23 @@ export interface PushSummary {
  * never synced) only when the stored version still equals the one that was pushed — matching the
  * iOS core: if a newer local edit is already queued behind the rejected one, that edit will be
  * pushed and judged on its own next pass, so the old rejection is neither recorded nor acted on.
+ *
+ * When `currentUserId` is given, only entries owned by that user (`ownerId === currentUserId`, or
+ * `ownerId === null` for undated legacy rows) are considered; entries queued by a different user —
+ * left behind when a different user signs in on the same device with pending changes still queued —
+ * are skipped entirely: left in the outbox, untouched, never sent (spec: sync-integrity). Passing
+ * no `currentUserId` pushes every queued entry regardless of owner.
  */
-export async function pushOutbox(db: CarbBookDb, api: Api, now: () => number = Date.now): Promise<PushSummary> {
+export async function pushOutbox(
+  db: CarbBookDb,
+  api: Api,
+  now: () => number = Date.now,
+  currentUserId?: number,
+): Promise<PushSummary> {
   const summary: PushSummary = { sent: 0, accepted: 0, ignored: 0, rejected: 0 };
+  const owned = (entry: OutboxRow) => currentUserId === undefined || entry.ownerId === null || entry.ownerId === currentUserId;
   const batch: { entry: OutboxRow; record: AnySyncRecord }[] = [];
-  for (const entry of await db.outbox.limit(PUSH_BATCH_SIZE).toArray()) {
+  for (const entry of (await db.outbox.limit(PUSH_BATCH_SIZE).toArray()).filter(owned)) {
     const record = (await db.table(entry.table).get(entry.id)) as AnySyncRecord | undefined;
     if (record) batch.push({ entry, record });
     else await db.outbox.delete(entry.key);

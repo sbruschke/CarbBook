@@ -45,7 +45,7 @@ describe('login and logout', () => {
   it('logs in and caches the user', async () => {
     db = openTestDb();
     const api = new FakeApi().on('POST', '/api/auth/login', () => ({ user: brett }));
-    expect(await login(db, api, 'brett', 'pw')).toEqual({ user: brett, outboxConflict: false });
+    expect(await login(db, api, 'brett', 'pw')).toEqual({ user: brett, outboxConflict: false, held: null });
     expect(api.calls[0]!.body).toEqual({ username: 'brett', password: 'pw' });
     expect(await getMeta(db, 'user')).toEqual(brett);
   });
@@ -53,10 +53,14 @@ describe('login and logout', () => {
   it('flags an outbox conflict and keeps the previous user cached when switching users with pending changes', async () => {
     db = openTestDb();
     await setMeta(db, 'user', brett);
-    await db.outbox.put({ key: 'food:f1', table: 'food', id: 'f1', updated_at: 1, snapshot: null });
+    await db.outbox.put({ key: 'food:f1', table: 'food', id: 'f1', updated_at: 1, snapshot: null, ownerId: brett.id, ownerUsername: brett.username });
     const dana = { id: 2, username: 'dana', role: 'owner' as const };
     const api = new FakeApi().on('POST', '/api/auth/login', () => ({ user: dana }));
-    expect(await login(db, api, 'dana', 'pw')).toEqual({ user: dana, outboxConflict: true });
+    expect(await login(db, api, 'dana', 'pw')).toEqual({
+      user: dana,
+      outboxConflict: true,
+      held: { userId: brett.id, username: brett.username, count: 1 },
+    });
     expect(await getMeta(db, 'user')).toEqual(brett);
   });
 
@@ -65,8 +69,19 @@ describe('login and logout', () => {
     await setMeta(db, 'user', brett);
     const dana = { id: 2, username: 'dana', role: 'owner' as const };
     const api = new FakeApi().on('POST', '/api/auth/login', () => ({ user: dana }));
-    expect(await login(db, api, 'dana', 'pw')).toEqual({ user: dana, outboxConflict: false });
+    expect(await login(db, api, 'dana', 'pw')).toEqual({ user: dana, outboxConflict: false, held: null });
     expect(await getMeta(db, 'user')).toEqual(dana);
+  });
+
+  it('does not falsely block the original owner from logging back in after an intervening user overwrote the cached user', async () => {
+    db = openTestDb();
+    await db.outbox.put({ key: 'food:f1', table: 'food', id: 'f1', updated_at: 1, snapshot: null, ownerId: brett.id, ownerUsername: brett.username });
+    // Simulates a reload after "Continue as dana": restoreSession's /api/auth/me overwrote the
+    // cached user to dana, even though the queued entry still belongs to brett.
+    await setMeta(db, 'user', { id: 2, username: 'dana', role: 'owner' as const });
+    const api = new FakeApi().on('POST', '/api/auth/login', () => ({ user: brett }));
+    expect(await login(db, api, 'brett', 'pw')).toEqual({ user: brett, outboxConflict: false, held: null });
+    expect(await getMeta(db, 'user')).toEqual(brett);
   });
 
   it('describes login failures', () => {

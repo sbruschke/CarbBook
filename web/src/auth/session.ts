@@ -2,6 +2,7 @@ import type { CarbBookDb } from '../db/db';
 import { deleteMeta, getMeta, setMeta } from '../db/meta';
 import { type Api, ApiError, NetworkError } from '../lib/api';
 import type { User } from '../lib/wire';
+import { foreignPendingSummary } from '../sync/ownership';
 
 export type Session =
   | { status: 'signed_in'; user: User; /** true when the server could not be reached */ offline: boolean }
@@ -29,22 +30,30 @@ export async function restoreSession(db: CarbBookDb, api: Api): Promise<Session>
 export interface LoginResult {
   user: User;
   /**
-   * True when a different user was cached locally and the outbox still holds unsynced changes
-   * from them. The new user's `/api/auth/me` cookie is live, but the cached local `user` (and the
-   * outbox) is intentionally left alone so the old user's queued edits are never pushed under the
-   * new session; the caller must let the original user sign back in (to flush the outbox) or
-   * explicitly discard those changes before proceeding as the new user.
+   * True when the outbox still holds changes queued by a different user (`ownerId`, stamped on
+   * each entry when it was queued — see `db/store.ts`). The new user's `/api/auth/me` cookie is
+   * live, but the cached local `meta.user` is intentionally left alone; the sync engine will refuse
+   * to push those entries under the new session regardless of what `meta.user` says, since
+   * ownership lives on the entries themselves, not the cache (so this check — unlike a comparison
+   * against `meta.user` — correctly finds no conflict when the *original* owner signs back in, even
+   * if `meta.user` was last overwritten by an intervening user's session). The caller must let the
+   * original user sign back in (to flush the outbox) or explicitly discard those changes
+   * (Settings → Sync) before proceeding as the new user.
    */
   outboxConflict: boolean;
+  /** Who owns the held changes, and how many, when `outboxConflict` is true. */
+  held: { userId: number; username: string; count: number } | null;
 }
 
 export async function login(db: CarbBookDb, api: Api, username: string, password: string): Promise<LoginResult> {
   const { user } = await api.post<{ user: User }>('/api/auth/login', { username, password });
-  const cached = await getMeta(db, 'user');
-  const pending = await db.outbox.count();
-  const outboxConflict = cached !== undefined && cached.id !== user.id && pending > 0;
-  if (!outboxConflict) await setMeta(db, 'user', user);
-  return { user, outboxConflict };
+  const foreign = await foreignPendingSummary(db, user.id);
+  if (!foreign) await setMeta(db, 'user', user);
+  return {
+    user,
+    outboxConflict: foreign !== null,
+    held: foreign ? { userId: foreign.ownerId, username: foreign.ownerUsername, count: foreign.count } : null,
+  };
 }
 
 /** Signs out locally even if the server is unreachable; returns whether the server session was revoked. */

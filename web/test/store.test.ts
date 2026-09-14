@@ -17,7 +17,7 @@ describe('createStore', () => {
     const saved = await store.save('food', foodData({ id: 'f1' }));
     expect(saved).toEqual({ ...foodData({ id: 'f1' }), updated_at: 5000, updated_by: 'device-a', deleted: 0 });
     expect(await db.food.get('f1')).toEqual(saved);
-    expect(await db.outbox.toArray()).toEqual([{ key: 'food:f1', table: 'food', id: 'f1', updated_at: 5000, snapshot: null }]);
+    expect(await db.outbox.toArray()).toEqual([{ key: 'food:f1', table: 'food', id: 'f1', updated_at: 5000, snapshot: null, ownerId: null, ownerUsername: null }]);
     expect(writes).toBe(1);
   });
 
@@ -53,7 +53,7 @@ describe('createStore', () => {
     await store.remove('food', 'missing');
     expect(await db.food.get('f1')).toMatchObject({ name: 'Tortilla', deleted: 1, updated_at: 200 });
     expect(await db.food.get('missing')).toBeUndefined();
-    expect(await db.outbox.toArray()).toEqual([{ key: 'food:f1', table: 'food', id: 'f1', updated_at: 200, snapshot: null }]);
+    expect(await db.outbox.toArray()).toEqual([{ key: 'food:f1', table: 'food', id: 'f1', updated_at: 200, snapshot: null, ownerId: null, ownerUsername: null }]);
   });
 });
 
