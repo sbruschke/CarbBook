@@ -1,0 +1,49 @@
+name: ios-tests
+
+# Swift package tests. Linux jobs run on every relevant push (cheap); the macOS job runs on
+# main, pull requests and manual runs only, because macOS minutes are expensive on a private repo.
+on:
+  push:
+    paths:
+      - 'ios/CarbBookCore/**'
+      - 'ios/scripts/**'
+      - 'ios/docker/**'
+      - 'testdata/**'
+      - '.github/workflows/ios-tests.yml'
+  pull_request:
+    paths:
+      - 'ios/CarbBookCore/**'
+      - 'ios/scripts/**'
+      - 'ios/docker/**'
+      - 'testdata/**'
+      - '.github/workflows/ios-tests.yml'
+  workflow_dispatch:
+
+jobs:
+  testdata-copies:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: ios/scripts/sync-testdata.sh --check
+
+  core-linux:
+    runs-on: ubuntu-latest
+    container: swift:6.3.3-noble
+    steps:
+      - uses: actions/checkout@v4
+      - name: swift test (Linux, Foundation only)
+        working-directory: ios/CarbBookCore
+        run: swift test
+
+  core-macos:
+    if: github.event_name != 'push' || github.ref == 'refs/heads/main'
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode 26.6
+        run: |
+          sudo xcode-select -s /Applications/Xcode_26.6.app
+          xcodebuild -version
+      - name: swift test (macOS)
+        working-directory: ios/CarbBookCore
+        run: swift test
