@@ -90,9 +90,10 @@ describe('normalizeOffProduct', () => {
         source: 'off',
         source_ref: '0737628064502',
         carbs_per_100g: 71.15,
+        carbs_per_100ml: null,
         fiber_per_100g: 1.9,
       },
-      portions: [{ label: 'label serving', kind: 'serving', quantity: 1, grams: 52 }],
+      portions: [{ label: 'label serving', kind: 'serving', quantity: 1, grams: 52, carbs_g: null }],
       barcode: '0737628064502',
       serving_size: '0.333 PACKAGE (52 g)',
     });
@@ -100,8 +101,8 @@ describe('normalizeOffProduct', () => {
 
   it('handles missing names, missing nutrients, string quantities and non-gram servings', () => {
     const draft = normalizeOffProduct({ code: '3017620422003', serving_quantity: '15', nutriments: {} }, '3017620422003');
-    expect(draft.food).toMatchObject({ name: 'Barcode 3017620422003', brand: null, carbs_per_100g: null, fiber_per_100g: null });
-    expect(draft.portions).toEqual([{ label: 'label serving', kind: 'serving', quantity: 1, grams: 15 }]);
+    expect(draft.food).toMatchObject({ name: 'Barcode 3017620422003', brand: null, carbs_per_100g: null, carbs_per_100ml: null, fiber_per_100g: null });
+    expect(draft.portions).toEqual([{ label: 'label serving', kind: 'serving', quantity: 1, grams: 15, carbs_g: null }]);
     expect(normalizeOffProduct({ code: '1', serving_quantity: 330, serving_quantity_unit: 'ml' }, '1').portions).toEqual([]);
   });
 });

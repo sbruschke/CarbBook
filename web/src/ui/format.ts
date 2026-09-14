@@ -20,7 +20,10 @@ const trim = (n: number, digits: number) => String(Number(n.toFixed(digits)));
 export function unitLabel(unit: string, portions: PortionData[]): string {
   if (unit.startsWith(PORTION_PREFIX)) {
     const portion = portions.find((p) => p.id === unit.slice(PORTION_PREFIX.length));
-    return portion ? `${portion.label} (${trim(portion.grams / portion.quantity, 1)} g)` : 'unknown portion';
+    if (!portion) return 'unknown portion';
+    // Unknown weight (any-unit foods): don't invent a gram figure.
+    if (portion.grams === null) return portion.label;
+    return `${portion.label} (${trim(portion.grams / portion.quantity, 1)} g)`;
   }
   return UNIT_NAMES[unit] ?? unit;
 }

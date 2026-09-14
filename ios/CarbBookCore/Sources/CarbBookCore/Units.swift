@@ -12,28 +12,67 @@ public enum Units {
     ]
     public static let serving = "serving"
     public static let portionPrefix = "p:"
+
+    /// Upper bounds shared by core math and server/web validation.
+    public static let maxCarbsPer100g = 100.0
+    public static let maxCarbsPer100ml = 150.0
+    public static let maxPortionCarbsG = 500.0
 }
 
 public func isMassUnit(_ unit: String) -> Bool { Units.massGrams[unit] != nil }
 public func isVolumeUnit(_ unit: String) -> Bool { Units.volumeMl[unit] != nil }
 
-private func isValidAmount(_ amount: Double) -> Bool { amount.isFinite && amount >= 0 }
+public func isValidAmount(_ amount: Double) -> Bool { amount.isFinite && amount >= 0 }
+
+private func inRange(_ value: Double?, _ max: Double) -> Bool {
+    guard let value else { return false }
+    return value.isFinite && value >= 0 && value <= max
+}
+
+public func isValidCarbsPer100g(_ value: Double?) -> Bool { inRange(value, Units.maxCarbsPer100g) }
+public func isValidCarbsPer100ml(_ value: Double?) -> Bool { inRange(value, Units.maxCarbsPer100ml) }
+public func isValidPortionCarbs(_ value: Double?) -> Bool { inRange(value, Units.maxPortionCarbsG) }
+public func isValidPortionGrams(_ value: Double?) -> Bool {
+    guard let value else { return false }
+    return value.isFinite && value > 0
+}
+
+private func isValidQuantity(_ value: Double) -> Bool { value.isFinite && value > 0 }
 
 public func densityOf(_ food: FoodData, _ portions: [PortionData]) -> Double? {
     if let density = food.densityGPerMl, density.isFinite, density > 0 { return density }
-    var best: PortionData?
+    var best: (id: String, density: Double)?
     for p in portions where p.kind == "volume" && isVolumeUnit(p.label)
-        && p.quantity.isFinite && p.quantity > 0 && p.grams.isFinite && p.grams > 0 {
-        if best == nil || JS.less(p.id, best!.id) { best = p }
+        && isValidQuantity(p.quantity) && isValidPortionGrams(p.grams) {
+        if best == nil || JS.less(p.id, best!.id) {
+            best = (p.id, p.grams! / (p.quantity * Units.volumeMl[p.label]!))
+        }
     }
-    guard let best else { return nil }
-    return best.grams / (best.quantity * Units.volumeMl[best.label]!)
+    return best?.density
 }
 
+/// Fail closed: only a nil carb basis may fall back to another path; a present-but-invalid one
+/// removes its unit family. Mirrors units.ts `foodUnits` exactly.
 public func foodUnits(_ food: FoodData, _ portions: [PortionData]) -> [String] {
-    var units = Units.massOrder
-    if densityOf(food, portions) != nil { units += Units.volumeOrder }
-    for p in portions where p.kind != "volume" { units.append(Units.portionPrefix + p.id) }
+    let density = densityOf(food, portions)
+    let gPresent = food.carbsPer100g != nil
+    let mlPresent = food.carbsPer100ml != nil
+    let validG = isValidCarbsPer100g(food.carbsPer100g)
+    let validMl = isValidCarbsPer100ml(food.carbsPer100ml)
+    // carbs_g on a volume portion is ignored everywhere.
+    let hasValidPieceBasis = portions.contains { $0.kind != "volume" && $0.carbsG != nil && isValidPortionCarbs($0.carbsG) }
+    // Mass: per-100 g if present; else per-100 ml + density if present; else (no basis) a placeholder
+    // list, unless a valid portion carb basis makes the food portion-only.
+    let massListed = gPresent ? validG : mlPresent ? (validMl && density != nil) : !hasValidPieceBasis
+    // Volume: per-100 ml if present; else convertible via density, unless per-100 g is present but invalid.
+    let volumeListed = mlPresent ? validMl : (density != nil && (!gPresent || validG))
+    var units: [String] = []
+    if massListed { units += Units.massOrder }
+    if volumeListed { units += Units.volumeOrder }
+    for p in portions where p.kind != "volume" {
+        let listed = p.carbsG != nil ? isValidPortionCarbs(p.carbsG) : (isValidPortionGrams(p.grams) && massListed)
+        if listed { units.append(Units.portionPrefix + p.id) }
+    }
     return units
 }
 
@@ -52,9 +91,9 @@ public func foodAmountToGrams(_ amount: Double, _ unit: String, _ food: FoodData
     if unit.hasPrefix(Units.portionPrefix) {
         let portionId = String(unit.dropFirst(Units.portionPrefix.count))
         guard let portion = portions.first(where: { $0.id == portionId }),
-              portion.grams.isFinite, portion.grams > 0,
-              portion.quantity.isFinite, portion.quantity > 0 else { return nil }
-        return amount * portion.grams / portion.quantity
+              isValidPortionGrams(portion.grams),
+              isValidQuantity(portion.quantity) else { return nil }
+        return amount * portion.grams! / portion.quantity
     }
     return nil
 }

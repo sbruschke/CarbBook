@@ -20,6 +20,7 @@ describe('validateRecord', () => {
         source_ref: null,
         derived_from: null,
         carbs_per_100g: 48,
+        carbs_per_100ml: null,
         fiber_per_100g: 3,
         density_g_per_ml: null,
         notes: null,
@@ -73,6 +74,93 @@ describe('validateRecord', () => {
       message: 'volume portion label must be one of ml, l, tsp, tbsp, floz, cup',
     });
     expect(validateRecord(TABLE_SPECS.portion, { ...base, kind: 'count', label: 'slice' }).ok).toBe(true);
+  });
+
+  describe('any-unit foods', () => {
+    it('accepts a food with carbs_per_100ml set and carbs_per_100g null', () => {
+      const record = { ...food({ id: 'f-ml' }), carbs_per_100g: null, carbs_per_100ml: 20.5 };
+      const result = validateRecord(TABLE_SPECS.food, record);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.row.carbs_per_100ml).toBe(20.5);
+    });
+
+    it('treats a missing carbs_per_100ml as null', () => {
+      const result = validateRecord(TABLE_SPECS.food, food({ id: 'f-ml2' }));
+      expect(result.ok && result.row.carbs_per_100ml).toBeNull();
+    });
+
+    it.each([
+      [{ carbs_per_100ml: -1 }, 'carbs_per_100ml must be >= 0'],
+      [{ carbs_per_100ml: 150.1 }, 'carbs_per_100ml must be <= 150'],
+      [{ carbs_per_100ml: 'lots' }, 'carbs_per_100ml must be a finite number'],
+    ])('rejects invalid carbs_per_100ml %#', (fields, message) => {
+      expect(validateRecord(TABLE_SPECS.food, { ...food(), ...fields })).toEqual({ ok: false, message });
+    });
+
+    it('accepts carbs_per_100ml at exactly the 150 max', () => {
+      const result = validateRecord(TABLE_SPECS.food, { ...food(), carbs_per_100ml: 150 });
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.row.carbs_per_100ml).toBe(150);
+    });
+
+    const volumePortion = { id: 'p1', food_id: 'f1', kind: 'volume', label: 'cup', quantity: 1, updated_at: 1, updated_by: 'd', deleted: 0 };
+    const countPortion = { id: 'p2', food_id: 'f1', kind: 'count', label: 'bar', quantity: 1, updated_at: 1, updated_by: 'd', deleted: 0 };
+
+    it('accepts a portion with grams and null carbs_g', () => {
+      const result = validateRecord(TABLE_SPECS.portion, { ...countPortion, grams: 30, carbs_g: null });
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.row).toMatchObject({ grams: 30, carbs_g: null });
+    });
+
+    it('accepts a count/serving portion with carbs_g and null grams', () => {
+      const result = validateRecord(TABLE_SPECS.portion, { ...countPortion, grams: null, carbs_g: 22 });
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.row).toMatchObject({ grams: null, carbs_g: 22 });
+    });
+
+    it('rejects a portion with neither grams nor carbs_g', () => {
+      expect(validateRecord(TABLE_SPECS.portion, { ...countPortion, grams: null, carbs_g: null })).toEqual({
+        ok: false,
+        message: 'portion must have grams or carbs_g',
+      });
+    });
+
+    it('rejects a volume portion without grams even if carbs_g is set', () => {
+      expect(validateRecord(TABLE_SPECS.portion, { ...volumePortion, grams: null, carbs_g: 20 })).toEqual({
+        ok: false,
+        message: 'volume portions require grams',
+      });
+    });
+
+    it.each([
+      [{ carbs_g: -1 }, 'carbs_g must be >= 0'],
+      [{ carbs_g: 500.1 }, 'carbs_g must be <= 500'],
+      [{ carbs_g: 'lots' }, 'carbs_g must be a finite number'],
+      [{ grams: 0 }, 'grams must be > 0'],
+      [{ grams: -5 }, 'grams must be > 0'],
+    ])('rejects invalid portion field %#', (fields, message) => {
+      expect(validateRecord(TABLE_SPECS.portion, { ...countPortion, grams: 30, carbs_g: null, ...fields })).toEqual({
+        ok: false,
+        message,
+      });
+    });
+
+    it('rejects carbs_g on a volume portion', () => {
+      expect(validateRecord(TABLE_SPECS.portion, { ...volumePortion, grams: 158, carbs_g: 48 })).toEqual({
+        ok: false,
+        message: 'volume portions cannot have carbs_g',
+      });
+      expect(validateRecord(TABLE_SPECS.portion, { ...volumePortion, grams: 158, carbs_g: null }).ok).toBe(true);
+    });
+
+    it('accepts carbs_g at exactly the 500 max', () => {
+      const result = validateRecord(TABLE_SPECS.portion, { ...countPortion, grams: null, carbs_g: 500 });
+      expect(result.ok).toBe(true);
+    });
   });
 
   it('requires integer meal_item positions', () => {

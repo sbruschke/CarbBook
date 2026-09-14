@@ -29,13 +29,25 @@ describe('Foods screen', () => {
     ]);
     const user = userEvent.setup();
     renderWith(<Foods />, services);
-    expect(await screen.findByRole('button', { name: /Bread/ })).toHaveTextContent('My food · 50 g / 100 g');
+    expect(await screen.findByRole('button', { name: /Bread/ })).toHaveTextContent('My food · 50 g carbs per 100 g');
     await user.type(screen.getByLabelText('Filter foods'), 'bri');
     expect(screen.queryByRole('button', { name: /Bread/ })).toBeNull();
     expect(screen.queryByRole('button', { name: /Brittle/ })).toBeNull();
     await user.click(screen.getByRole('button', { name: /Brie/ }));
     expect(await screen.findByRole('heading', { name: 'Edit food' })).toBeInTheDocument();
     expect(screen.getByLabelText('Name')).toHaveValue('Brie');
+  });
+
+  it('shows the volume or portion basis the user entered for any-unit foods', async () => {
+    services = makeServices();
+    await services.db.food.bulkPut([
+      synced(foodData({ id: 'rice', name: 'Calrose rice', carbs_per_100g: null, carbs_per_100ml: 20.2884136211058 })),
+      synced(foodData({ id: 'bar', name: 'Granola bar', carbs_per_100g: null })),
+    ]);
+    await services.db.portion.put(synced({ id: 'bar-p', food_id: 'bar', label: 'bar', kind: 'count', quantity: 1, grams: null, carbs_g: 22 }));
+    renderWith(<Foods />, services);
+    expect(await screen.findByRole('button', { name: /Calrose rice/ })).toHaveTextContent('48 g carbs per cup');
+    expect(await screen.findByRole('button', { name: /Granola bar/ })).toHaveTextContent('22 g carbs per bar');
   });
 
   it('opens a scanned Open Food Facts product as a prefilled new food', async () => {

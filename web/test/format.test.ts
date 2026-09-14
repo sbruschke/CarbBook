@@ -27,6 +27,11 @@ describe('format helpers', () => {
     expect(unitLabel('serving', [])).toBe('servings');
   });
 
+  it('shows just the label for a portion with unknown weight (any-unit foods)', () => {
+    const portions = [{ id: 'p3', food_id: 'f', label: 'bar', kind: 'count' as const, quantity: 1, grams: null, carbs_g: 22 }];
+    expect(unitLabel('p:p3', portions)).toBe('bar');
+  });
+
   it('formats numbers and ages', () => {
     expect(formatCarbs(35.68)).toBe('35.7 g');
     expect(formatCarbs(72)).toBe('72 g');

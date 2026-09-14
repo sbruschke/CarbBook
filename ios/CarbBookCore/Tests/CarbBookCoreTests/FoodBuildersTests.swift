@@ -9,6 +9,26 @@ final class FoodBuildersTests: XCTestCase {
         XCTAssertNil(carbsPer100gFromLabel(servingGrams: 30, carbsPerServing: 31))
     }
 
+    // Swift-only: label-entry builders for the any-unit foods addendum (spec "Label entry"),
+    // mirroring the g → per-100g mapping above for volume and piece/serving units.
+    func testCarbsPer100mlFromLabel() {
+        XCTAssertEqual(carbsPer100mlFromLabel(servingMl: 236.5882365, carbsPerServing: 48)!, 20.2884136211058, accuracy: 1e-9)
+        XCTAssertNil(carbsPer100mlFromLabel(servingMl: 0, carbsPerServing: 5))
+        XCTAssertNil(carbsPer100mlFromLabel(servingMl: 100, carbsPerServing: -1))
+        XCTAssertNil(carbsPer100mlFromLabel(servingMl: .nan, carbsPerServing: 5))
+        // Unlike the per-100 g variant, carbs may exceed the serving volume (e.g. a concentrated syrup).
+        XCTAssertEqual(carbsPer100mlFromLabel(servingMl: 15, carbsPerServing: 20)!, 133.333333, accuracy: 1e-5)
+    }
+
+    func testPortionFromLabel() {
+        let bar = portionFromLabel(id: "bar", foodId: "granola-bar", label: "bar", kind: "count", quantity: 1, carbsPerServing: 22)
+        XCTAssertEqual(bar, PortionData(id: "bar", foodId: "granola-bar", label: "bar", kind: "count", quantity: 1, grams: nil, carbsG: 22))
+
+        let servingWithWeight = portionFromLabel(id: "s", foodId: "f", label: "serving", kind: "serving", quantity: 1, grams: 52, carbsPerServing: 30)
+        XCTAssertEqual(servingWithWeight.grams, 52)
+        XCTAssertEqual(servingWithWeight.carbsG, 30)
+    }
+
     func testValidateFood() {
         XCTAssertNil(validateFood(FoodData(id: "f", name: "Oats", carbsPer100g: 66, fiberPer100g: 10)))
         XCTAssertNil(validateFood(FoodData(id: "f", name: "Unlabeled", carbsPer100g: nil)))

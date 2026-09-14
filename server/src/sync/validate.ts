@@ -72,6 +72,23 @@ export function validateRecord(spec: TableSpec, record: unknown, now: number = D
   return { ok: true, row };
 }
 
+/**
+ * Fills data fields the incoming record does not mention with the stored row's values, so a client
+ * that predates a column (e.g. food.carbs_per_100ml, portion.carbs_g) cannot erase it by omission.
+ * A key that is present — including an explicit null — wins. With no stored row (an insert) the
+ * record is returned as-is, so missing nullable fields default to null in validateRecord. The
+ * result is what gets validated, so cross-field checks see the merged record.
+ */
+export function mergeMissingFields(spec: TableSpec, record: unknown, stored: Record<string, unknown> | undefined): unknown {
+  if (stored === undefined || typeof record !== 'object' || record === null || Array.isArray(record)) return record;
+  const decoded = decodeRow(spec, stored);
+  const merged: Record<string, unknown> = { ...(record as Record<string, unknown>) };
+  for (const name of Object.keys(spec.fields)) {
+    if (!Object.hasOwn(merged, name)) merged[name] = decoded[name];
+  }
+  return merged;
+}
+
 /** Converts a stored row back to the wire shape (JSON columns parsed). */
 export function decodeRow(spec: TableSpec, row: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = { ...row };

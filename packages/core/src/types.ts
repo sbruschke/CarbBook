@@ -20,6 +20,8 @@ export interface FoodData {
   source_ref?: string | null;
   derived_from?: Id | null;
   carbs_per_100g: number | null;
+  /** Volume carb basis (any-unit foods addendum). Valid when finite 0..150. */
+  carbs_per_100ml?: number | null;
   fiber_per_100g?: number | null;
   density_g_per_ml?: number | null;
   notes?: string | null;
@@ -34,7 +36,10 @@ export interface PortionData {
   label: string;
   kind: PortionKind;
   quantity: number;
-  grams: number;
+  /** Weight of `quantity` portions; null when unknown. Valid when finite > 0. */
+  grams: number | null;
+  /** Carbs for `quantity` portions; null when unknown. Valid when finite 0..500. */
+  carbs_g?: number | null;
 }
 
 export interface BarcodeData {
