@@ -4,6 +4,7 @@ import SwiftUI
 
 struct CalculatorView: View {
     @Environment(AppModel.self) private var app
+    @Environment(\.scenePhase) private var scenePhase
     @State private var model = CalculatorModel()
     @State private var showAdd = false
     @State private var showScanner = false
@@ -41,9 +42,24 @@ struct CalculatorView: View {
                 Button("OK", role: .cancel) {}
             }
             .onAppear { model.reload(app) }
-            .task { await model.refreshBg(app) }
+            .task {
+                // Runs while the Calculator is visible (cancelled on disappear): a stale Dexcom
+                // reading drops back to manual BG and the estimate follows the clock.
+                await model.refreshBg(app)
+                while !Task.isCancelled {
+                    try? await Task.sleep(for: .seconds(30))
+                    if Task.isCancelled { break }
+                    model.tick(app)
+                }
+            }
+            .onChange(of: scenePhase) { _, phase in
+                guard phase == .active else { return }
+                model.tick(app)
+                Task { await model.refreshBg(app) }
+            }
             .onChange(of: app.revision) { model.reload(app) }
-            .onChange(of: model.lines) { model.recompute(app) }
+            // Keyed by bit pattern: an invalid (NaN) amount never equals itself, which would loop.
+            .onChange(of: AmountInput.changeKey(model.lines)) { model.recompute(app) }
             .onChange(of: model.manualBg) { model.recompute(app) }
             .onChange(of: model.windowOverride) { model.recompute(app) }
             .onChange(of: model.useNow) { model.recompute(app) }
@@ -128,7 +144,10 @@ struct CalculatorView: View {
                 Label("A dose was logged in the last 4 hours. Insulin on board is not subtracted.", systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(.red)
             }
-            NumberField(label: "Taken (units)", text: $model.taken, unit: "u")
+            NumberField(label: "Taken (units)", text: Binding(get: { model.taken }, set: { model.setTaken($0) }), unit: "u")
+            if model.takenIsMalformed {
+                Text(TakenDoseError.malformed.message).font(.caption).foregroundStyle(.red)
+            }
             TextField("Notes", text: $model.notes)
         } header: {
             Text("Dose estimate")
@@ -159,6 +178,17 @@ struct LineRow: View {
     let units: [String]
     let portions: [PortionData]
     let carbs: CarbResult
+    /// String-backed and strictly parsed (`AmountInput`); invalid or empty text sets the amount to NaN
+    /// so core refuses, rather than keeping a previous value the field no longer shows.
+    @State private var amountText: String
+
+    init(line: Binding<CalculatorLine>, units: [String], portions: [PortionData], carbs: CarbResult) {
+        _line = line
+        self.units = units
+        self.portions = portions
+        self.carbs = carbs
+        _amountText = State(initialValue: AmountInput.text(for: line.wrappedValue.amount))
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -170,13 +200,17 @@ struct LineRow: View {
                     .monospacedDigit()
             }
             HStack {
-                TextField("Amount", value: $line.amount, format: .number)
+                TextField("Amount", text: $amountText)
                     .keyboardType(.decimalPad)
                     .padding(6)
                     .background(Theme.fieldBackground)
                     .clipShape(RoundedRectangle(cornerRadius: 8))
                     .frame(maxWidth: 110)
+                    .onChange(of: amountText) { _, text in line.amount = AmountInput.modelAmount(text) }
                 UnitPicker(unit: $line.unit, units: units, portions: portions)
+            }
+            if AmountInput.isInvalid(amountText) {
+                Text(AmountInput.invalidMessage).font(.caption).foregroundStyle(.red)
             }
         }
     }

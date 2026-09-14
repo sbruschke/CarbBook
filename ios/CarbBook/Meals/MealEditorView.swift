@@ -14,6 +14,8 @@ struct MealEditorView: View {
     @State private var weightText = ""
     @State private var notes = ""
     @State private var items: [MealItemData] = []
+    /// Typed amount text per item id; amounts are parsed strictly (`AmountInput`), invalid → NaN.
+    @State private var amountTexts: [String: String] = [:]
     @State private var removedItemIds: [String] = []
     @State private var base = InMemoryCatalog()
     @State private var allFoods: [FoodData] = []
@@ -82,6 +84,13 @@ struct MealEditorView: View {
             ? catalog.food(value.refId).map { foodUnits($0, catalog.portions(value.refId)) } ?? [value.unit]
             : catalog.meal(value.refId).map { mealUnits($0) } ?? [value.unit]
         let carbs = itemCarbs(catalog, value.refType, value.refId, value.amount, value.unit)
+        let amountText = amountTexts[value.id] ?? AmountInput.text(for: value.amount)
+        let amountBinding = Binding<String>(
+            get: { amountText },
+            set: { text in
+                amountTexts[value.id] = text
+                item.wrappedValue.amount = AmountInput.modelAmount(text)
+            })
         return VStack(alignment: .leading) {
             HStack {
                 Text(displayName ?? "Missing \(value.refType.rawValue)")
@@ -90,10 +99,13 @@ struct MealEditorView: View {
                     .foregroundStyle(carbs.complete ? Color.primary : Color.orange)
             }
             HStack {
-                TextField("Amount", value: item.amount, format: .number)
+                TextField("Amount", text: amountBinding)
                     .keyboardType(.decimalPad)
                     .frame(maxWidth: 110)
                 UnitPicker(unit: item.unit, units: units, portions: value.refType == .food ? catalog.portions(value.refId) : [])
+            }
+            if AmountInput.isInvalid(amountText) {
+                Text(AmountInput.invalidMessage).font(.caption).foregroundStyle(.red)
             }
         }
     }
@@ -158,6 +170,7 @@ struct MealEditorView: View {
     private func save() {
         guard !name.trimmingCharacters(in: .whitespaces).isEmpty else { error = "Enter a name."; return }
         guard let yield = parseNumber(yieldText), yield > 0 else { error = "Yield must be more than 0 servings."; return }
+        guard !AmountInput.hasInvalidAmount(items) else { error = "\(AmountInput.invalidMessage). Fix it before saving."; return }
         let weightTrimmed = weightText.trimmingCharacters(in: .whitespaces)
         var weight: Double?
         if !weightTrimmed.isEmpty {
