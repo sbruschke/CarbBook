@@ -45,7 +45,7 @@ describe('carbbook import-usda + /api/usda', () => {
     expect(sqlite.headers['content-type']).toBe('application/vnd.sqlite3');
     expect(createHash('sha256').update(sqlite.rawPayload).digest('hex')).toBe(manifest.sqlite_sha256);
 
-    for (const name of ['manifest.json', '..%2Fcarbbook.db', 'usda-fdc-000000000000.sqlite']) {
+    for (const name of ['manifest.json', '..%2Fcarbbook.db', 'usda-fdc-000000000000.sqlite', `${manifest.sqlite_file}.tmp`]) {
       expect((await app.inject({ url: `/api/usda/files/${name}`, headers: { cookie } })).statusCode).toBe(404);
     }
   });

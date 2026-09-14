@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { gunzipSync } from 'node:zlib';
@@ -51,6 +51,27 @@ describe('buildUsdaBundles', () => {
     expect(existsSync(join(dir, first.json_file))).toBe(false);
     expect(existsSync(join(dir, first.sqlite_file))).toBe(false);
     expect(existsSync(join(dir, second.json_file))).toBe(true);
+  });
+
+  it('leaves existing immutable-cached files untouched on a re-import that yields the same version', async () => {
+    const db = initDatabase(':memory:');
+    await importUsda(db, USDA_FIXTURES);
+    const dir = mkdtempSync(join(tmpdir(), 'carbbook-bundle-'));
+    const first = buildUsdaBundles(db, dir, 1);
+    const jsonPath = join(dir, first.json_file);
+    const sqlitePath = join(dir, first.sqlite_file);
+    const jsonStatBefore = statSync(jsonPath);
+    const sqliteStatBefore = statSync(sqlitePath);
+
+    const second = buildUsdaBundles(db, dir, 2);
+
+    expect(second.version).toBe(first.version);
+    expect(statSync(jsonPath).ino).toBe(jsonStatBefore.ino);
+    expect(statSync(jsonPath).mtimeMs).toBe(jsonStatBefore.mtimeMs);
+    expect(statSync(sqlitePath).ino).toBe(sqliteStatBefore.ino);
+    expect(statSync(sqlitePath).mtimeMs).toBe(sqliteStatBefore.mtimeMs);
+    // No .tmp leftovers from the skipped write.
+    expect(readdirSync(dir).some((f) => f.endsWith('.tmp'))).toBe(false);
   });
 
   it('readManifest returns null when nothing was imported', () => {

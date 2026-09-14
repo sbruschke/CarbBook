@@ -34,10 +34,11 @@ export async function* readCsv(path: string): AsyncGenerator<Record<string, stri
   for await (const record of parser) yield record as Record<string, string>;
 }
 
+/** Carbs/fiber are grams per 100g of food and can never exceed 100; anything else is bad data. */
 function amount(value: string | undefined): number | null {
   if (value === undefined || value.trim() === '') return null;
   const n = Number(value);
-  return Number.isFinite(n) && n >= 0 ? n : null;
+  return Number.isFinite(n) && n >= 0 && n <= 100 ? n : null;
 }
 
 async function readDataset(dir: string) {
@@ -67,6 +68,13 @@ async function readDataset(dir: string) {
     if (FIBER_NUTRIENT_IDS.has(nutrientId) && food.fiber_per_100g === null) food.fiber_per_100g = amount(row.amount);
   }
 
+  // A food can never store more fiber than carbs; unparseable/out-of-range fiber loses to a valid carbs value.
+  for (const food of foods.values()) {
+    if (food.carbs_per_100g !== null && food.fiber_per_100g !== null && food.fiber_per_100g > food.carbs_per_100g) {
+      food.fiber_per_100g = null;
+    }
+  }
+
   const portions: UsdaPortion[] = [];
   let skipped = 0;
   for await (const row of readCsv(join(dir, 'food_portion.csv'))) {
@@ -78,9 +86,20 @@ async function readDataset(dir: string) {
   return { foods: [...foods.values()], portions, skipped };
 }
 
-/** Imports one or more extracted FDC CSV directories (Foundation, SR Legacy, FNDDS). Re-runnable. */
+/**
+ * Imports one or more extracted FDC CSV directories (Foundation, SR Legacy, FNDDS). Re-runnable.
+ *
+ * All datasets are read (async, off any transaction) before anything is written, and the writes -
+ * upserts, the removal of USDA foods absent from this import, and the FTS rebuild - happen in one
+ * synchronous transaction, so a failure anywhere (a bad directory, a write error) leaves the
+ * previously-imported usda_food/usda_portion/usda_fts data untouched rather than half-applied.
+ * The `food` table (synced catalog rows, some copied from USDA with source='usda') is never touched.
+ */
 export async function importUsda(db: Db, datasetDirs: string[]): Promise<UsdaImportStats> {
   const stats: UsdaImportStats = { datasets: 0, foods: 0, portions: 0, skipped_portions: 0 };
+  const datasets: Awaited<ReturnType<typeof readDataset>>[] = [];
+  for (const dir of datasetDirs) datasets.push(await readDataset(dir));
+
   const upsertFood = db.prepare(
     `INSERT INTO usda_food (fdc_id, data_type, name, carbs_per_100g, fiber_per_100g)
      VALUES (@fdc_id, @data_type, @name, @carbs_per_100g, @fiber_per_100g)
@@ -92,20 +111,32 @@ export async function importUsda(db: Db, datasetDirs: string[]): Promise<UsdaImp
     `INSERT INTO usda_portion (id, fdc_id, label, kind, quantity, grams, description)
      VALUES (@id, @fdc_id, @label, @kind, @quantity, @grams, @description)`,
   );
-  for (const dir of datasetDirs) {
-    const dataset = await readDataset(dir);
-    db.transaction(() => {
+  const deleteFood = db.prepare('DELETE FROM usda_food WHERE fdc_id = ?');
+  const existingFdcIds = db.prepare('SELECT fdc_id FROM usda_food').pluck();
+
+  const keepIds = new Set<number>();
+  for (const dataset of datasets) for (const food of dataset.foods) keepIds.add(food.fdc_id);
+
+  db.transaction(() => {
+    for (const dataset of datasets) {
       for (const food of dataset.foods) {
         upsertFood.run(food);
         clearPortions.run(food.fdc_id);
       }
       for (const portion of dataset.portions) insertPortion.run(portion);
-    })();
+    }
+    // usda_portion rows cascade-delete via the fdc_id foreign key; usda_fts is repopulated below.
+    for (const fdcId of existingFdcIds.all() as number[]) {
+      if (!keepIds.has(fdcId)) deleteFood.run(fdcId);
+    }
+    db.exec("INSERT INTO usda_fts (usda_fts) VALUES ('rebuild')");
+  })();
+
+  for (const dataset of datasets) {
     stats.datasets++;
     stats.foods += dataset.foods.length;
     stats.portions += dataset.portions.length;
     stats.skipped_portions += dataset.skipped;
   }
-  db.exec("INSERT INTO usda_fts (usda_fts) VALUES ('rebuild')");
   return stats;
 }

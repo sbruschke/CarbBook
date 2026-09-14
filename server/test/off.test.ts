@@ -64,6 +64,21 @@ describe('createOffClient', () => {
       await expect(createOffClient(options(fetch)).lookup('123456')).rejects.toBeInstanceOf(OffUnavailableError);
     }
   });
+
+  it('throws OffUnavailableError when the 200 body is not valid JSON', async () => {
+    const { fetch } = stubFetch(() => new Response('<html>not json</html>', { status: 200 }));
+    await expect(createOffClient(options(fetch)).lookup('123456')).rejects.toBeInstanceOf(OffUnavailableError);
+  });
+
+  it('throws OffUnavailableError when the body stream rejects mid-read', async () => {
+    const body = new ReadableStream({
+      start(controller) {
+        controller.error(new Error('connection reset'));
+      },
+    });
+    const { fetch } = stubFetch(() => new Response(body, { status: 200, headers: { 'content-type': 'application/json' } }));
+    await expect(createOffClient(options(fetch)).lookup('123456')).rejects.toBeInstanceOf(OffUnavailableError);
+  });
 });
 
 describe('normalizeOffProduct', () => {
@@ -88,6 +103,49 @@ describe('normalizeOffProduct', () => {
     expect(draft.food).toMatchObject({ name: 'Barcode 3017620422003', brand: null, carbs_per_100g: null, fiber_per_100g: null });
     expect(draft.portions).toEqual([{ label: 'label serving', kind: 'serving', quantity: 1, grams: 15 }]);
     expect(normalizeOffProduct({ code: '1', serving_quantity: 330, serving_quantity_unit: 'ml' }, '1').portions).toEqual([]);
+  });
+});
+
+describe('normalizeOffProduct nutrition clamping', () => {
+  it('rejects carbs/fiber per 100g outside 0..100', () => {
+    const draft = normalizeOffProduct(
+      { code: '1', nutriments: { carbohydrates_100g: 150, fiber_100g: -1 } },
+      '1',
+    );
+    expect(draft.food.carbs_per_100g).toBeNull();
+    expect(draft.food.fiber_per_100g).toBeNull();
+  });
+
+  it('rejects unparseable nutriment strings, including comma-decimal', () => {
+    const draft = normalizeOffProduct(
+      { code: '1', nutriments: { carbohydrates_100g: 'not a number', fiber_100g: '12,5' } },
+      '1',
+    );
+    expect(draft.food.carbs_per_100g).toBeNull();
+    expect(draft.food.fiber_per_100g).toBeNull();
+  });
+
+  it('rejects NaN', () => {
+    const draft = normalizeOffProduct({ code: '1', nutriments: { carbohydrates_100g: NaN } }, '1');
+    expect(draft.food.carbs_per_100g).toBeNull();
+  });
+
+  it('nulls fiber when it exceeds carbs, keeping carbs', () => {
+    const draft = normalizeOffProduct(
+      { code: '1', nutriments: { carbohydrates_100g: 10, fiber_100g: 15 } },
+      '1',
+    );
+    expect(draft.food.carbs_per_100g).toBe(10);
+    expect(draft.food.fiber_per_100g).toBeNull();
+  });
+
+  it('accepts boundary values 0 and 100', () => {
+    const draft = normalizeOffProduct(
+      { code: '1', nutriments: { carbohydrates_100g: 100, fiber_100g: 0 } },
+      '1',
+    );
+    expect(draft.food.carbs_per_100g).toBe(100);
+    expect(draft.food.fiber_per_100g).toBe(0);
   });
 });
 

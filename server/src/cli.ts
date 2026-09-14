@@ -88,6 +88,9 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
       );
       io.stdout(`USDA bundle ${manifest.version} written to ${config.usdaDir}`);
       return 0;
+    } catch (error) {
+      io.stderr((error as Error).message);
+      return 1;
     } finally {
       if (!io.db) db.close();
     }

@@ -36,18 +36,20 @@ export function createOffClient(options: OffClientOptions): OffClient {
     async lookup(code) {
       const url = `${options.baseUrl}/api/v2/product/${encodeURIComponent(code)}?fields=${OFF_FIELDS}`;
       let response: Response;
+      let body: { code?: string; status?: number; product?: Omit<OffProduct, 'code'> };
       try {
         response = await options.fetch(url, {
           headers: { 'user-agent': options.userAgent, accept: 'application/json' },
           signal: AbortSignal.timeout(options.timeoutMs),
         });
+        // Unknown products come back as HTTP 404 with {"status":0,"status_verbose":"product not found"}.
+        if (response.status === 404) return null;
+        if (!response.ok) throw new OffUnavailableError(`Open Food Facts responded ${response.status}`);
+        body = (await response.json()) as { code?: string; status?: number; product?: Omit<OffProduct, 'code'> };
       } catch (error) {
+        if (error instanceof OffUnavailableError) throw error;
         throw new OffUnavailableError(`Open Food Facts unreachable: ${(error as Error).message}`);
       }
-      // Unknown products come back as HTTP 404 with {"status":0,"status_verbose":"product not found"}.
-      if (response.status === 404) return null;
-      if (!response.ok) throw new OffUnavailableError(`Open Food Facts responded ${response.status}`);
-      const body = (await response.json()) as { code?: string; status?: number; product?: Omit<OffProduct, 'code'> };
       if (body.status !== 1 || !body.product) return null;
       return { ...body.product, code: body.code ?? code };
     },

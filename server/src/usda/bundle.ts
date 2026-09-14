@@ -77,9 +77,22 @@ export function buildUsdaBundles(db: Db, outDir: string, now: number): UsdaManif
   mkdirSync(outDir, { recursive: true });
   const jsonFile = `usda-${version}.json.gz`;
   const sqliteFile = `usda-${version}.sqlite`;
+  const jsonPath = join(outDir, jsonFile);
+  const sqlitePath = join(outDir, sqliteFile);
   const gz = gzipSync(json, { level: 9 });
-  writeFileSync(join(outDir, jsonFile), gz);
-  writeSqliteBundle(join(outDir, sqliteFile), bundle, version);
+
+  // Bundle files are served with an immutable cache-control header, so a re-import that yields the
+  // same content-addressed version must never delete/rewrite the files already on disk.
+  if (!existsSync(jsonPath)) {
+    const tmp = `${jsonPath}.tmp`;
+    writeFileSync(tmp, gz);
+    renameSync(tmp, jsonPath);
+  }
+  if (!existsSync(sqlitePath)) {
+    const tmp = `${sqlitePath}.tmp`;
+    writeSqliteBundle(tmp, bundle, version);
+    renameSync(tmp, sqlitePath);
+  }
 
   const manifest: UsdaManifest = {
     version,

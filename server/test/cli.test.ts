@@ -1,3 +1,6 @@
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import { describe, expect, it } from 'vitest';
 import { findUserByUsername } from '../src/auth/users';
@@ -97,6 +100,15 @@ describe('carbbook user add', () => {
     });
     expect(await runCli(['user', 'add', 'brett'], t.io)).toBe(0);
     expect(prompts).toEqual(['Password: ', 'Confirm password: ']);
+  });
+});
+
+describe('carbbook import-usda', () => {
+  it('prints a clear message to stderr and exits 1 for a bad directory, without throwing', async () => {
+    const t = io();
+    const bad = mkdtempSync(join(tmpdir(), 'carbbook-cli-bad-'));
+    await expect(runCli(['import-usda', bad], t.io)).resolves.toBe(1);
+    expect(t.err[0]).toMatch(`${bad} is missing food.csv`);
   });
 });
 
