@@ -29,7 +29,8 @@ describe('users', () => {
     const db = initDatabase(':memory:');
     await createUser(db, { username: 'brett', password: 'long enough', role: 'owner' }, 1);
     await expect(createUser(db, { username: 'BRETT', password: 'long enough', role: 'viewer' }, 1)).rejects.toThrow(UserError);
-    await expect(createUser(db, { username: 'kim', password: 'short', role: 'viewer' }, 1)).rejects.toThrow(/at least 8/);
+    await expect(createUser(db, { username: 'kim', password: 'short', role: 'viewer' }, 1)).rejects.toThrow(/at least 6/);
+    await createUser(db, { username: 'sixdigit', password: '123456', role: 'viewer' }, 1);
     await expect(createUser(db, { username: 'no spaces', password: 'long enough', role: 'viewer' }, 1)).rejects.toThrow(/Username/);
     await expect(
       createUser(db, { username: 'kim', password: 'long enough', role: 'admin' as 'owner' }, 1),
