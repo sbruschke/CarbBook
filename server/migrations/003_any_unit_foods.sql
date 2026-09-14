@@ -32,7 +32,8 @@ CREATE TABLE portion_new (
   server_seq INTEGER NOT NULL,
   CHECK (grams IS NULL OR grams > 0),
   CHECK (grams IS NOT NULL OR carbs_g IS NOT NULL),
-  CHECK (kind <> 'volume' OR grams IS NOT NULL)
+  CHECK (kind <> 'volume' OR grams IS NOT NULL),
+  CHECK (kind <> 'volume' OR carbs_g IS NULL)
 );
 
 INSERT INTO portion_new (id, food_id, label, kind, quantity, grams, carbs_g, updated_at, updated_by, deleted, server_seq)

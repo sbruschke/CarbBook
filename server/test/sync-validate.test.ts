@@ -149,6 +149,14 @@ describe('validateRecord', () => {
       });
     });
 
+    it('rejects carbs_g on a volume portion', () => {
+      expect(validateRecord(TABLE_SPECS.portion, { ...volumePortion, grams: 158, carbs_g: 48 })).toEqual({
+        ok: false,
+        message: 'volume portions cannot have carbs_g',
+      });
+      expect(validateRecord(TABLE_SPECS.portion, { ...volumePortion, grams: 158, carbs_g: null }).ok).toBe(true);
+    });
+
     it('accepts carbs_g at exactly the 500 max', () => {
       const result = validateRecord(TABLE_SPECS.portion, { ...countPortion, grams: null, carbs_g: 500 });
       expect(result.ok).toBe(true);

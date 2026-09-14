@@ -99,6 +99,18 @@ describe('migration 003 (any-unit foods)', () => {
     ).toThrow();
   });
 
+  it('rejects carbs_g on a volume portion', () => {
+    const db = openDb(':memory:');
+    migrate(db);
+    expect(() =>
+      db
+        .prepare(
+          "INSERT INTO portion (id, food_id, label, kind, quantity, grams, carbs_g, updated_at, updated_by, deleted, server_seq) VALUES ('p5', 'f1', 'cup', 'volume', 1, 158, 48, 1, 'd', 0, 1)",
+        )
+        .run(),
+    ).toThrow(/CHECK constraint failed/);
+  });
+
   it('rejects a portion with neither grams nor carbs_g', () => {
     const db = openDb(':memory:');
     migrate(db);

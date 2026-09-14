@@ -142,6 +142,8 @@ export const TABLE_SPECS: Record<SyncTable, TableSpec> = {
       }
       if (r.grams == null && r.carbs_g == null) return 'portion must have grams or carbs_g';
       if (r.kind === 'volume' && r.grams == null) return 'volume portions require grams';
+      // Volume portions only carry a weight (density); their carbs come from the food's bases.
+      if (r.kind === 'volume' && r.carbs_g != null) return 'volume portions cannot have carbs_g';
       return null;
     },
   },

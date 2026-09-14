@@ -2,7 +2,7 @@ import { createCatalog, isNewer, type MealItemData, wouldCreateCycle } from '@ca
 import type { Role } from '../auth/users';
 import { type Db, nextServerSeq } from '../db';
 import { columnsOf, isSyncTable, type TableSpec, TABLE_SPECS } from './tables';
-import { type SqlRow, validateRecord } from './validate';
+import { mergeMissingFields, type SqlRow, validateRecord } from './validate';
 
 export interface PushChange {
   table: string;
@@ -106,7 +106,10 @@ function applyOne(db: Db, role: Role, change: PushChange, mealItems: MealItemDat
     return { table, id, status: 'rejected', reason: 'unknown_table', message: `Unknown table "${table}"` };
   }
   const spec = TABLE_SPECS[change.table];
-  const validation = validateRecord(spec, change.record);
+  // Missing keys keep the stored values (old clients don't know newer columns); validate the merge.
+  const storedRow =
+    id === null ? undefined : (db.prepare(`SELECT * FROM ${spec.name} WHERE id = ?`).get(id) as Record<string, unknown> | undefined);
+  const validation = validateRecord(spec, mergeMissingFields(spec, change.record, storedRow));
   if (!validation.ok) return { table, id, status: 'rejected', reason: 'invalid', message: validation.message };
   const row = validation.row;
   const rowId = row.id as string;
@@ -134,9 +137,7 @@ function applyOne(db: Db, role: Role, change: PushChange, mealItems: MealItemDat
     }
   }
 
-  const stored = db
-    .prepare(`SELECT updated_at, updated_by, server_seq FROM ${spec.name} WHERE id = ?`)
-    .get(rowId) as { updated_at: number; updated_by: string; server_seq: number } | undefined;
+  const stored = storedRow as { updated_at: number; updated_by: string; server_seq: number } | undefined;
   const incoming = { updated_at: row.updated_at as number, updated_by: row.updated_by as string };
   if (stored && !isNewer(incoming, stored)) {
     return { table, id: rowId, status: 'ignored', server_seq: stored.server_seq };
