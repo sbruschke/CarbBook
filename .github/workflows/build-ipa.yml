@@ -1,0 +1,76 @@
+name: build-ipa
+
+# Compile check for the iOS app plus the macOS package tests. Runs on pull requests and on demand
+# (`gh workflow run build-ipa.yml --ref <branch>`); pushes to main are built by release.yml.
+on:
+  pull_request:
+    paths:
+      - 'ios/**'
+      - 'testdata/**'
+      - '.github/workflows/build-ipa.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode 26.6
+        run: |
+          sudo xcode-select -s /Applications/Xcode_26.6.app
+          xcodebuild -version
+          xcodebuild -showsdks | grep -i iphoneos
+
+      - name: Package tests (macOS)
+        run: |
+          (cd ios/CarbBookCore && swift test)
+          (cd ios/CarbBookKit && swift test)
+
+      - name: Install XcodeGen
+        run: |
+          brew install xcodegen
+          xcodegen --version
+
+      - name: Generate Xcode project
+        working-directory: ios
+        run: xcodegen generate
+
+      - name: Build unsigned .app
+        run: |
+          set +e
+          xcodebuild \
+            -project ios/CarbBook.xcodeproj \
+            -scheme CarbBook \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            CURRENT_PROJECT_VERSION="${{ github.run_number }}" \
+            -IDEPackageSupportUseBuiltinSCM=YES \
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            build 2>&1 | tee "$RUNNER_TEMP/xcodebuild.log"
+          rc=${PIPESTATUS[0]}
+          if [ $rc -ne 0 ]; then
+            echo "=== Swift diagnostics ==="
+            grep -E "(error|warning):" "$RUNNER_TEMP/xcodebuild.log" | head -150 || true
+            exit $rc
+          fi
+
+      - name: Package .ipa
+        run: |
+          set -euo pipefail
+          mkdir -p build/Payload
+          cp -R build/Build/Products/Release-iphoneos/CarbBook.app build/Payload/
+          (cd build && zip -qr CarbBook.ipa Payload)
+          unzip -l build/CarbBook.ipa | head
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CarbBook-ipa
+          path: build/CarbBook.ipa
+          if-no-files-found: error
+          retention-days: 14
