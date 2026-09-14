@@ -63,7 +63,7 @@ export function loadConfig(env: Env = process.env): Config {
     dexcomApiUrl: absoluteUrl(env, 'DEXCOM_API_URL', 'http://dexcom-api:8000'),
     dexcomApiToken: optionalText(env, 'DEXCOM_API_TOKEN'),
     offBaseUrl: absoluteUrl(env, 'OFF_BASE_URL', 'https://world.openfoodfacts.org'),
-    offUserAgent: text(env, 'OFF_USER_AGENT', 'CarbBook/0.1 (self-hosted)'),
+    offUserAgent: text(env, 'OFF_USER_AGENT', 'CarbBook/0.1 (https://recipes.dxshdw.dev)'),
     httpTimeoutMs: integer(env, 'HTTP_TIMEOUT_MS', 5000, 100, 60000),
     cookieSecure: boolean(env, 'COOKIE_SECURE', true),
     trustProxy: boolean(env, 'TRUST_PROXY', false),

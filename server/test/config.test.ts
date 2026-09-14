@@ -13,7 +13,7 @@ describe('loadConfig', () => {
       dexcomApiUrl: 'http://dexcom-api:8000',
       dexcomApiToken: null,
       offBaseUrl: 'https://world.openfoodfacts.org',
-      offUserAgent: 'CarbBook/0.1 (self-hosted)',
+      offUserAgent: 'CarbBook/0.1 (https://recipes.dxshdw.dev)',
       httpTimeoutMs: 5000,
       cookieSecure: true,
       trustProxy: false,
