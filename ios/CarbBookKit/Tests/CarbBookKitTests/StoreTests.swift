@@ -75,6 +75,19 @@ final class StoreTests: XCTestCase {
         XCTAssertEqual(fkCount, 0)
     }
 
+    func testLastDoseAtMsExcludingOneEntry() throws {
+        let store = try LocalStore(path: nil, now: { 1_000 })
+        try store.save("log_entry", LogEntryData(id: "e1", eatenAt: 1_000, windowName: nil, bgMgdl: nil, bgSource: "none",
+                                                  bgTrend: nil, totalCarbsG: 40, suggestedUnits: nil, takenUnits: 4,
+                                                  settingsVersionId: nil, notes: nil))
+        try store.save("log_entry", LogEntryData(id: "e2", eatenAt: 2_000, windowName: nil, bgMgdl: nil, bgSource: "none",
+                                                  bgTrend: nil, totalCarbsG: 30, suggestedUnits: nil, takenUnits: nil,
+                                                  settingsVersionId: nil, notes: nil))
+        XCTAssertEqual(try store.lastDoseAtMs(), 1_000)
+        XCTAssertNil(try store.lastDoseAtMs(excluding: "e1"))
+        XCTAssertEqual(try store.lastDoseAtMs(excluding: "e2"), 1_000)
+    }
+
     func testBarcodeLookupMatchesZeroPaddedCodesAndQueue() throws {
         let store = try LocalStore(path: nil, now: { 1_000 })
         try store.save("food", FoodData(id: "f1", name: "Granola", source: "off", carbsPer100g: 64))

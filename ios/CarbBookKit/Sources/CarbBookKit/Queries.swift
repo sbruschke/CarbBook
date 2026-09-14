@@ -62,6 +62,16 @@ extension LocalStore {
         }
     }
 
+    /// Same as `lastDoseAtMs()`, excluding one entry: the Log editor's own recent-dose warning must
+    /// not fire on the entry being edited (its own taken dose isn't "another" recent dose).
+    public func lastDoseAtMs(excluding entryId: Id) throws -> Int64? {
+        try dbQueue.read { db in
+            try Int64.fetchOne(
+                db, sql: "SELECT max(eaten_at) FROM log_entry WHERE deleted = 0 AND taken_units > 0 AND id != ?",
+                arguments: [entryId])
+        }
+    }
+
     /// Local barcode lookup, including UPC-A/EAN-13 zero-padding variants.
     public func foodForBarcode(_ code: String) throws -> (food: FoodData, portions: [PortionData])? {
         let candidates = barcodeCandidates(code)
