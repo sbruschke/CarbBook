@@ -17,6 +17,21 @@ export function useDoseVersions(): Synced<DoseSettingsData>[] | undefined {
   return useLiveQuery(() => db.dose_settings.filter(isLive).toArray(), [db]);
 }
 
+/**
+ * Live dose_settings versions eligible to drive dosing right now: live and not the subject of a
+ * recorded server rejection (mirrors `selectActiveSettings`'s belt-and-braces exclusion, reactively,
+ * so a version rejected while a push is in flight can never drive a dose estimate in the meantime).
+ * Use this — never the raw `useDoseVersions()` — wherever a screen picks the *active* settings.
+ */
+export function useEligibleDoseVersions(): Synced<DoseSettingsData>[] | undefined {
+  const { db } = useServices();
+  return useLiveQuery(async () => {
+    const [versions, errors] = await Promise.all([db.dose_settings.filter(isLive).toArray(), db.sync_error.toArray()]);
+    const rejected = new Set(errors.filter((e) => e.table === 'dose_settings').map((e) => e.id));
+    return versions.filter((v) => !rejected.has(v.id));
+  }, [db]);
+}
+
 export function useLogData(): { entries: Synced<LogEntryData>[]; items: Synced<LogItemData>[] } | undefined {
   const { db } = useServices();
   return useLiveQuery(async () => {

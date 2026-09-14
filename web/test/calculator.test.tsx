@@ -1,0 +1,127 @@
+import type { LogEntryData } from '@carbbook/core';
+import { screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { afterEach, describe, expect, it } from 'vitest';
+import { REFUSAL_MESSAGES } from '../src/dose/dose';
+import { Calculator } from '../src/screens/Calculator';
+import { foodData, synced } from './helpers';
+import { makeServices, NOW, renderWith, seedSettings, type TestServices } from './render';
+
+let services: TestServices;
+afterEach(async () => {
+  await services.db.delete();
+});
+
+async function setup() {
+  services = makeServices();
+  await seedSettings(services.db);
+  await services.db.food.bulkPut([
+    synced(foodData({ id: 'tortilla', name: 'Tortilla', carbs_per_100g: 48 })),
+    synced(foodData({ id: 'mystery', name: 'Mystery stew', carbs_per_100g: null })),
+  ]);
+  return userEvent.setup();
+}
+
+async function addItem(user: ReturnType<typeof userEvent.setup>, query: string, name: RegExp) {
+  await user.type(await screen.findByLabelText('Search foods and meals'), query);
+  await user.click(await screen.findByRole('button', { name }));
+}
+
+describe('Calculator', () => {
+  it('shows live carbs and the dose breakdown labelled as an estimate', async () => {
+    const user = await setup();
+    renderWith(<Calculator />, services);
+    await addItem(user, 'tort', /Tortilla/);
+    const amount = await screen.findByLabelText('Amount of Tortilla');
+    await user.clear(amount);
+    await user.type(amount, '150');
+    expect(screen.getByLabelText('Carbs in Tortilla')).toHaveTextContent('72 g');
+    await user.type(screen.getByLabelText('BG (mg/dL)'), '263');
+    expect(screen.getByTestId('dose-breakdown')).toHaveTextContent('72g ÷ 8 = 9.0 + BG 263 → 2u = 11.0 → 11u');
+    expect(screen.getByTestId('dose-units')).toHaveTextContent('11 u');
+    expect(screen.getByText('estimate')).toBeInTheDocument();
+  });
+
+  it('shows the refusal reason and no number when carb data is missing', async () => {
+    const user = await setup();
+    renderWith(<Calculator />, services);
+    await addItem(user, 'mystery', /Mystery stew/);
+    expect(await screen.findByTestId('dose-refusal')).toHaveTextContent(REFUSAL_MESSAGES.incomplete_carbs);
+    expect(screen.queryByTestId('dose-units')).not.toBeInTheDocument();
+    expect(screen.getByText('missing data')).toBeInTheDocument();
+    expect(screen.getByTestId('total-carbs')).toHaveTextContent('(incomplete)');
+  });
+
+  it('prefills a fresh Dexcom reading', async () => {
+    const user = await setup();
+    services.api.on('GET', '/api/bg', () => ({
+      mgdl: 250, trend: 'Flat', arrow: '→', delta_mgdl: 0, read_at: NOW - 5 * 60_000, age_ms: 5 * 60_000, fresh: true,
+    }));
+    renderWith(<Calculator />, services);
+    expect(await screen.findByTestId('bg-reading')).toHaveTextContent('BG 250 → · 5 min ago (Dexcom)');
+    await addItem(user, 'tort', /Tortilla/);
+    expect(await screen.findByTestId('dose-breakdown')).toHaveTextContent('48g ÷ 8 = 6.0 + BG 250 → 1u = 7.0 → 7u');
+  });
+
+  it('logs the entry and copies a USDA food into the synced food table', async () => {
+    const user = await setup();
+    await services.db.usda_food.put({ fdc_id: 324860, name: 'Peanut butter, smooth style, with salt', carbs_per_100g: 22.3, fiber_per_100g: 4.8 });
+    await services.db.usda_portion.put({ id: 119207, fdc_id: 324860, label: 'tbsp', kind: 'volume', quantity: 2, grams: 32, description: 'tablespoon' });
+    renderWith(<Calculator />, services);
+    await addItem(user, 'peanut', /Peanut butter/);
+    const name = 'Peanut butter, smooth style, with salt';
+    const amount = await screen.findByLabelText(`Amount of ${name}`);
+    await user.clear(amount);
+    await user.type(amount, '10');
+    await user.selectOptions(screen.getByLabelText(`Unit for ${name}`), 'tbsp');
+    await user.type(screen.getByLabelText('BG (mg/dL)'), '120');
+    expect(screen.getByTestId('dose-breakdown')).toHaveTextContent('35.7g ÷ 8 = 4.5 + BG 120 → 0u = 4.5 → 4u (rounded down: BG under 130)');
+    expect(screen.getByLabelText('Taken dose (u)')).toHaveValue('4');
+
+    await user.click(screen.getByRole('button', { name: 'Log it' }));
+    expect(await screen.findByRole('status')).toHaveTextContent('Logged 35.7 g carbs at 12:00.');
+    const [entry] = await services.db.log_entry.toArray();
+    expect(entry).toMatchObject({
+      eaten_at: NOW, window_name: 'Lunch', bg_mgdl: 120, bg_source: 'manual', suggested_units: 4, taken_units: 4,
+      settings_version_id: 'dose-2026-08-12', updated_by: 'device-test',
+    });
+    expect(entry!.total_carbs_g).toBeCloseTo(35.68, 5);
+    expect(await services.db.log_item.toArray()).toEqual([
+      expect.objectContaining({ log_entry_id: entry!.id, ref_type: 'food', ref_id: 'usda-324860', display_name: name, amount: 10, unit: 'tbsp' }),
+    ]);
+    expect(await services.db.food.get('usda-324860')).toMatchObject({ source: 'usda', source_ref: '324860' });
+    expect(screen.queryAllByTestId('item-row')).toHaveLength(0);
+  });
+
+  it('warns when a dose was logged in the last 4 hours', async () => {
+    const user = await setup();
+    await services.db.log_entry.put(
+      synced<LogEntryData>({
+        id: 'earlier', eaten_at: NOW - 2 * 3_600_000, window_name: 'Breakfast', bg_mgdl: null, bg_source: 'none',
+        total_carbs_g: 40, suggested_units: 5, taken_units: 5, settings_version_id: null,
+      }),
+    );
+    renderWith(<Calculator />, services);
+    await addItem(user, 'tort', /Tortilla/);
+    expect(await screen.findByText(/A dose was logged at 10:00, within the last 4 hours/)).toBeInTheDocument();
+  });
+
+  it('saves the current items as a meal', async () => {
+    const user = await setup();
+    renderWith(<Calculator />, services);
+    await addItem(user, 'tort', /Tortilla/);
+    await user.click(screen.getByRole('button', { name: 'Save as meal' }));
+    await user.type(screen.getByLabelText('Meal name'), 'Taco night');
+    const yieldInput = screen.getByLabelText('Yield (servings)');
+    await user.clear(yieldInput);
+    await user.type(yieldInput, '3');
+    await user.click(screen.getByRole('button', { name: 'Save meal' }));
+    expect(await screen.findByRole('status')).toHaveTextContent('Saved meal "Taco night".');
+    await waitFor(async () => expect(await services.db.meal_item.count()).toBe(1));
+    const [meal] = await services.db.meal.toArray();
+    expect(meal).toMatchObject({ name: 'Taco night', yield_servings: 3, total_weight_g: null });
+    expect(await services.db.meal_item.toArray()).toEqual([
+      expect.objectContaining({ meal_id: meal!.id, ref_type: 'food', ref_id: 'tortilla', amount: 100, unit: 'g', position: 0 }),
+    ]);
+  });
+});
