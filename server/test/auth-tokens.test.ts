@@ -14,10 +14,10 @@ describe('bearer token management', () => {
     expect(tokens).toHaveLength(1);
     expect(tokens[0]!.label).toBe('Test iPhone');
 
-    const revoke = await app.inject({ method: 'DELETE', url: `/api/auth/tokens/${tokens[0]!.id}`, headers: { cookie } });
+    const revoke = await app.inject({ method: 'DELETE', url: `/api/auth/tokens/${tokens[0]!.id}`, headers: { cookie }, payload: {} });
     expect(revoke.statusCode).toBe(200);
     expect((await app.inject({ url: '/api/auth/me', headers: { authorization: phone } })).statusCode).toBe(401);
-    const again = await app.inject({ method: 'DELETE', url: `/api/auth/tokens/${tokens[0]!.id}`, headers: { cookie } });
+    const again = await app.inject({ method: 'DELETE', url: `/api/auth/tokens/${tokens[0]!.id}`, headers: { cookie }, payload: {} });
     expect(again.statusCode).toBe(404);
   });
 
@@ -29,7 +29,12 @@ describe('bearer token management', () => {
     const brettCookie = await loginCookie(app, 'brett');
     const kimCookie = await loginCookie(app, 'kim');
     const [token] = (await app.inject({ url: '/api/auth/tokens', headers: { cookie: brettCookie } })).json().tokens;
-    const response = await app.inject({ method: 'DELETE', url: `/api/auth/tokens/${token.id}`, headers: { cookie: kimCookie } });
+    const response = await app.inject({
+      method: 'DELETE',
+      url: `/api/auth/tokens/${token.id}`,
+      headers: { cookie: kimCookie },
+      payload: {},
+    });
     expect(response.statusCode).toBe(404);
     expect((await app.inject({ url: '/api/auth/me', headers: { authorization: phone } })).statusCode).toBe(200);
   });

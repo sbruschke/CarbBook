@@ -62,4 +62,16 @@ describe('createDexcomApiClient', () => {
       await expect(client.latest()).rejects.toBeInstanceOf(BgUnavailableError);
     }
   });
+
+  it('maps a non-JSON upstream body to BgUnavailableError instead of throwing', async () => {
+    const { fetch } = stubFetch(() => new Response('<html>not json</html>', { status: 200, headers: { 'content-type': 'text/html' } }));
+    const client = createDexcomApiClient({ baseUrl: 'http://x', token: null, timeoutMs: 5000, fetch });
+    await expect(client.latest()).rejects.toBeInstanceOf(BgUnavailableError);
+  });
+
+  it('maps a null upstream body to BgUnavailableError instead of throwing', async () => {
+    const { fetch } = stubFetch(() => Response.json(null));
+    const client = createDexcomApiClient({ baseUrl: 'http://x', token: null, timeoutMs: 5000, fetch });
+    await expect(client.latest()).rejects.toBeInstanceOf(BgUnavailableError);
+  });
 });

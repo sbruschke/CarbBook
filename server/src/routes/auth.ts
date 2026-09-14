@@ -5,6 +5,7 @@ import { createSession, listBearerTokens, revokeSession } from '../auth/sessions
 import { findUserByUsername } from '../auth/users';
 import type { AppContext } from '../context';
 import { ApiError } from '../errors';
+import { clientIp } from '../ip';
 
 interface LoginBody {
   username: string;
@@ -46,7 +47,7 @@ export async function loginRoutes(app: FastifyInstance, ctx: AppContext): Promis
           hook: 'preHandler',
           keyGenerator: (request) => {
             const body = request.body as Partial<LoginBody> | undefined;
-            return `${request.ip}|${String(body?.username ?? '').toLowerCase()}`;
+            return `${clientIp(request, ctx.config)}|${String(body?.username ?? '').toLowerCase()}`;
           },
           errorResponseBuilder: (_request, context) => ({
             statusCode: 429,

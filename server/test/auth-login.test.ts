@@ -75,7 +75,9 @@ describe('authenticated requests', () => {
     const { app, db } = await makeTestApp();
     await addUser(db, 'brett', 'owner');
     const cookie = await loginCookie(app, 'brett');
-    expect((await app.inject({ method: 'POST', url: '/api/auth/logout', headers: { cookie } })).statusCode).toBe(200);
+    expect(
+      (await app.inject({ method: 'POST', url: '/api/auth/logout', headers: { cookie }, payload: {} })).statusCode,
+    ).toBe(200);
     expect((await app.inject({ url: '/api/auth/me', headers: { cookie } })).statusCode).toBe(401);
   });
 });

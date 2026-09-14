@@ -54,9 +54,19 @@ export function createDexcomApiClient(options: DexcomApiClientOptions): BgClient
         throw new BgUnavailableError(`dexcom-api unreachable: ${(error as Error).message}`);
       }
       if (!response.ok) throw new BgUnavailableError(`dexcom-api responded ${response.status}`);
-      const body = (await response.json()) as DexcomApiPayload;
-      if (!body.ok || typeof body.mgdl !== 'number' || typeof body.epoch !== 'number') {
-        throw new BgUnavailableError(body.error ?? 'dexcom-api has no current reading');
+      let body: DexcomApiPayload;
+      try {
+        const parsed: unknown = await response.json();
+        if (!parsed || typeof parsed !== 'object') {
+          throw new BgUnavailableError('dexcom-api returned an unexpected response body');
+        }
+        body = parsed as DexcomApiPayload;
+        if (!body.ok || typeof body.mgdl !== 'number' || typeof body.epoch !== 'number') {
+          throw new BgUnavailableError(body.error ?? 'dexcom-api has no current reading');
+        }
+      } catch (error) {
+        if (error instanceof BgUnavailableError) throw error;
+        throw new BgUnavailableError(`dexcom-api returned an invalid response: ${(error as Error).message}`);
       }
       return {
         mgdl: body.mgdl,

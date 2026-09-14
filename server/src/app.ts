@@ -5,6 +5,7 @@ import { makeAuthenticate } from './auth/plugin';
 import { createDexcomApiClient } from './bg/client';
 import type { Config } from './config';
 import type { AppContext, AppDeps } from './context';
+import { csrfContentTypeGuard } from './csrf';
 import type { Db } from './db';
 import { errorHandler } from './errors';
 import { loginRoutes, sessionRoutes } from './routes/auth';
@@ -38,11 +39,15 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
   };
   const app = Fastify({
     logger: options.logger ?? false,
-    trustProxy: options.config.trustProxy,
+    // Never let Fastify itself trust proxy headers: the leftmost X-Forwarded-For
+    // entry is client-controlled. `config.trustProxy` instead gates a validated
+    // read of Cloudflare's CF-Connecting-IP via `clientIp()` (see src/ip.ts).
+    trustProxy: false,
     bodyLimit: 5 * 1024 * 1024,
   });
   app.setErrorHandler(errorHandler);
   app.decorateRequest('auth', null);
+  app.addHook('onRequest', csrfContentTypeGuard);
   await app.register(cookie);
   await app.register(rateLimit, { global: false });
 

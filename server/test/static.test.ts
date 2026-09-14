@@ -31,4 +31,31 @@ describe('web app static serving', () => {
     expect(response.statusCode).toBe(404);
     expect(response.json().error).toBe('not_found');
   });
+
+  it('gives HEAD the same status and headers as GET, with no body', async () => {
+    const { app } = await makeTestApp({ env: { WEB_DIR: WEB_FIXTURE } });
+    for (const url of ['/', '/log/2026-09-14']) {
+      const get = await app.inject({ url, method: 'GET' });
+      const head = await app.inject({ url, method: 'HEAD' });
+      expect(head.statusCode, url).toBe(get.statusCode);
+      expect(head.headers['content-type'], url).toBe(get.headers['content-type']);
+      expect(head.body, url).toBe('');
+    }
+  });
+
+  it('404s dotfile paths as JSON instead of serving them', async () => {
+    const { app } = await makeTestApp({ env: { WEB_DIR: WEB_FIXTURE } });
+    const response = await app.inject({ url: '/.env' });
+    expect(response.statusCode).toBe(404);
+    expect(response.json().error).toBe('not_found');
+    expect(response.body).not.toContain('SECRET');
+  });
+
+  it('serves index.html (direct and SPA fallback) with Cache-Control: no-cache', async () => {
+    const { app } = await makeTestApp({ env: { WEB_DIR: WEB_FIXTURE } });
+    for (const url of ['/', '/log/2026-09-14']) {
+      const response = await app.inject({ url });
+      expect(response.headers['cache-control'], url).toBe('no-cache');
+    }
+  });
 });
