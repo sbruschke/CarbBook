@@ -154,12 +154,13 @@ export function formatBreakdown(estimate: Extract<DoseEstimate, { ok: true }>): 
   return text;
 }
 
-export function activeSettings<T extends Pick<DoseSettingsData, 'effective_from' | 'id'>>(
+export function activeSettings<T extends Pick<DoseSettingsData, 'effective_from' | 'id'> & { deleted?: 0 | 1 }>(
   versions: T[],
   atMs: number,
 ): T | null {
   let best: T | null = null;
   for (const v of versions) {
+    if (v.deleted === 1) continue;
     if (v.effective_from > atMs) continue;
     if (
       best === null ||

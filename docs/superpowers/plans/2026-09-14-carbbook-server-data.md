@@ -33,7 +33,7 @@ All code below was run in a scratch copy of the workspace: 28 test files / 142 t
 
 ## Wire formats (for the web and iOS plans)
 
-- `POST /api/sync/push` body `{ changes: [{ table, record }] }` (≤500). Response `{ results: [...], server_seq }`; each result is `{table,id,status:'accepted',server_seq}`, `{table,id,status:'ignored',server_seq}` (stored row is newer — pull to get it) or `{table,id,status:'rejected',reason:'unknown_table'|'invalid'|'forbidden'|'cycle',message}`. Records use the §3 column names; `dose_settings.windows/correction/rounding` are JSON objects on the wire.
+- `POST /api/sync/push` body `{ changes: [{ table, record }] }` (≤500). Response `{ results: [...], server_seq }`; each result is `{table,id,status:'accepted',server_seq}`, `{table,id,status:'ignored',server_seq}` (stored row is newer — pull to get it) or `{table,id,status:'rejected',reason:'unknown_table'|'invalid'|'forbidden'|'cycle'|'append_only',message}`. Records use the §3 column names; `dose_settings.windows/correction/rounding` are JSON objects on the wire. `dose_settings` rows are append-only: a viewer push is `forbidden`; an owner push that soft-deletes or edits `effective_from`/`windows`/`correction`/`rounding` on an *existing* row is `append_only` — only brand-new versions are accepted.
 - `GET /api/sync/pull?since=<seq>&limit=<1..1000, default 500>` → `{ changes: [{table, record}], next_since, has_more }` in `server_seq` order, soft-deleted rows included.
 - `GET /api/usda/manifest` → `{version, created_at, food_count, portion_count, json_file, json_sha256, json_url, sqlite_file, sqlite_sha256, sqlite_url}` or 404 `usda_not_imported`. Files are served at `/api/usda/files/<name>` with `cache-control: private, max-age=31536000, immutable`. JSON bundle (gzip, `application/gzip`): `{format:1, foods:[[fdc_id,name,carbs_per_100g,fiber_per_100g]], portions:[[id,fdc_id,label,kind,quantity,grams,description]]}`. SQLite bundle (`application/vnd.sqlite3`): tables `usda_food`, `usda_portion`, `usda_fts` (FTS5), `bundle_meta(version)`.
 - `GET /api/search?q=&limit=` → `{ results: [{kind:'meal'|'food'|'usda', id, name, brand, source, carbs_per_100g}] }`; USDA ids are `usda:<fdc_id>`.
@@ -550,7 +550,7 @@ import { initDatabase } from '../src/init';
 import { applyPush } from '../src/sync/push';
 import { food, meal } from './sync-helpers';
 
-const SEEDED_SEQ = 3; // three seed dose_settings rows
+const SEEDED_SEQ = 1; // one seed dose_settings row
 
 describe('applyPush last-write-wins', () => {
   it('accepts new records and assigns increasing server_seq', () => {
@@ -561,7 +561,7 @@ describe('applyPush last-write-wins', () => {
       { table: 'food', id: 'f1', status: 'accepted', server_seq: SEEDED_SEQ + 1 },
       { table: 'meal', id: 'm1', status: 'accepted', server_seq: SEEDED_SEQ + 2 },
     ]);
-    expect(db.prepare('SELECT name, server_seq FROM food WHERE id = ?').get('f1')).toEqual({ name: 'Tortilla', server_seq: 4 });
+    expect(db.prepare('SELECT name, server_seq FROM food WHERE id = ?').get('f1')).toEqual({ name: 'Tortilla', server_seq: 2 });
   });
 
   it('overwrites only with a newer updated_at, and breaks ties by higher updated_by', () => {
@@ -569,13 +569,13 @@ describe('applyPush last-write-wins', () => {
     applyPush(db, 'owner', [{ table: 'food', record: food({ id: 'f1', name: 'v1', updated_at: 2000, updated_by: 'laptop' }) }]);
 
     const older = applyPush(db, 'owner', [{ table: 'food', record: food({ id: 'f1', name: 'old', updated_at: 1999, updated_by: 'zz' }) }]);
-    expect(older).toEqual([{ table: 'food', id: 'f1', status: 'ignored', server_seq: 4 }]);
+    expect(older).toEqual([{ table: 'food', id: 'f1', status: 'ignored', server_seq: 2 }]);
 
     const tieLower = applyPush(db, 'owner', [{ table: 'food', record: food({ id: 'f1', name: 'tie-low', updated_at: 2000, updated_by: 'ipad' }) }]);
     expect(tieLower[0]!.status).toBe('ignored');
 
     const tieHigher = applyPush(db, 'owner', [{ table: 'food', record: food({ id: 'f1', name: 'tie-high', updated_at: 2000, updated_by: 'phone' }) }]);
-    expect(tieHigher).toEqual([{ table: 'food', id: 'f1', status: 'accepted', server_seq: 5 }]);
+    expect(tieHigher).toEqual([{ table: 'food', id: 'f1', status: 'accepted', server_seq: 3 }]);
 
     const newer = applyPush(db, 'owner', [{ table: 'food', record: food({ id: 'f1', name: 'v2', updated_at: 2001, updated_by: 'aaa' }) }]);
     expect(newer[0]!.status).toBe('accepted');
@@ -599,7 +599,7 @@ describe('applyPush last-write-wins', () => {
     expect(results).toEqual([
       { table: 'user', id: 'u1', status: 'rejected', reason: 'unknown_table', message: 'Unknown table "user"' },
       { table: 'food', id: 'bad', status: 'rejected', reason: 'invalid', message: 'source must be one of usda, off, custom' },
-      { table: 'food', id: 'good', status: 'accepted', server_seq: 4 },
+      { table: 'food', id: 'good', status: 'accepted', server_seq: 2 },
     ]);
   });
 });
@@ -696,7 +696,7 @@ git commit -m "feat(server): sync push with last-write-wins per record"
 
 ---
 
-### Task 3: Push rules — viewer restrictions and meal cycles
+### Task 3: Push rules — viewer restrictions, append-only dose_settings, and meal cycles
 
 **Files:**
 - Modify: `server/src/sync/push.ts` (full replacement)
@@ -738,6 +738,52 @@ describe('applyPush permissions', () => {
   });
 });
 
+describe('applyPush dose_settings append-only rule', () => {
+  it('rejects an owner push that soft-deletes an existing dose_settings row', () => {
+    const db = initDatabase(':memory:');
+    const seeded = db.prepare('SELECT id FROM dose_settings LIMIT 1').get() as { id: string };
+    const results = applyPush(db, 'owner', [
+      { table: 'dose_settings', record: doseSettings({ id: seeded.id, updated_at: 2000, deleted: 1 }) },
+    ]);
+    expect(results).toEqual([
+      {
+        table: 'dose_settings', id: seeded.id, status: 'rejected', reason: 'append_only',
+        message: 'dose_settings rows are append-only: cannot delete an existing version',
+      },
+    ]);
+    expect(db.prepare('SELECT deleted FROM dose_settings WHERE id = ?').pluck().get(seeded.id)).toBe(0);
+  });
+
+  it('rejects an owner push that edits an existing dose_settings row\'s effective_from, windows, correction or rounding', () => {
+    const db = initDatabase(':memory:');
+    const created = doseSettings({ id: 'd-owner' });
+    applyPush(db, 'owner', [{ table: 'dose_settings', record: created }]);
+
+    const edits = [
+      { ...created, updated_at: 2000, effective_from: created.effective_from + 1 },
+      { ...created, updated_at: 2000, windows: [{ name: 'Only', start: '00:00', ratio_g_per_unit: 9 }] },
+      { ...created, updated_at: 2000, correction: { ...created.correction, threshold: 999 } },
+      { ...created, updated_at: 2000, rounding: { ...created.rounding, increment: 2 } },
+    ];
+    for (const record of edits) {
+      const [result] = applyPush(db, 'owner', [{ table: 'dose_settings', record }]);
+      expect(result).toEqual({
+        table: 'dose_settings', id: 'd-owner', status: 'rejected', reason: 'append_only',
+        message: 'dose_settings rows are append-only: cannot edit an existing version, push a new one instead',
+      });
+    }
+    expect(db.prepare('SELECT effective_from FROM dose_settings WHERE id = ?').pluck().get('d-owner')).toBe(created.effective_from);
+  });
+
+  it('still accepts a metadata-only republish of the same version (same content, newer updated_at)', () => {
+    const db = initDatabase(':memory:');
+    const created = doseSettings({ id: 'd-owner' });
+    applyPush(db, 'owner', [{ table: 'dose_settings', record: created }]);
+    const republish = applyPush(db, 'owner', [{ table: 'dose_settings', record: { ...created, updated_at: 2000 } }]);
+    expect(republish[0]!.status).toBe('accepted');
+  });
+});
+
 describe('applyPush meal cycles', () => {
   it('rejects a meal_item that makes a meal contain itself, directly or transitively', () => {
     const db = initDatabase(':memory:');
@@ -772,7 +818,7 @@ describe('applyPush meal cycles', () => {
 - [ ] **Step 2: Run it to verify it fails**
 
 Run: `cd ~/Projects/CarbBook/server && pnpm exec vitest run test/sync-push-rules.test.ts`
-Expected: FAIL — 2 failed, 2 passed: `expected [ 'accepted', 'accepted', 'accepted' ] to deeply equal [ 'rejected', 'accepted', 'accepted' ]` and `expected [ 'accepted', 'accepted', 'accepted' ] to deeply equal [ 'cycle', 'cycle', 'accepted' ]`.
+Expected: FAIL — 5 failed, 2 passed: the original viewer-forbidden and meal-cycle cases fail as before (`expected [ 'accepted', 'accepted', 'accepted' ] to deeply equal [ 'rejected', 'accepted', 'accepted' ]` and `… to deeply equal [ 'cycle', 'cycle', 'accepted' ]`), plus the three new append-only cases fail with e.g. `expected 'accepted' to deeply equal { …, reason: 'append_only', … }` (nothing yet rejects a delete or a field edit of an existing dose_settings row).
 
 - [ ] **Step 3: Implement**
 
@@ -789,7 +835,7 @@ export interface PushChange {
   record: unknown;
 }
 
-export type RejectReason = 'unknown_table' | 'invalid' | 'forbidden' | 'cycle';
+export type RejectReason = 'unknown_table' | 'invalid' | 'forbidden' | 'cycle' | 'append_only';
 
 export type PushResult =
   | { table: string; id: string; status: 'accepted'; server_seq: number }
@@ -835,6 +881,27 @@ function createsCycle(db: Db, row: SqlRow): boolean {
   return wouldCreateCycle(catalog, candidate.meal_id, candidate.ref_id);
 }
 
+/**
+ * dose_settings versions are append-only (spec §7): once a version exists, a push may not soft-delete
+ * it or change the fields that drive dosing. Only brand-new ids (no `existing` row) are unconstrained.
+ */
+function dosSettingsAppendOnlyViolation(db: Db, row: SqlRow): 'delete' | 'edit' | null {
+  const existing = db
+    .prepare('SELECT effective_from, windows, correction, rounding FROM dose_settings WHERE id = ?')
+    .get(row.id) as { effective_from: number; windows: string; correction: string; rounding: string } | undefined;
+  if (!existing) return null;
+  if (row.deleted === 1) return 'delete';
+  if (
+    row.effective_from !== existing.effective_from ||
+    row.windows !== existing.windows ||
+    row.correction !== existing.correction ||
+    row.rounding !== existing.rounding
+  ) {
+    return 'edit';
+  }
+  return null;
+}
+
 function applyOne(db: Db, role: Role, change: PushChange): PushResult {
   const id = recordId(change.record);
   const table = String(change.table);
@@ -859,6 +926,22 @@ function applyOne(db: Db, role: Role, change: PushChange): PushResult {
     return { table, id: rowId, status: 'ignored', server_seq: stored.server_seq };
   }
 
+  if (spec.name === 'dose_settings') {
+    const violation = dosSettingsAppendOnlyViolation(db, row);
+    if (violation === 'delete') {
+      return {
+        table, id: rowId, status: 'rejected', reason: 'append_only',
+        message: 'dose_settings rows are append-only: cannot delete an existing version',
+      };
+    }
+    if (violation === 'edit') {
+      return {
+        table, id: rowId, status: 'rejected', reason: 'append_only',
+        message: 'dose_settings rows are append-only: cannot edit an existing version, push a new one instead',
+      };
+    }
+  }
+
   if (spec.name === 'meal_item' && row.deleted === 0 && row.ref_type === 'meal' && createsCycle(db, row)) {
     return { table, id: rowId, status: 'rejected', reason: 'cycle', message: 'A meal cannot contain itself' };
   }
@@ -877,14 +960,14 @@ export function applyPush(db: Db, role: Role, changes: PushChange[]): PushResult
 - [ ] **Step 4: Run both push test files**
 
 Run: `cd ~/Projects/CarbBook/server && pnpm exec vitest run test/sync-push-rules.test.ts test/sync-push.test.ts`
-Expected: `Test Files  2 passed (2)` and `Tests  8 passed (8)`
+Expected: `Test Files  2 passed (2)` and `Tests  11 passed (11)`
 
 - [ ] **Step 5: Commit**
 
 ```bash
 cd ~/Projects/CarbBook
 git add server/src/sync/push.ts server/test/sync-push-rules.test.ts
-git commit -m "feat(server): reject viewer dose_settings and meal cycles on push"
+git commit -m "feat(server): reject viewer dose_settings, non-append-only edits, and meal cycles on push"
 ```
 
 ---
@@ -910,10 +993,10 @@ describe('pullChanges', () => {
     const db = initDatabase(':memory:');
     const page = pullChanges(db, 0, 500);
     expect(page.has_more).toBe(false);
-    expect(page.next_since).toBe(3);
-    expect(page.changes.map((c) => c.table)).toEqual(['dose_settings', 'dose_settings', 'dose_settings']);
-    expect(Array.isArray(page.changes[2]!.record.windows)).toBe(true);
-    expect(page.changes[2]!.record.correction).toEqual({ threshold: 200, step: 50, units_per_step: 1, mode: 'started' });
+    expect(page.next_since).toBe(1);
+    expect(page.changes.map((c) => c.table)).toEqual(['dose_settings']);
+    expect(Array.isArray(page.changes[0]!.record.windows)).toBe(true);
+    expect(page.changes[0]!.record.correction).toEqual({ threshold: 200, step: 50, units_per_step: 1, mode: 'started' });
   });
 
   it('pages across tables in server_seq order', () => {
@@ -923,25 +1006,25 @@ describe('pullChanges', () => {
       { table: 'food', record: food({ id: 'f1' }) },
       { table: 'meal', record: meal({ id: 'm2' }) },
     ]);
-    const first = pullChanges(db, 3, 2);
+    const first = pullChanges(db, 1, 2);
     expect(first.changes.map((c) => [c.table, c.record.id, c.record.server_seq])).toEqual([
-      ['meal', 'm1', 4],
-      ['food', 'f1', 5],
+      ['meal', 'm1', 2],
+      ['food', 'f1', 3],
     ]);
-    expect(first).toMatchObject({ next_since: 5, has_more: true });
+    expect(first).toMatchObject({ next_since: 3, has_more: true });
     const second = pullChanges(db, first.next_since, 2);
     expect(second.changes.map((c) => c.record.id)).toEqual(['m2']);
-    expect(second).toMatchObject({ next_since: 6, has_more: false });
-    expect(pullChanges(db, 6, 2)).toEqual({ changes: [], next_since: 6, has_more: false });
+    expect(second).toMatchObject({ next_since: 4, has_more: false });
+    expect(pullChanges(db, 4, 2)).toEqual({ changes: [], next_since: 4, has_more: false });
   });
 
   it('includes soft-deleted records so clients learn about deletes', () => {
     const db = initDatabase(':memory:');
     applyPush(db, 'owner', [{ table: 'food', record: food({ id: 'f1', updated_at: 1 }) }]);
     applyPush(db, 'owner', [{ table: 'food', record: food({ id: 'f1', updated_at: 2, deleted: 1 }) }]);
-    const page = pullChanges(db, 3, 10);
+    const page = pullChanges(db, 1, 10);
     expect(page.changes).toHaveLength(1);
-    expect(page.changes[0]!.record).toMatchObject({ id: 'f1', deleted: 1, server_seq: 5 });
+    expect(page.changes[0]!.record).toMatchObject({ id: 'f1', deleted: 1, server_seq: 3 });
   });
 });
 ```
@@ -1033,11 +1116,11 @@ describe('sync routes', () => {
       payload: { changes: [{ table: 'food', record: food({ id: 'f1' }) }] },
     });
     expect(push.statusCode).toBe(200);
-    expect(push.json()).toEqual({ results: [{ table: 'food', id: 'f1', status: 'accepted', server_seq: 4 }], server_seq: 4 });
+    expect(push.json()).toEqual({ results: [{ table: 'food', id: 'f1', status: 'accepted', server_seq: 2 }], server_seq: 2 });
 
-    const pull = await app.inject({ url: '/api/sync/pull?since=3&limit=10', headers: { authorization } });
+    const pull = await app.inject({ url: '/api/sync/pull?since=1&limit=10', headers: { authorization } });
     expect(pull.statusCode).toBe(200);
-    expect(pull.json()).toMatchObject({ next_since: 4, has_more: false, changes: [{ table: 'food', record: { id: 'f1', server_seq: 4 } }] });
+    expect(pull.json()).toMatchObject({ next_since: 2, has_more: false, changes: [{ table: 'food', record: { id: 'f1', server_seq: 2 } }] });
   });
 
   it('reports viewer dose_settings pushes as rejected records (HTTP 200)', async () => {
@@ -1299,8 +1382,8 @@ describe('two clients syncing through the server', () => {
     await phone.sync();
     expect(phone.get('food', 'kim-food')?.name).toBe('Kim snack');
     expect(phone.get('dose_settings', 'kim-dose')).toBeUndefined();
-    // The viewer's local copy still holds its rejected row plus the three seeded versions from the server.
-    expect([...viewer.rows.keys()].filter((k) => k.startsWith('dose_settings/'))).toHaveLength(4);
+    // The viewer's local copy still holds its rejected row plus the one seeded version from the server.
+    expect([...viewer.rows.keys()].filter((k) => k.startsWith('dose_settings/'))).toHaveLength(2);
   });
 });
 ```
@@ -3321,6 +3404,7 @@ Expected: clean working tree.
 | §6 OFF lookup: local barcode first, normalize carbs/fiber/serving → portion, draft | 13, 14 |
 | §6 FTS5 search, ranking meals/custom → recent → USDA | 7, 12 |
 | §7 viewer cannot write dose_settings, reported per record | 3, 5, 6 |
+| dose_settings append-only: reject delete or field edit of an existing version | 3 |
 | §9 OFF failure/timeout (5 s) → manual entry prefilled with code | 13, 14 (`unavailable` + code; timeout from `HTTP_TIMEOUT_MS` = 5000) |
 | §9 per-record push validation failures returned | 1, 2, 5 |
 | §10 sync tests: two offline clients, LWW ties, deletes, viewer rejections | 6 |
