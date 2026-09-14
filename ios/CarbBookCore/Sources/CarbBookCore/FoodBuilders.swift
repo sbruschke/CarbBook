@@ -8,6 +8,24 @@ public func carbsPer100gFromLabel(servingGrams: Double, carbsPerServing: Double)
     return carbsPerServing / servingGrams * 100
 }
 
+/// Carbs per 100 ml from a nutrition label given in a volume amount (any-unit foods addendum,
+/// spec "Label entry": volume → `carbs_per_100ml = N / amount_ml × 100`). nil when the serving
+/// volume is not positive or carbs are negative; unlike the per-100 g variant there is no upper
+/// bound on the input (the resulting carbs_per_100ml is range-checked by `isValidCarbsPer100ml`
+/// at use, not here, since a small volume can carry more than its own ml in carbs).
+public func carbsPer100mlFromLabel(servingMl: Double, carbsPerServing: Double) -> Double? {
+    guard servingMl.isFinite, servingMl > 0, carbsPerServing.isFinite, carbsPerServing >= 0 else { return nil }
+    return carbsPerServing / servingMl * 100
+}
+
+/// A piece/serving portion from a nutrition label (any-unit foods addendum, spec "Label entry":
+/// piece/serving → portion `{kind: 'count'|'serving', label, quantity, grams: <optional>, carbs_g: N}`).
+/// `grams` is the label's optional weight for the piece/serving, if given; nil when unknown.
+public func portionFromLabel(id: Id, foodId: Id, label: String, kind: String, quantity: Double,
+                              grams: Double? = nil, carbsPerServing: Double) -> PortionData {
+    PortionData(id: id, foodId: foodId, label: label, kind: kind, quantity: quantity, grams: grams, carbsG: carbsPerServing)
+}
+
 /// Food editor validation with the server's push rules: non-empty name, `carbs_per_100g` and
 /// `fiber_per_100g` within 0...100 (or empty), density above zero (or empty). nil when valid.
 public func validateFood(_ food: FoodData) -> String? {

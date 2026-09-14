@@ -12,16 +12,19 @@ public struct FoodData: Codable, Equatable, Sendable {
     public var sourceRef: String?
     public var derivedFrom: Id?
     public var carbsPer100g: Double?
+    /// Volume carb basis (any-unit foods addendum). Valid when finite 0...150.
+    public var carbsPer100ml: Double?
     public var fiberPer100g: Double?
     public var densityGPerMl: Double?
     public var notes: String?
     public var deleted: Int?
 
     public init(id: Id, name: String, brand: String? = nil, source: String? = nil, sourceRef: String? = nil,
-                derivedFrom: Id? = nil, carbsPer100g: Double?, fiberPer100g: Double? = nil,
+                derivedFrom: Id? = nil, carbsPer100g: Double?, carbsPer100ml: Double? = nil, fiberPer100g: Double? = nil,
                 densityGPerMl: Double? = nil, notes: String? = nil, deleted: Int? = nil) {
         self.id = id; self.name = name; self.brand = brand; self.source = source; self.sourceRef = sourceRef
-        self.derivedFrom = derivedFrom; self.carbsPer100g = carbsPer100g; self.fiberPer100g = fiberPer100g
+        self.derivedFrom = derivedFrom; self.carbsPer100g = carbsPer100g; self.carbsPer100ml = carbsPer100ml
+        self.fiberPer100g = fiberPer100g
         self.densityGPerMl = densityGPerMl; self.notes = notes; self.deleted = deleted
     }
 
@@ -30,8 +33,28 @@ public struct FoodData: Codable, Equatable, Sendable {
         case sourceRef = "source_ref"
         case derivedFrom = "derived_from"
         case carbsPer100g = "carbs_per_100g"
+        case carbsPer100ml = "carbs_per_100ml"
         case fiberPer100g = "fiber_per_100g"
         case densityGPerMl = "density_g_per_ml"
+    }
+
+    /// Explicit, so nil `carbs_per_100ml` is sent as JSON `null` rather than omitted (synthesized
+    /// Codable uses `encodeIfPresent`). The server treats a missing key as "keep the stored value",
+    /// so explicit `null` is the unambiguous way to clear it.
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(name, forKey: .name)
+        try container.encodeIfPresent(brand, forKey: .brand)
+        try container.encodeIfPresent(source, forKey: .source)
+        try container.encodeIfPresent(sourceRef, forKey: .sourceRef)
+        try container.encodeIfPresent(derivedFrom, forKey: .derivedFrom)
+        try container.encodeIfPresent(carbsPer100g, forKey: .carbsPer100g)
+        try container.encode(carbsPer100ml, forKey: .carbsPer100ml)
+        try container.encodeIfPresent(fiberPer100g, forKey: .fiberPer100g)
+        try container.encodeIfPresent(densityGPerMl, forKey: .densityGPerMl)
+        try container.encodeIfPresent(notes, forKey: .notes)
+        try container.encodeIfPresent(deleted, forKey: .deleted)
     }
 }
 
@@ -43,17 +66,36 @@ public struct PortionData: Codable, Equatable, Sendable {
     /// "volume" | "count" | "serving"
     public var kind: String
     public var quantity: Double
-    public var grams: Double
+    /// Weight of `quantity` portions; nil when unknown. Valid when finite > 0.
+    public var grams: Double?
+    /// Carbs for `quantity` portions; nil when unknown. Valid when finite 0...500.
+    public var carbsG: Double?
     public var deleted: Int?
 
-    public init(id: Id, foodId: Id, label: String, kind: String, quantity: Double, grams: Double, deleted: Int? = nil) {
+    public init(id: Id, foodId: Id, label: String, kind: String, quantity: Double, grams: Double?, carbsG: Double? = nil,
+                deleted: Int? = nil) {
         self.id = id; self.foodId = foodId; self.label = label; self.kind = kind
-        self.quantity = quantity; self.grams = grams; self.deleted = deleted
+        self.quantity = quantity; self.grams = grams; self.carbsG = carbsG; self.deleted = deleted
     }
 
     enum CodingKeys: String, CodingKey {
         case id, label, kind, quantity, grams, deleted
         case foodId = "food_id"
+        case carbsG = "carbs_g"
+    }
+
+    /// Explicit, so nil `grams`/`carbs_g` are sent as JSON `null` rather than omitted. The server
+    /// treats a missing key as "keep the stored value", so explicit `null` is the unambiguous clear.
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(foodId, forKey: .foodId)
+        try container.encode(label, forKey: .label)
+        try container.encode(kind, forKey: .kind)
+        try container.encode(quantity, forKey: .quantity)
+        try container.encode(grams, forKey: .grams)
+        try container.encode(carbsG, forKey: .carbsG)
+        try container.encodeIfPresent(deleted, forKey: .deleted)
     }
 }
 
