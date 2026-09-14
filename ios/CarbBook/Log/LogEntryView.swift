@@ -44,10 +44,12 @@ struct LogEntryView: View {
                 NumberField(label: "Taken", text: $taken, unit: "u")
                 TextField("Notes", text: $notes, axis: .vertical)
             }
-            if recentDoseWarning {
-                Label("Another dose was logged within 4 hours of this one. Insulin on board is not subtracted.",
-                     systemImage: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.red)
+            if showsRecentDoseWarning {
+                Section {
+                    Label("Another dose was logged within 4 hours of this one. Insulin on board is not subtracted.",
+                         systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.red)
+                }
             }
             Section("Items") {
                 ForEach(items, id: \.id) { item in
@@ -72,9 +74,9 @@ struct LogEntryView: View {
         .onAppear(perform: load)
     }
 
-    private var recentDoseWarning: Bool {
+    private var showsRecentDoseWarning: Bool {
         guard let lastOtherDose = (try? app.store.lastDoseAtMs(excluding: entry.id)) ?? nil else { return false }
-        return CarbBookCore.recentDoseWarning(lastOtherDose, ms(eatenAt))
+        return recentDoseWarning(lastOtherDose, ms(eatenAt))
     }
 
     private func load() {
