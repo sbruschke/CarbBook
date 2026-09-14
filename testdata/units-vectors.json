@@ -1,0 +1,64 @@
+{
+  "tolerance": 0.001,
+  "foods": [
+    { "id": "rice", "name": "Rice, white, cooked", "carbs_per_100g": 28.2 },
+    { "id": "corn", "name": "Corn, cream style", "carbs_per_100g": 18.13 },
+    { "id": "bread", "name": "Bread, white", "carbs_per_100g": 49 },
+    { "id": "milk", "name": "Milk", "carbs_per_100g": 4.8, "density_g_per_ml": 1.03 },
+    { "id": "mystery", "name": "No label", "carbs_per_100g": null }
+  ],
+  "portions": [
+    { "id": "rice-cup", "food_id": "rice", "label": "cup", "kind": "volume", "quantity": 1, "grams": 158 },
+    { "id": "corn-cup", "food_id": "corn", "label": "cup", "kind": "volume", "quantity": 1, "grams": 256 },
+    { "id": "bread-slice", "food_id": "bread", "label": "slice", "kind": "count", "quantity": 1, "grams": 25 }
+  ],
+  "meals": [
+    { "id": "rice-corn", "name": "Rice and cream style corn", "yield_servings": 2, "total_weight_g": 414 },
+    { "id": "plate", "name": "Plate", "yield_servings": 1, "total_weight_g": null },
+    { "id": "bad", "name": "Has an unlabeled food", "yield_servings": 1, "total_weight_g": null }
+  ],
+  "meal_items": [
+    { "id": "i1", "meal_id": "rice-corn", "ref_type": "food", "ref_id": "rice", "amount": 1, "unit": "cup", "position": 0 },
+    { "id": "i2", "meal_id": "rice-corn", "ref_type": "food", "ref_id": "corn", "amount": 1, "unit": "cup", "position": 1 },
+    { "id": "i3", "meal_id": "plate", "ref_type": "meal", "ref_id": "rice-corn", "amount": 1.5, "unit": "serving", "position": 0 },
+    { "id": "i4", "meal_id": "plate", "ref_type": "food", "ref_id": "bread", "amount": 1, "unit": "p:bread-slice", "position": 1 },
+    { "id": "i5", "meal_id": "bad", "ref_type": "food", "ref_id": "rice", "amount": 100, "unit": "g", "position": 0 },
+    { "id": "i6", "meal_id": "bad", "ref_type": "food", "ref_id": "mystery", "amount": 50, "unit": "g", "position": 1 }
+  ],
+  "grams_cases": [
+    { "name": "grams", "food_id": "rice", "amount": 100, "unit": "g", "expect": 100 },
+    { "name": "kilograms", "food_id": "rice", "amount": 1, "unit": "kg", "expect": 1000 },
+    { "name": "ounces", "food_id": "rice", "amount": 4, "unit": "oz", "expect": 113.398093 },
+    { "name": "volume portion", "food_id": "rice", "amount": 1, "unit": "cup", "expect": 158 },
+    { "name": "volume via derived density", "food_id": "rice", "amount": 2, "unit": "tbsp", "expect": 19.75 },
+    { "name": "volume via explicit density", "food_id": "milk", "amount": 1, "unit": "cup", "expect": 243.685884 },
+    { "name": "count portion", "food_id": "bread", "amount": 2, "unit": "p:bread-slice", "expect": 50 },
+    { "name": "volume without density", "food_id": "bread", "amount": 1, "unit": "cup", "expect": null }
+  ],
+  "carb_cases": [
+    { "name": "food by cup", "ref_type": "food", "ref_id": "rice", "amount": 1, "unit": "cup", "expect": { "carbs_g": 44.556, "complete": true } },
+    { "name": "food by tbsp", "ref_type": "food", "ref_id": "rice", "amount": 2, "unit": "tbsp", "expect": { "carbs_g": 5.5695, "complete": true } },
+    { "name": "food by oz", "ref_type": "food", "ref_id": "rice", "amount": 4, "unit": "oz", "expect": { "carbs_g": 31.978262, "complete": true } },
+    { "name": "milk by cup", "ref_type": "food", "ref_id": "milk", "amount": 1, "unit": "cup", "expect": { "carbs_g": 11.696922, "complete": true } },
+    { "name": "bread slices", "ref_type": "food", "ref_id": "bread", "amount": 2, "unit": "p:bread-slice", "expect": { "carbs_g": 24.5, "complete": true } },
+    { "name": "no carb data", "ref_type": "food", "ref_id": "mystery", "amount": 50, "unit": "g", "expect": { "carbs_g": 0, "complete": false } },
+    { "name": "unusable unit", "ref_type": "food", "ref_id": "bread", "amount": 1, "unit": "cup", "expect": { "carbs_g": 0, "complete": false } },
+    { "name": "meal serving", "ref_type": "meal", "ref_id": "rice-corn", "amount": 1, "unit": "serving", "expect": { "carbs_g": 45.4844, "complete": true } },
+    { "name": "meal grams", "ref_type": "meal", "ref_id": "rice-corn", "amount": 100, "unit": "g", "expect": { "carbs_g": 21.97314, "complete": true } },
+    { "name": "nested meal", "ref_type": "meal", "ref_id": "plate", "amount": 1, "unit": "serving", "expect": { "carbs_g": 80.4766, "complete": true } },
+    { "name": "meal grams without weight", "ref_type": "meal", "ref_id": "plate", "amount": 1, "unit": "g", "expect": { "carbs_g": 0, "complete": false } },
+    { "name": "meal with incomplete item", "ref_type": "meal", "ref_id": "bad", "amount": 1, "unit": "serving", "expect": { "carbs_g": 28.2, "complete": false } }
+  ],
+  "unit_list_cases": [
+    { "ref_type": "food", "ref_id": "rice", "expect": ["g", "kg", "oz", "lb", "ml", "l", "tsp", "tbsp", "floz", "cup"] },
+    { "ref_type": "food", "ref_id": "bread", "expect": ["g", "kg", "oz", "lb", "p:bread-slice"] },
+    { "ref_type": "food", "ref_id": "milk", "expect": ["g", "kg", "oz", "lb", "ml", "l", "tsp", "tbsp", "floz", "cup"] },
+    { "ref_type": "meal", "ref_id": "rice-corn", "expect": ["serving", "g", "kg", "oz", "lb"] },
+    { "ref_type": "meal", "ref_id": "plate", "expect": ["serving"] }
+  ],
+  "cycle_cases": [
+    { "meal_id": "plate", "candidate": "plate", "expect": true },
+    { "meal_id": "rice-corn", "candidate": "plate", "expect": true },
+    { "meal_id": "plate", "candidate": "bad", "expect": false }
+  ]
+}
