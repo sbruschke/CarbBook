@@ -78,10 +78,22 @@ enum Schema {
       DELETE FROM catalog_fts WHERE kind = 'meal' AND ref_id = old.id;
       INSERT INTO catalog_fts (kind, ref_id, name, brand) SELECT 'meal', new.id, new.name, '' WHERE new.deleted = 0;
     END;
+    -- Hard deletes happen only when a never-synced row is rejected by the server.
+    CREATE TRIGGER food_catalog_delete AFTER DELETE ON food BEGIN
+      DELETE FROM catalog_fts WHERE kind = 'food' AND ref_id = old.id;
+    END;
+    CREATE TRIGGER meal_catalog_delete AFTER DELETE ON meal BEGIN
+      DELETE FROM catalog_fts WHERE kind = 'meal' AND ref_id = old.id;
+    END;
 
     -- Client-only sync bookkeeping (never pushed).
     CREATE TABLE sync_pending (
       key TEXT PRIMARY KEY, table_name TEXT NOT NULL, record_id TEXT NOT NULL, queued_at INTEGER NOT NULL
+    );
+    -- Last server-acknowledged copy (accepted push or applied pull) of each synced row, as the wire
+    -- record JSON including server_seq. No row here means "never synced": a rejection deletes it.
+    CREATE TABLE sync_snapshot (
+      key TEXT PRIMARY KEY, table_name TEXT NOT NULL, record_id TEXT NOT NULL, record TEXT NOT NULL
     );
     CREATE TABLE sync_state (key TEXT PRIMARY KEY, value TEXT NOT NULL);
     CREATE TABLE sync_rejection (
