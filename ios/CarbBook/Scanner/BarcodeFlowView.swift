@@ -158,8 +158,8 @@ struct OffDraftForm: View {
         .onAppear {
             name = draft.food.name
             brand = draft.food.brand ?? ""
-            carbs = formatNumber(draft.food.carbsPer100g, digits: 2)
-            fiber = formatNumber(draft.food.fiberPer100g, digits: 2)
+            carbs = NumberParsing.editText(draft.food.carbsPer100g, maxFractionDigits: 2)
+            fiber = NumberParsing.editText(draft.food.fiberPer100g, maxFractionDigits: 2)
         }
     }
 

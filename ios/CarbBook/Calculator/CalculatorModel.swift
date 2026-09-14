@@ -89,7 +89,7 @@ final class CalculatorModel {
         // any other outcome (refusal, incomplete carbs, invalid BG) leaves it empty rather than
         // showing a stale or misleading number.
         if case .ok(let suggestion) = snapshot.result.estimate {
-            takenField.applyEstimate(formatNumber(suggestion.units, digits: 2))
+            takenField.applyEstimate(NumberParsing.editText(suggestion.units, maxFractionDigits: 2))
         } else {
             takenField.applyEstimate("")
         }

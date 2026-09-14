@@ -49,4 +49,20 @@ final class NumberParsingTests: XCTestCase {
         XCTAssertFalse(NumberParsing.isMalformed("120", using: NumberParsing.parseWholeNumber))
         XCTAssertTrue(NumberParsing.isMalformed("120.5", using: NumberParsing.parseWholeNumber))
     }
+
+    /// Text-field prefills (Log entry, Dose settings, barcode draft) use `editText`: plain digits, "."
+    /// decimal, never locale grouping, and it parses back strictly to the same value.
+    func testEditTextIsPlainForPrefills() {
+        XCTAssertEqual(NumberParsing.editText(12.5), "12.5")
+        XCTAssertEqual(NumberParsing.editText(1200), "1200")
+        XCTAssertEqual(NumberParsing.editText(0.5), "0.5")
+        XCTAssertEqual(NumberParsing.editText(130), "130")
+        XCTAssertEqual(NumberParsing.editText(1234567.25, maxFractionDigits: 2), "1234567.25")
+        XCTAssertEqual(NumberParsing.editText(1200, maxFractionDigits: 2), "1200")
+        XCTAssertEqual(NumberParsing.editText(130.4, maxFractionDigits: 0), "130")
+        for value in [12.5, 1200, 0.5, 130] {
+            XCTAssertEqual(NumberParsing.parseAmount(NumberParsing.editText(value)), value)
+        }
+        XCTAssertEqual(NumberParsing.parseWholeNumber(NumberParsing.editText(130, maxFractionDigits: 0)), 130)
+    }
 }

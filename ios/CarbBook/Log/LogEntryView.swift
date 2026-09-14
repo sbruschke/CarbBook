@@ -5,7 +5,7 @@ import SwiftUI
 /// Edit any log entry; "Recalculate from current meal" refreshes its snapshot (spec §8).
 ///
 /// `taken_units` and BG are only changed if the user actually edits those fields: re-displaying a
-/// stored value through `formatNumber` and parsing it back can lose precision (e.g. a Dexcom
+/// stored value through `NumberParsing.editText` and parsing it back can lose precision (e.g. a Dexcom
 /// `bg_mgdl` of 120.4 round-trips through the whole-number BG field as 120), so a field whose text
 /// still equals what it was loaded with is saved back verbatim from `entry` instead of the parsed
 /// text — `bgEdited`/`takenEdited` compare against the originally loaded text, not a change flag,
@@ -86,9 +86,9 @@ struct LogEntryView: View {
         guard !loaded else { return }
         loaded = true
         eatenAt = date(ms: entry.eatenAt)
-        bg = formatNumber(entry.bgMgdl, digits: 0)
+        bg = NumberParsing.editText(entry.bgMgdl, maxFractionDigits: 0)
         loadedBgText = bg
-        taken = formatNumber(entry.takenUnits, digits: 2)
+        taken = NumberParsing.editText(entry.takenUnits, maxFractionDigits: 2)
         loadedTakenText = taken
         notes = entry.notes ?? ""
         items = (try? app.store.logItems(entryId: entry.id)) ?? []

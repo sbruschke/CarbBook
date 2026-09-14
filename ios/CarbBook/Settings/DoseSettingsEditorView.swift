@@ -94,15 +94,15 @@ struct DoseSettingsEditorView: View {
         windows = base.windows.map { window in
             let minutes = (try? parseHHMM(window.start)) ?? 0
             let start = Calendar.current.date(byAdding: .minute, value: minutes, to: Calendar.current.startOfDay(for: Date()))!
-            return WindowDraft(name: window.name, start: start, ratio: formatNumber(window.ratioGPerUnit, digits: 2))
+            return WindowDraft(name: window.name, start: start, ratio: NumberParsing.editText(window.ratioGPerUnit))
         }
-        threshold = formatNumber(base.correction.threshold, digits: 0)
-        step = formatNumber(base.correction.step, digits: 0)
-        unitsPerStep = formatNumber(base.correction.unitsPerStep, digits: 2)
+        threshold = NumberParsing.editText(base.correction.threshold)
+        step = NumberParsing.editText(base.correction.step)
+        unitsPerStep = NumberParsing.editText(base.correction.unitsPerStep)
         mode = base.correction.mode
-        increment = formatNumber(base.rounding.increment, digits: 2)
+        increment = NumberParsing.editText(base.rounding.increment)
         roundDownEnabled = base.rounding.roundDownBelowBg != nil
-        roundDownBelow = formatNumber(base.rounding.roundDownBelowBg ?? 130, digits: 0)
+        roundDownBelow = NumberParsing.editText(base.rounding.roundDownBelowBg ?? 130)
     }
 
     private func hhmm(_ date: Date) -> String {
