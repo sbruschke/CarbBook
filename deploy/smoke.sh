@@ -18,7 +18,13 @@ if [ "${1:-}" = --rate-limit ]; then
   done
   forged=$(json_login | curl -sS -o /dev/null -w '%{http_code}' -H 'content-type: application/json' -H "CF-Connecting-IP: 203.0.113.$((RANDOM % 250 + 1))" --data-binary @- "$BASE/api/auth/login")
   say ratelimit "codes:$codes forged-header:$forged"
-  [ "$codes" = " 401 401 401 401 401 429" ] && [ "$forged" = 429 ] && echo RATE_LIMIT_OK || { echo RATE_LIMIT_FAIL; exit 1; }
+  # A forged CF-Connecting-IP must never reset the limit: Cloudflare either rejects the request at the
+  # edge (403, error 1000 — it never reaches carbs-server) or overwrites the header (still 429).
+  if [ "$codes" = " 401 401 401 401 401 429" ] && { [ "$forged" = 429 ] || [ "$forged" = 403 ]; }; then
+    echo RATE_LIMIT_OK
+  else
+    echo RATE_LIMIT_FAIL; exit 1
+  fi
   exit 0
 fi
 
