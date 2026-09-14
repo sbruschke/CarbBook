@@ -15,7 +15,9 @@ export interface PushSummary {
 /**
  * Pushes one batch of pending changes. The outbox entry is removed only if the record was not
  * edited again while the request was in flight. Rejected records are stored as sync errors and
- * not retried until edited again.
+ * not retried until edited again; if no newer edit is queued behind the rejected one, the local
+ * table row is restored to the last server-acknowledged snapshot (or deleted if it was never
+ * synced), so a refused edit never lingers in local data.
  */
 export async function pushOutbox(db: CarbBookDb, api: Api, now: () => number = Date.now): Promise<PushSummary> {
   const summary: PushSummary = { sent: 0, accepted: 0, ignored: 0, rejected: 0 };
@@ -48,6 +50,12 @@ export async function pushOutbox(db: CarbBookDb, api: Api, now: () => number = D
           message: result.message,
           at: now(),
         });
+        // Only restore when no newer local edit is queued behind this one — that edit will be
+        // pushed on the next pass and must not be clobbered by the rejected version's snapshot.
+        if (unchanged) {
+          if (entry.snapshot) await db.table(entry.table).put(entry.snapshot);
+          else await db.table(entry.table).delete(entry.id);
+        }
       } else {
         await db.sync_error.delete(entry.key);
         if (result.status === 'accepted') {

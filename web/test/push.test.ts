@@ -4,7 +4,7 @@ import { createStore } from '../src/db/store';
 import { NetworkError } from '../src/lib/api';
 import type { PushResponse } from '../src/lib/wire';
 import { pushOutbox } from '../src/sync/push';
-import { FakeApi, foodData, mealData, openTestDb } from './helpers';
+import { doseSettingsData, FakeApi, foodData, mealData, openTestDb } from './helpers';
 
 type PushBody = { changes: { table: string; record: { id: string } }[] };
 
@@ -52,7 +52,9 @@ describe('pushOutbox', () => {
     });
 
     await pushOutbox(db, api);
-    expect(await db.outbox.toArray()).toEqual([{ key: 'food:f1', table: 'food', id: 'f1', updated_at: 2000 }]);
+    expect(await db.outbox.toArray()).toEqual([
+      { key: 'food:f1', table: 'food', id: 'f1', updated_at: 2000, snapshot: null },
+    ]);
     expect(await db.food.get('f1')).toMatchObject({ name: 'Edited', updated_at: 2000 });
     expect((await db.food.get('f1'))?.server_seq).toBeUndefined();
   });
@@ -109,5 +111,84 @@ describe('pushOutbox', () => {
     });
     await expect(pushOutbox(db, api)).rejects.toThrow(NetworkError);
     expect(await db.outbox.count()).toBe(1);
+  });
+
+  it('restores the last server-acknowledged copy when a synced edit is rejected', async () => {
+    db = openTestDb();
+    let clock = 1000;
+    const store = createStore(db, 'device-a', { now: () => clock });
+    // Synced once (accepted), so the local table holds a server-acknowledged copy.
+    await store.save('food', foodData({ id: 'f1', name: 'Original' }));
+    await pushOutbox(db, new FakeApi().on('POST', '/api/sync/push', acceptAll(1)));
+
+    clock = 2000;
+    await store.save('food', foodData({ id: 'f1', name: 'Bad edit' }));
+    const api = new FakeApi().on('POST', '/api/sync/push', () => ({
+      results: [{ table: 'food', id: 'f1', status: 'rejected', reason: 'invalid', message: 'nope' }],
+      server_seq: 1,
+    }));
+    await pushOutbox(db, api);
+
+    expect(await db.food.get('f1')).toMatchObject({ name: 'Original', updated_at: 1000 });
+    expect(await db.outbox.count()).toBe(0);
+    expect(await db.sync_error.count()).toBe(1);
+  });
+
+  it('deletes a never-synced record when its rejection is applied', async () => {
+    db = openTestDb();
+    const store = createStore(db, 'device-a', { now: () => 1000 });
+    await store.save('food', foodData({ id: 'f1', name: 'New food' }));
+    const api = new FakeApi().on('POST', '/api/sync/push', () => ({
+      results: [{ table: 'food', id: 'f1', status: 'rejected', reason: 'invalid', message: 'nope' }],
+      server_seq: 0,
+    }));
+    await pushOutbox(db, api);
+
+    expect(await db.food.get('f1')).toBeUndefined();
+    expect(await db.outbox.count()).toBe(0);
+  });
+
+  it('keeps a newer in-flight edit queued instead of restoring over it', async () => {
+    db = openTestDb();
+    let clock = 1000;
+    const store = createStore(db, 'device-a', { now: () => clock });
+    await store.save('food', foodData({ id: 'f1', name: 'Original' }));
+    const api = new FakeApi().on('POST', '/api/sync/push', async (body) => {
+      clock = 2000;
+      await store.save('food', foodData({ id: 'f1', name: 'Newer edit' }));
+      return {
+        results: (body as { changes: { table: string; record: { id: string } }[] }).changes.map((c) => ({
+          table: c.table,
+          id: c.record.id,
+          status: 'rejected',
+          reason: 'invalid',
+          message: 'nope',
+        })),
+        server_seq: 0,
+      };
+    });
+    await pushOutbox(db, api);
+
+    expect((await db.food.get('f1'))?.name).toBe('Newer edit');
+    expect(await db.outbox.toArray()).toEqual([
+      { key: 'food:f1', table: 'food', id: 'f1', updated_at: 2000, snapshot: null },
+    ]);
+  });
+
+  it('leaves the previously active dose_settings active when a new version is rejected', async () => {
+    db = openTestDb();
+    const store = createStore(db, 'device-a', { now: () => 1000 });
+    await store.save('dose_settings', doseSettingsData({ id: 'ds-active', effective_from: 0 }));
+    await pushOutbox(db, new FakeApi().on('POST', '/api/sync/push', acceptAll(1)));
+
+    await store.save('dose_settings', doseSettingsData({ id: 'ds-new', effective_from: 500 }));
+    const api = new FakeApi().on('POST', '/api/sync/push', () => ({
+      results: [{ table: 'dose_settings', id: 'ds-new', status: 'rejected', reason: 'append_only', message: 'overlaps' }],
+      server_seq: 1,
+    }));
+    await pushOutbox(db, api);
+
+    expect(await db.dose_settings.get('ds-new')).toBeUndefined();
+    expect(await db.dose_settings.get('ds-active')).toMatchObject({ id: 'ds-active' });
   });
 });

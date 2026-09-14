@@ -46,6 +46,8 @@ export interface OutboxRow {
   id: string;
   /** updated_at of the local write that queued it. */
   updated_at: number;
+  /** Last server-acknowledged copy of the record, or null if it was never synced. Restored on rejection. */
+  snapshot: AnySyncRecord | null;
 }
 
 export interface MetaRow {

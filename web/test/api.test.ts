@@ -38,6 +38,19 @@ describe('createApi', () => {
     expect(calls[0]![1]).toMatchObject({ headers: { 'content-type': 'application/json' }, body: '{}' });
   });
 
+  it('sends an empty JSON object when the body is omitted', async () => {
+    const { calls, fetchImpl } = recordingFetch(() => json(200, { ok: true }));
+    await createApi(fetchImpl).post('/api/auth/logout');
+    expect(calls[0]![1]).toMatchObject({ headers: { 'content-type': 'application/json' }, body: '{}' });
+  });
+
+  it('throws ApiError with a non_json code for a 2xx non-JSON response', async () => {
+    const { fetchImpl } = recordingFetch(() => new Response('<html>Sign in</html>', { status: 200 }));
+    const error = await createApi(fetchImpl).get('/api/auth/me').catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ApiError);
+    expect(error).toMatchObject({ status: 200, code: 'non_json' });
+  });
+
   it('maps { error, message } bodies to ApiError', async () => {
     const { fetchImpl } = recordingFetch(() => json(401, { error: 'unauthorized', message: 'Sign in required' }));
     const error = await createApi(fetchImpl).get('/api/auth/me').catch((e: unknown) => e);

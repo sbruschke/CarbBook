@@ -41,7 +41,13 @@ export function createStore(db: CarbBookDb, deviceId: string, options: StoreOpti
     const updatedAt = Math.max(now(), existing ? existing.updated_at + 1 : 0);
     const record = { ...existing, ...fields, id, updated_at: updatedAt, updated_by: deviceId, deleted } as AnySyncRecord;
     await db.table(table).put(record);
-    await db.outbox.put({ key: outboxKey(table, id), table, id, updated_at: updatedAt });
+    // Keep the snapshot from the outbox row already queued for this record (the last
+    // server-acknowledged copy); only capture a fresh one when nothing is queued yet, since an
+    // outbox row exists exactly when there's an unsynced edit.
+    const key = outboxKey(table, id);
+    const queued = await db.outbox.get(key);
+    const snapshot = queued ? queued.snapshot : (existing ?? null);
+    await db.outbox.put({ key, table, id, updated_at: updatedAt, snapshot });
     return record;
   }
 

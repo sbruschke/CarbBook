@@ -22,7 +22,7 @@ export type Fetch = (input: string, init: RequestInit) => Promise<Response>;
 
 export interface Api {
   get<T>(path: string): Promise<T>;
-  post<T>(path: string, body: unknown): Promise<T>;
+  post<T>(path: string, body?: unknown): Promise<T>;
   getBytes(path: string): Promise<ArrayBuffer>;
 }
 
@@ -48,17 +48,27 @@ export function createApi(fetchImpl: Fetch = (input, init) => fetch(input, init)
     throw new ApiError(response.status, code, message);
   }
 
+  /** A 2xx response that isn't JSON (e.g. an HTML login/captive-portal page) is a server problem, not ours. */
+  async function parseJson<T>(response: Response): Promise<T> {
+    const text = await response.text();
+    try {
+      return JSON.parse(text) as T;
+    } catch {
+      throw new ApiError(response.status, 'non_json', `Expected JSON, got a non-JSON ${response.status} response`);
+    }
+  }
+
   return {
     async get<T>(path: string): Promise<T> {
-      return (await (await send(path, { method: 'GET' })).json()) as T;
+      return parseJson<T>(await send(path, { method: 'GET' }));
     },
-    async post<T>(path: string, body: unknown): Promise<T> {
+    async post<T>(path: string, body?: unknown): Promise<T> {
       const response = await send(path, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(body),
+        body: JSON.stringify(body ?? {}),
       });
-      return (await response.json()) as T;
+      return parseJson<T>(response);
     },
     async getBytes(path: string): Promise<ArrayBuffer> {
       return (await send(path, { method: 'GET' })).arrayBuffer();

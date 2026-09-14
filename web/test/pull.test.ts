@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { CarbBookDb } from '../src/db/db';
-import { getMeta } from '../src/db/meta';
+import { getMeta, setMeta } from '../src/db/meta';
 import { createStore } from '../src/db/store';
 import { NetworkError } from '../src/lib/api';
 import type { PullPage, PushResponse } from '../src/lib/wire';
@@ -77,6 +77,27 @@ describe('pullAll', () => {
     }));
     expect(await pullAll(db, api)).toEqual({ applied: 0, pages: 1 });
     expect(await getMeta(db, 'last_pull_seq')).toBe(9);
+  });
+
+  it('does not let a stale pulled row overwrite a newer local row with no pending edit', async () => {
+    db = openTestDb();
+    // Written straight to the table (e.g. by an earlier pull), so there is no outbox entry.
+    await db.food.put(synced(foodData({ id: 'f1', name: 'Newer' }), { updated_at: 9000, server_seq: 4 }));
+    const api = new FakeApi().on('GET', '/api/sync/pull', () => ({
+      changes: [{ table: 'food', record: synced(foodData({ id: 'f1', name: 'Stale' }), { updated_at: 1000, server_seq: 1 }) }],
+      next_since: 1,
+      has_more: false,
+    }));
+    expect(await pullAll(db, api)).toEqual({ applied: 0, pages: 1 });
+    expect((await db.food.get('f1'))?.name).toBe('Newer');
+  });
+
+  it('never moves the pull cursor backwards', async () => {
+    db = openTestDb();
+    await setMeta(db, 'last_pull_seq', 10);
+    const api = new FakeApi().on('GET', '/api/sync/pull', () => ({ changes: [], next_since: 5, has_more: false }));
+    await pullAll(db, api);
+    expect(await getMeta(db, 'last_pull_seq')).toBe(10);
   });
 
   it('keeps applied pages when a later page fails, and resumes from there', async () => {

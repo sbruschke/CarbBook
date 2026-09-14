@@ -1,4 +1,4 @@
-import type { FoodData, MealData, MealItemData, PortionData, Synced, SyncMeta } from '@carbbook/core';
+import type { DoseSettingsData, FoodData, MealData, MealItemData, PortionData, Synced, SyncMeta } from '@carbbook/core';
 import { CarbBookDb } from '../src/db/db';
 import { type Api, ApiError } from '../src/lib/api';
 
@@ -51,6 +51,15 @@ export const mealItemData = (fields: Partial<MealItemData> = {}): MealItemData =
   amount: 100,
   unit: 'g',
   position: 0,
+  ...fields,
+});
+
+export const doseSettingsData = (fields: Partial<DoseSettingsData> = {}): DoseSettingsData => ({
+  id: 'dose-1',
+  effective_from: 0,
+  windows: [{ name: 'default', start: '00:00', ratio_g_per_unit: 10 }],
+  correction: { threshold: 150, step: 50, units_per_step: 1, mode: 'proportional' },
+  rounding: { increment: 0.5, round_down_below_bg: null },
   ...fields,
 });
 
