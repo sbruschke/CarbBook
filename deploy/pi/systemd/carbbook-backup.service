@@ -1,0 +1,11 @@
+[Unit]
+Description=CarbBook nightly SQLite backup
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+User=pihole
+Group=pihole
+ExecStart=/opt/carbbook/bin/carbbook-backup.sh
+TimeoutStartSec=10min

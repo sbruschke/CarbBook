@@ -1,0 +1,49 @@
+# CarbBook on the Raspberry Pi — deployed to /opt/carbbook by deploy/deploy.sh.
+# https://recipes.dxshdw.dev → tunnel pi (cloudflared on pi_net) → carbs-server:3000
+# NO host ports: Pi-hole owns 80/443, and TRUST_PROXY=true (CF-Connecting-IP) is only
+# safe while this container is reachable solely from cloudflared over pi_net.
+name: carbbook
+
+networks:
+  pi_net:
+    external: true
+
+services:
+  carbs-server:
+    build:
+      context: ./src
+      # BuildKit drops Pi-hole (127.0.0.1) from resolv.conf -> npm/apt DNS fails. Host network fixes it.
+      network: host
+    image: carbbook-server:${CARBBOOK_TAG:-latest}
+    container_name: carbs-server
+    init: true
+    environment:
+      - TZ=${TZ:-America/Chicago}
+      - HOST=0.0.0.0
+      - PORT=3000
+      - DATABASE_PATH=/data/carbbook.db
+      - USDA_DIR=/data/usda
+      - WEB_DIR=/app/web/dist
+      - DEXCOM_API_URL=http://dexcom-api:8000
+      - DEXCOM_API_TOKEN=${DEXCOM_API_TOKEN}
+      - OFF_USER_AGENT=${OFF_USER_AGENT}
+      - COOKIE_SECURE=true
+      - TRUST_PROXY=true
+    volumes:
+      - /opt/carbbook/data:/data
+      - /opt/carbbook/backups:/backups
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+      start_interval: 5s
+    networks:
+      - pi_net
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

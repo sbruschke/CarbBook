@@ -1,0 +1,15 @@
+**/node_modules
+**/dist
+**/coverage
+**/*.log
+**/test-results
+**/playwright-report
+.git
+.github
+docs
+ios
+deploy
+HANDOFF.md
+**/.env
+**/.env.*
+.DS_Store

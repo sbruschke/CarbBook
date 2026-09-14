@@ -1,0 +1,14 @@
+[Unit]
+Description=Pull CarbBook backups from the Raspberry Pi
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=3h
+StartLimitBurst=6
+
+[Service]
+Type=oneshot
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+ExecStart=%h/Projects/CarbBook/deploy/desktop/carbbook-backup-pull.sh
+Restart=on-failure
+RestartSec=15min
+TimeoutStartSec=15min
