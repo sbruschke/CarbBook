@@ -104,7 +104,7 @@ describe('BG entry', () => {
     expect(resolveBg(prefill, false, '')).toEqual({ mgdl: 180, source: 'dexcom', trend: 'Flat' });
     expect(resolveBg(prefill, true, '140')).toEqual({ mgdl: 140, source: 'manual', trend: null });
     expect(resolveBg(null, false, '')).toEqual({ mgdl: null, source: 'none', trend: null });
-    expect(resolveBg(null, false, 'abc')).toEqual({ mgdl: null, source: 'none', trend: null });
+    expect(resolveBg(null, false, '   ')).toEqual({ mgdl: null, source: 'none', trend: null });
   });
 
   it('asks for manual entry and says why', () => {
@@ -116,5 +116,49 @@ describe('BG entry', () => {
     rerender(<BgField status={null} prefill={prefill} {...props} />);
     expect(screen.getByTestId('bg-reading')).toHaveTextContent('BG 180 → · 4 min ago (Dexcom)');
     expect(screen.queryByLabelText('BG (mg/dL)')).toBeNull();
+  });
+});
+
+describe('invalid manual BG (spec: silent null must not hide the missing correction)', () => {
+  it.each(['12O', '-5', '1,5', '0x64', '1e3'])('resolves %s to NaN, not null, so core refuses instead of guessing', (text) => {
+    const entry = resolveBg(null, true, text);
+    expect(entry.mgdl).toBeNaN();
+    expect(entry.source).toBe('manual');
+  });
+
+  it.each(['12O', '-5', '1,5', '0x64', '1e3'])('makes estimateFor refuse invalid_input and DoseCard show no dose number for %s', (text) => {
+    const entry = resolveBg(null, true, text);
+    const estimate = estimateFor({ settings: SEED_SETTINGS, windowName: null, eatenAt: NOW, carbs: carbs72, bg: entry.mgdl });
+    expect(estimate).toMatchObject({ ok: false, reason: 'invalid_input' });
+    render(<DoseCard estimate={estimate} hasItems bg={entry.mgdl} lastDoseAt={null} now={NOW} />);
+    expect(screen.getByTestId('dose-refusal')).toHaveTextContent(REFUSAL_MESSAGES.invalid_input);
+    expect(screen.queryByTestId('dose-units')).toBeNull();
+    expect(screen.queryByTestId('dose-breakdown')).toBeNull();
+  });
+
+  it('empty manual BG still resolves to null (no BG entered), not an error', () => {
+    expect(resolveBg(null, true, '')).toEqual({ mgdl: null, source: 'none', trend: null });
+  });
+
+  it('shows an inline error for invalid manual BG text', () => {
+    render(
+      <BgField
+        status={null}
+        prefill={null}
+        manualMode={true}
+        manualText="12O"
+        onManualModeChange={noop}
+        onManualTextChange={noop}
+      />,
+    );
+    expect(screen.getByText('Invalid BG — enter a whole number in mg/dL')).toBeInTheDocument();
+  });
+
+  it('shows no inline error for empty or valid manual BG text', () => {
+    const props = { status: null, prefill: null, manualMode: true, onManualModeChange: noop, onManualTextChange: noop };
+    const { rerender } = render(<BgField manualText="" {...props} />);
+    expect(screen.queryByText(/Invalid BG/)).toBeNull();
+    rerender(<BgField manualText="140" {...props} />);
+    expect(screen.queryByText(/Invalid BG/)).toBeNull();
   });
 });

@@ -73,13 +73,20 @@ export function FoodEditor(props: {
     // The server rejects carbs/fiber outside 0..100 g per 100 g.
     const fiber = parseNonNegative(fiberText);
     if (fiberText.trim() !== '' && (fiber === null || fiber > 100)) problems.push('Fiber per 100 g must be a number from 0 to 100.');
+    if (fiber !== null && carbs !== null && fiber > carbs) problems.push('Fiber per 100 g cannot be more than carbs per 100 g.');
     const density = parseNonNegative(densityText);
     if (densityText.trim() !== '' && !(density !== null && density > 0)) problems.push('Density must be greater than 0.');
 
     const rows = [...portions];
     const servingGrams = parseNonNegative(servingText);
-    if (carbsMode === 'label' && servingGrams && !rows.some((p) => p.kind === 'serving' && p.label === LABEL_SERVING)) {
-      rows.push({ key: 'label', id: null, label: LABEL_SERVING, kind: 'serving', quantity: '1', grams: String(servingGrams) });
+    if (carbsMode === 'label' && servingGrams) {
+      const existingIndex = rows.findIndex((p) => p.kind === 'serving' && p.label === LABEL_SERVING);
+      if (existingIndex === -1) {
+        rows.push({ key: 'label', id: null, label: LABEL_SERVING, kind: 'serving', quantity: '1', grams: String(servingGrams) });
+      } else {
+        // A re-entered label serving replaces the stale grams/quantity on the existing portion rather than adding a duplicate.
+        rows[existingIndex] = { ...rows[existingIndex]!, quantity: '1', grams: String(servingGrams) };
+      }
     }
     rows.forEach((p, i) => {
       if (!p.label.trim()) problems.push(`Portion ${i + 1} needs a label.`);
@@ -280,7 +287,7 @@ export function FoodEditor(props: {
         <button type="button" onClick={() => props.onDone(null)}>
           Cancel
         </button>
-        {base && (
+        {base && !isUsda && (
           <button type="button" className="danger" onClick={() => void remove()}>
             {confirmDelete ? 'Tap again to delete' : 'Delete food'}
           </button>

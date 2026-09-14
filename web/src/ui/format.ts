@@ -73,10 +73,27 @@ export function formatAge(ms: number): string {
   return minutes < 1 ? 'just now' : `${minutes} min ago`;
 }
 
-/** A non-negative finite number from a text field, or null. */
+/**
+ * A non-negative amount from a text field: digits with an optional decimal part
+ * (`^\d+(\.\d+)?$`), or null when empty/whitespace or not strictly a plain decimal.
+ * Rejects anything `Number()` would otherwise accept loosely — hex ("0x64"), exponents
+ * ("1e3"), binary ("0b1"), "Infinity", leading/trailing junk ("12O"). A single comma used
+ * as a decimal separator ("1,5") is accepted here — this parser backs amount fields
+ * (servings, quantities, grams, carbs, fiber, density), where a European-style comma is a
+ * plausible typo worth accepting. BG entry uses `parseWholeNumber` instead, which does NOT
+ * accept a comma: mg/dL is always a whole number, so there's no legitimate comma form to
+ * accept, and guessing at one risks silently taking the wrong reading.
+ */
 export function parseNonNegative(text: string): number | null {
   const trimmed = text.trim();
   if (trimmed === '') return null;
-  const n = Number(trimmed);
-  return Number.isFinite(n) && n >= 0 ? n : null;
+  const normalized = /^\d+,\d+$/.test(trimmed) ? trimmed.replace(',', '.') : trimmed;
+  return /^\d+(\.\d+)?$/.test(normalized) ? Number(normalized) : null;
+}
+
+/** A non-negative whole number from a text field (BG mg/dL), or null. No comma/decimal/exponent forms accepted. */
+export function parseWholeNumber(text: string): number | null {
+  const trimmed = text.trim();
+  if (trimmed === '') return null;
+  return /^\d+$/.test(trimmed) ? Number(trimmed) : null;
 }
