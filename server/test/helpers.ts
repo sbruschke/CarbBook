@@ -6,6 +6,7 @@ import { type Config, loadConfig } from '../src/config';
 import type { AppDeps } from '../src/context';
 import type { Db } from '../src/db';
 import { initDatabase } from '../src/init';
+import type { OffClient } from '../src/off/client';
 
 export const TEST_PASSWORD = 'correct horse battery';
 export const T0 = Date.parse('2026-09-14T17:00:00Z');
@@ -22,6 +23,10 @@ export const unusedBg: BgClient = {
   latest: () => Promise.reject(new Error('bg client not stubbed in this test')),
 };
 
+export const unusedOff: OffClient = {
+  lookup: () => Promise.reject(new Error('off client not stubbed in this test')),
+};
+
 export interface TestApp {
   app: FastifyInstance;
   db: Db;
@@ -35,7 +40,7 @@ export async function makeTestApp(
   const config = loadConfig({ DATABASE_PATH: ':memory:', COOKIE_SECURE: 'false', ...options.env });
   const db = initDatabase(':memory:');
   const clock = new TestClock();
-  const app = await buildApp({ db, config, deps: { now: clock.now, bg: unusedBg, ...options.deps } });
+  const app = await buildApp({ db, config, deps: { now: clock.now, bg: unusedBg, off: unusedOff, ...options.deps } });
   return { app, db, clock, config };
 }
 

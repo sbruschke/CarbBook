@@ -8,7 +8,9 @@ import type { AppContext, AppDeps } from './context';
 import { csrfContentTypeGuard } from './csrf';
 import type { Db } from './db';
 import { errorHandler } from './errors';
+import { createOffClient } from './off/client';
 import { loginRoutes, sessionRoutes } from './routes/auth';
+import { barcodeRoutes } from './routes/barcode';
 import { bgRoutes } from './routes/bg';
 import { searchRoutes } from './routes/search';
 import { syncRoutes } from './routes/sync';
@@ -28,6 +30,12 @@ export function defaultDeps(config: Config): AppDeps {
     bg: createDexcomApiClient({
       baseUrl: config.dexcomApiUrl,
       token: config.dexcomApiToken,
+      timeoutMs: config.httpTimeoutMs,
+      fetch: globalThis.fetch,
+    }),
+    off: createOffClient({
+      baseUrl: config.offBaseUrl,
+      userAgent: config.offUserAgent,
       timeoutMs: config.httpTimeoutMs,
       fetch: globalThis.fetch,
     }),
@@ -64,6 +72,7 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
     await api.register(syncRoutes, ctx);
     await api.register(usdaRoutes, ctx);
     await api.register(searchRoutes, ctx);
+    await api.register(barcodeRoutes, ctx);
   });
 
   await registerWebApp(app, options.config.webDir);
