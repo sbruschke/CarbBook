@@ -360,3 +360,81 @@ describe('FoodEditor: any-unit label entry', () => {
     expect(await services.db.food.count()).toBe(0);
   });
 });
+
+describe('FoodEditor: keeps the carb basis the user did not edit', () => {
+  it('saving in per-100 g mode keeps an existing carbs_per_100ml', async () => {
+    services = makeServices();
+    const syrup = synced(foodData({ id: 'syrup', name: 'Syrup', carbs_per_100g: 82, carbs_per_100ml: 116 }));
+    await services.db.food.put(syrup);
+    const user = userEvent.setup();
+    const done = renderEditor({ existing: { food: syrup, portions: [] } });
+    expect(screen.getByTestId('kept-basis-ml')).toHaveTextContent('116 g carbs per 100 ml');
+    await user.clear(screen.getByLabelText('Carbs per 100 g'));
+    await user.type(screen.getByLabelText('Carbs per 100 g'), '80');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(done).toEqual(['syrup']));
+    expect(await services.db.food.get('syrup')).toMatchObject({ carbs_per_100g: 80, carbs_per_100ml: 116 });
+  });
+
+  it('saving a volume label keeps an existing carbs_per_100g', async () => {
+    services = makeServices();
+    const syrup = synced(foodData({ id: 'syrup', name: 'Syrup', carbs_per_100g: 82 }));
+    await services.db.food.put(syrup);
+    const user = userEvent.setup();
+    const done = renderEditor({ existing: { food: syrup, portions: [] } });
+    await user.click(screen.getByLabelText('From label'));
+    // A gram label edits per-100 g, so nothing is "kept" until a volume unit is chosen.
+    expect(screen.queryByTestId('kept-basis-g')).toBeNull();
+    await user.selectOptions(screen.getByLabelText('Unit'), 'ml');
+    expect(screen.getByTestId('kept-basis-g')).toHaveTextContent('82 g carbs per 100 g');
+    await user.type(screen.getByLabelText('Amount'), '100');
+    await user.type(screen.getByLabelText('Carbs (g)'), '116');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(done).toEqual(['syrup']));
+    const saved = await services.db.food.get('syrup');
+    expect(saved!.carbs_per_100g).toBe(82);
+    expect(saved!.carbs_per_100ml).toBeCloseTo(116, 9);
+  });
+
+  it('a per-100 g entry on a volume-only food adds per-100 g and keeps per-100 ml', async () => {
+    services = makeServices();
+    const rice = synced(foodData({ id: 'rice', name: 'Calrose rice', carbs_per_100g: null, carbs_per_100ml: 20.2884136211058 }));
+    await services.db.food.put(rice);
+    const user = userEvent.setup();
+    const done = renderEditor({ existing: { food: rice, portions: [] } });
+    await user.click(screen.getByLabelText('Per 100 g'));
+    await user.type(screen.getByLabelText('Carbs per 100 g'), '28');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(done).toEqual(['rice']));
+    expect(await services.db.food.get('rice')).toMatchObject({ carbs_per_100g: 28, carbs_per_100ml: 20.2884136211058 });
+  });
+
+  it('"Remove" clears the other basis explicitly', async () => {
+    services = makeServices();
+    const syrup = synced(foodData({ id: 'syrup', name: 'Syrup', carbs_per_100g: 82, carbs_per_100ml: 116 }));
+    await services.db.food.put(syrup);
+    const user = userEvent.setup();
+    const done = renderEditor({ existing: { food: syrup, portions: [] } });
+    await user.click(screen.getByRole('button', { name: 'Remove carbs per 100 ml' }));
+    expect(screen.queryByTestId('kept-basis-ml')).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(done).toEqual(['syrup']));
+    expect(await services.db.food.get('syrup')).toMatchObject({ carbs_per_100g: 82, carbs_per_100ml: null });
+  });
+
+  it('drops carbs_g when a portion is switched to a volume portion', async () => {
+    services = makeServices();
+    const bar = synced(foodData({ id: 'bar', name: 'Bar', carbs_per_100g: 50 }));
+    const piece = synced(portionData({ id: 'bar-p', food_id: 'bar', label: 'bar', kind: 'count', quantity: 1, grams: 40, carbs_g: 22 }));
+    await services.db.food.put(bar);
+    await services.db.portion.put(piece);
+    const user = userEvent.setup();
+    const done = renderEditor({ existing: { food: bar, portions: [piece] } });
+    await user.click(screen.getByLabelText('Per 100 g'));
+    await user.selectOptions(screen.getByLabelText('Portion 1 kind'), 'volume');
+    await user.selectOptions(screen.getByLabelText('Portion 1 label'), 'cup');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(done).toEqual(['bar']));
+    expect(await services.db.portion.get('bar-p')).toMatchObject({ kind: 'volume', label: 'cup', grams: 40, carbs_g: null });
+  });
+});

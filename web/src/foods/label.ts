@@ -121,26 +121,26 @@ export function prefillFromDraft(draft: FoodDraft): FoodPrefill {
 }
 
 /**
- * The carb basis as the user entered it (any-unit foods addendum): "48 g carbs / cup" rather
+ * The carb basis as the user entered it (any-unit foods addendum): "48 g carbs per cup" rather
  * than always "per 100 g". Null when the food has no valid carb basis at all.
  */
 export function foodBasisSummary(food: FoodData, portions: PortionData[]): string | null {
-  if (isValidCarbsPer100g(food.carbs_per_100g)) return `${trim2(food.carbs_per_100g)} g carbs / 100 g`;
+  if (isValidCarbsPer100g(food.carbs_per_100g)) return `${trim2(food.carbs_per_100g)} g carbs per 100 g`;
   if (isValidCarbsPer100ml(food.carbs_per_100ml)) {
     // Prefer the volume portion the user weighed (its unit and amount are what they typed).
     const vp = portions.find((p) => p.kind === 'volume' && isVolumeUnit(p.label) && p.grams != null);
     if (vp) {
       const n = (food.carbs_per_100ml * vp.quantity * VOLUME_UNITS[vp.label as VolumeUnit]) / 100;
       const qty = vp.quantity === 1 ? '' : `${trim2(vp.quantity)} `;
-      return `${trim2(n)} g carbs / ${qty}${vp.label}`;
+      return `${trim2(n)} g carbs per ${qty}${vp.label}`;
     }
     const perCup = (food.carbs_per_100ml * VOLUME_UNITS.cup) / 100;
-    return `${trim2(perCup)} g carbs / cup`;
+    return `${trim2(perCup)} g carbs per cup`;
   }
   const piece = portions.find((p) => p.kind !== 'volume' && isValidPortionCarbs(p.carbs_g));
   if (piece) {
     const qty = piece.quantity === 1 ? '' : `${trim2(piece.quantity)} `;
-    return `${trim2(piece.carbs_g!)} g carbs / ${qty}${piece.label}`;
+    return `${trim2(piece.carbs_g!)} g carbs per ${qty}${piece.label}`;
   }
   return null;
 }

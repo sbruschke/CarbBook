@@ -29,7 +29,7 @@ describe('Foods screen', () => {
     ]);
     const user = userEvent.setup();
     renderWith(<Foods />, services);
-    expect(await screen.findByRole('button', { name: /Bread/ })).toHaveTextContent('My food · 50 g carbs / 100 g');
+    expect(await screen.findByRole('button', { name: /Bread/ })).toHaveTextContent('My food · 50 g carbs per 100 g');
     await user.type(screen.getByLabelText('Filter foods'), 'bri');
     expect(screen.queryByRole('button', { name: /Bread/ })).toBeNull();
     expect(screen.queryByRole('button', { name: /Brittle/ })).toBeNull();
@@ -46,8 +46,8 @@ describe('Foods screen', () => {
     ]);
     await services.db.portion.put(synced({ id: 'bar-p', food_id: 'bar', label: 'bar', kind: 'count', quantity: 1, grams: null, carbs_g: 22 }));
     renderWith(<Foods />, services);
-    expect(await screen.findByRole('button', { name: /Calrose rice/ })).toHaveTextContent('48 g carbs / cup');
-    expect(await screen.findByRole('button', { name: /Granola bar/ })).toHaveTextContent('22 g carbs / bar');
+    expect(await screen.findByRole('button', { name: /Calrose rice/ })).toHaveTextContent('48 g carbs per cup');
+    expect(await screen.findByRole('button', { name: /Granola bar/ })).toHaveTextContent('22 g carbs per bar');
   });
 
   it('opens a scanned Open Food Facts product as a prefilled new food', async () => {

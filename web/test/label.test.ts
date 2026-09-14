@@ -73,24 +73,24 @@ describe('labelBasisFromEntry', () => {
 
 describe('foodBasisSummary', () => {
   it('shows the per 100 g basis', () => {
-    expect(foodBasisSummary(foodData({ carbs_per_100g: 48 }), [])).toBe('48 g carbs / 100 g');
+    expect(foodBasisSummary(foodData({ carbs_per_100g: 48 }), [])).toBe('48 g carbs per 100 g');
   });
 
   it('shows the volume basis reconstructed for the weighed portion (Calrose: 1 cup = 48 g carbs)', () => {
     const food = foodData({ carbs_per_100g: null, carbs_per_100ml: 20.2884136211058 });
     const cup = portionData({ label: 'cup', kind: 'volume', quantity: 1, grams: 158 });
-    expect(foodBasisSummary(food, [cup])).toBe('48 g carbs / cup');
+    expect(foodBasisSummary(food, [cup])).toBe('48 g carbs per cup');
   });
 
   it('falls back to per cup when no portion was weighed', () => {
     const food = foodData({ carbs_per_100g: null, carbs_per_100ml: 20.2884136211058 });
-    expect(foodBasisSummary(food, [])).toBe('48 g carbs / cup');
+    expect(foodBasisSummary(food, [])).toBe('48 g carbs per cup');
   });
 
   it('shows the piece basis', () => {
     const food = foodData({ carbs_per_100g: null });
     const bar = portionData({ label: 'bar', kind: 'count', quantity: 1, grams: null, carbs_g: 22 });
-    expect(foodBasisSummary(food, [bar])).toBe('22 g carbs / bar');
+    expect(foodBasisSummary(food, [bar])).toBe('22 g carbs per bar');
   });
 
   it('is null when there is no valid basis at all', () => {

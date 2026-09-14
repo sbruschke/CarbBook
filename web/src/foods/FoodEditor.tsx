@@ -112,6 +112,8 @@ export function FoodEditor(props: {
       carbsG: numText('carbs_g' in p ? p.carbs_g : null),
     })),
   );
+  /** Stored bases the user explicitly removed ("Remove carbs per 100 ml"). */
+  const [removedBases, setRemovedBases] = useState({ g: false, ml: false });
   const [errors, setErrors] = useState<string[]>([]);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
@@ -132,6 +134,14 @@ export function FoodEditor(props: {
           : labelEntry.carbs_per_100ml !== null
             ? `= ${labelEntry.carbs_per_100ml} g carbs per 100 ml`
             : `Adds "${labelName.trim() || 'piece'}": ${labelCarbsText.trim()} g carbs`;
+
+  // Only the basis the current entry edits changes on save; the other stored basis is kept
+  // unless explicitly removed (never nulled as a side effect of saving in one mode).
+  const labelWeight = parseNonNegative(labelWeightText);
+  const editsG = carbsMode === 'per100' || labelUnit === 'g' || (labelUnit === 'other' && labelWeight !== null && labelWeight > 0);
+  const editsMl = carbsMode === 'label' && labelUnit !== 'g' && labelUnit !== 'other';
+  const keptG = !editsG && !removedBases.g ? (base?.carbs_per_100g ?? null) : null;
+  const keptMl = !editsMl && !removedBases.ml ? (base?.carbs_per_100ml ?? null) : null;
 
   const updatePortion = (key: string, patch: Partial<PortionDraft>) =>
     setPortions((rows) => rows.map((row) => (row.key === key ? { ...row, ...patch } : row)));
@@ -166,6 +176,9 @@ export function FoodEditor(props: {
       }
     }
 
+    if (!editsG) carbsPer100g = keptG;
+    if (!editsMl) carbsPer100ml = keptMl;
+
     // The server rejects fiber outside 0..100 g per 100 g.
     const fiber = parseNonNegative(fiberText);
     if (fiberText.trim() !== '' && (fiber === null || fiber > 100)) problems.push('Fiber per 100 g must be a number from 0 to 100.');
@@ -177,7 +190,8 @@ export function FoodEditor(props: {
       const quantity = parseNonNegative(p.quantity);
       const gramsText = p.grams.trim();
       const grams = gramsText === '' ? null : parseNonNegative(p.grams);
-      const carbsText2 = p.carbsG.trim();
+      // Volume portions never carry carbs_g (server rejects it); their carbs come from the food.
+      const carbsText2 = p.kind === 'volume' ? '' : p.carbsG.trim();
       const carbsG = carbsText2 === '' ? null : parseNonNegative(p.carbsG);
       if (!p.label.trim()) problems.push(`Portion ${i + 1} needs a label.`);
       if (p.kind === 'volume' && !VOLUME_LABELS.includes(p.label)) problems.push(`Portion ${i + 1}: pick a volume unit.`);
@@ -329,6 +343,22 @@ export function FoodEditor(props: {
               {labelResultText}
             </p>
           </>
+        )}
+        {keptG !== null && (
+          <p className="note" data-testid="kept-basis-g">
+            Also saved: {numText(Number(keptG.toFixed(2)))} g carbs per 100 g{' '}
+            <button type="button" onClick={() => setRemovedBases((r) => ({ ...r, g: true }))}>
+              Remove carbs per 100 g
+            </button>
+          </p>
+        )}
+        {keptMl !== null && (
+          <p className="note" data-testid="kept-basis-ml">
+            Also saved: {numText(Number(keptMl.toFixed(2)))} g carbs per 100 ml{' '}
+            <button type="button" onClick={() => setRemovedBases((r) => ({ ...r, ml: true }))}>
+              Remove carbs per 100 ml
+            </button>
+          </p>
         )}
       </fieldset>
       <label>
