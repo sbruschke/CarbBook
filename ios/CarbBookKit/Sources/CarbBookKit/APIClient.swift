@@ -216,7 +216,8 @@ public final class APIClient: @unchecked Sendable {
             let code: String?
             let message: String?
         }
-        let body = try decode(Body.self, try await send(makeRequest("GET", "/api/barcode/\(code)")))
+        let escaped = code.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? code
+        let body = try decode(Body.self, try await send(makeRequest("GET", "/api/barcode/\(escaped)")))
         switch body.status {
         case "known":
             guard let food = body.food else { throw APIError.decoding("known barcode without food") }

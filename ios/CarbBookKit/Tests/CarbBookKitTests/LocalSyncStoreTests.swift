@@ -188,7 +188,8 @@ final class LocalSyncStoreTests: XCTestCase {
     }
 
     /// Server rule: dose settings are append-only. A rejected edit of a synced version restores
-    /// that version and records its id as rejected.
+    /// that version, which is valid again and must not be permanently hidden from use — only the
+    /// failed edit is recorded as a rejection (for Settings → Sync history), not the restored id.
     func testAppendOnlyRejectionOfDoseSettingsEditRestoresTheVersion() async throws {
         let clock = TestClock(1_000)
         let store = try LocalStore(path: nil, now: clock.now)
@@ -199,8 +200,37 @@ final class LocalSyncStoreTests: XCTestCase {
         _ = try await pushAll(store, "rejected", reason: "append_only")
         XCTAssertEqual(try store.doseSettingsVersions().map(\.windows.first?.ratioGPerUnit), [10])
         XCTAssertEqual(try store.doseSettingsVersions().map(\.rounding.roundDownBelowBg), [nil])
-        XCTAssertEqual(try store.rejectedDoseSettingsIds(), ["s1"])
-        XCTAssertEqual(try store.rejections().map(\.reason), ["append_only"])
+        XCTAssertEqual(try store.rejectedDoseSettingsIds(), [], "the restored version is selectable again")
+        XCTAssertEqual(try store.rejections().map(\.reason), ["append_only"], "still shown in Settings → Sync history")
+    }
+
+    /// A rejection whose restore fails to move the row off the rejected version (e.g. it was never
+    /// synced, so the row is deleted rather than restored) keeps excluding that id from use.
+    func testRejectedDoseSettingsIdStaysExcludedWhenRestoreDeletesTheRow() async throws {
+        let store = try LocalStore(path: nil, now: { 1_000 })
+        try store.save("dose_settings", settings("s2"))
+        _ = try await pushAll(store, "rejected", reason: "forbidden")
+        XCTAssertEqual(try store.doseSettingsVersions().map(\.id), [])
+        XCTAssertEqual(try store.rejectedDoseSettingsIds(), ["s2"])
+    }
+
+    /// A later pull that lands the same key (this device's restore reaching the server another way,
+    /// or another device's write) clears the rejection: it no longer reflects the current state.
+    func testPullOfTheSameKeyClearsARejection() async throws {
+        let clock = TestClock(1_000)
+        let store = try LocalStore(path: nil, now: clock.now)
+        try store.save("dose_settings", settings("s1", ratio: 10, below: nil))
+        _ = try await pushAll(store, "accepted", seq: 1)
+        clock.ms = 2_000
+        try store.save("dose_settings", settings("s1", ratio: 12, below: 100))
+        _ = try await pushAll(store, "rejected", reason: "append_only")
+        XCTAssertEqual(try store.rejections().count, 1)
+
+        try await store.applyPull([SyncChange(table: "dose_settings", record: [
+            "id": .string("s1"), "effective_from": .number(1), "windows": .array([]), "correction": .object([:]), "rounding": .object([:]),
+            "updated_at": .number(3_000), "updated_by": .string("web"), "deleted": .number(0), "server_seq": .number(9),
+        ])], nextSince: 9)
+        XCTAssertEqual(try store.rejections(), [])
     }
 
     func testPullKeepsANewerPendingEditAndOverwritesOtherwise() async throws {

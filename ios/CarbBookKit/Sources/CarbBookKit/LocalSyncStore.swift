@@ -59,10 +59,12 @@ extension LocalStore: SyncStore {
                     }
                     try db.execute(
                         sql: """
-                        INSERT INTO sync_rejection (key, table_name, record_id, reason, message, rejected_at) VALUES (?, ?, ?, ?, ?, ?)
-                        ON CONFLICT(key) DO UPDATE SET reason = excluded.reason, message = excluded.message, rejected_at = excluded.rejected_at
+                        INSERT INTO sync_rejection (key, table_name, record_id, reason, message, rejected_at, rejected_updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(key) DO UPDATE SET reason = excluded.reason, message = excluded.message,
+                          rejected_at = excluded.rejected_at, rejected_updated_at = excluded.rejected_updated_at
                         """,
-                        arguments: [key, sent.table, id, result.reason, result.message, stamp])
+                        arguments: [key, sent.table, id, result.reason, result.message, stamp, sent.version?.updatedAt])
                 }
                 try db.execute(sql: "DELETE FROM sync_pending WHERE key = ?", arguments: [key])
             }
@@ -84,6 +86,9 @@ extension LocalStore: SyncStore {
                 try Self.upsertRow(db, change)
                 try Self.saveSnapshot(db, change)
                 try db.execute(sql: "DELETE FROM sync_pending WHERE key = ?", arguments: [change.key])
+                // The server has since converged on this key (directly, or via another device): any
+                // earlier rejection recorded for it no longer reflects the current state.
+                try db.execute(sql: "DELETE FROM sync_rejection WHERE key = ?", arguments: [change.key])
             }
             try self.setState(db, "pull_cursor", String(nextSince))
         }
@@ -106,11 +111,26 @@ extension LocalStore: SyncStore {
         }
     }
 
-    /// Ids of dose_settings versions with a recorded push rejection. Pass as `rejectedSettingsIds`
-    /// to core `evaluateCalculator` / `recalculateLogEntry`.
+    /// Ids of dose_settings versions with a recorded push rejection that is still in effect. Pass as
+    /// `rejectedSettingsIds` to core `evaluateCalculator` / `recalculateLogEntry`.
+    ///
+    /// A rejection is excluded once the row has moved on from the rejected version: `recordPushResults`
+    /// restores the row to its last server-acknowledged snapshot (or deletes it when never synced), so
+    /// a restore that succeeded leaves the row's `updated_at` different from `rejected_updated_at` — the
+    /// version is valid again and must be selectable. A row still at `rejected_updated_at` (restore
+    /// failed) or altogether missing (never synced, deleted on rejection) stays excluded from use.
     public func rejectedDoseSettingsIds() throws -> Set<Id> {
         try dbQueue.read { db in
-            Set(try String.fetchAll(db, sql: "SELECT record_id FROM sync_rejection WHERE table_name = 'dose_settings'"))
+            Set(try String.fetchAll(
+                db,
+                sql: """
+                SELECT sr.record_id FROM sync_rejection sr
+                 WHERE sr.table_name = 'dose_settings'
+                   AND (
+                     NOT EXISTS (SELECT 1 FROM dose_settings ds WHERE ds.id = sr.record_id)
+                     OR EXISTS (SELECT 1 FROM dose_settings ds WHERE ds.id = sr.record_id AND ds.updated_at = sr.rejected_updated_at)
+                   )
+                """))
         }
     }
 

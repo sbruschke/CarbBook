@@ -96,9 +96,13 @@ enum Schema {
       key TEXT PRIMARY KEY, table_name TEXT NOT NULL, record_id TEXT NOT NULL, record TEXT NOT NULL
     );
     CREATE TABLE sync_state (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+    -- rejected_updated_at is the `updated_at` of the version that was rejected: it lets
+    -- rejectedDoseSettingsIds() tell "restore failed, row is still stuck at the rejected version"
+    -- (current row's updated_at still matches) from "restore succeeded" (it now differs), and a pull
+    -- that later lands the same key clears the row (LocalSyncStore.applyPull).
     CREATE TABLE sync_rejection (
       key TEXT PRIMARY KEY, table_name TEXT NOT NULL, record_id TEXT NOT NULL, reason TEXT, message TEXT,
-      rejected_at INTEGER NOT NULL
+      rejected_at INTEGER NOT NULL, rejected_updated_at INTEGER
     );
     CREATE TABLE barcode_queue (code TEXT PRIMARY KEY, note TEXT, queued_at INTEGER NOT NULL);
     """

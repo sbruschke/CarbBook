@@ -56,6 +56,41 @@ final class SyncCoordinatorTests: XCTestCase {
         XCTAssertEqual(retry, 2)
         await coordinator.stop()
     }
+
+    /// A failed sync leaves a backoff retry scheduled; the periodic loop must see that and skip its
+    /// own attempt rather than syncing again on top of the pending retry (that would defeat backoff).
+    func testPeriodicLoopSkipsWhileABackoffRetryIsPending() async throws {
+        struct Boom: Error {}
+        let server = FakeServer()
+        await server.setFailure(Boom())
+        let store = try LocalStore(path: nil, now: { 1_000 })
+        let coordinator = SyncCoordinator(engine: SyncEngine(store: store, transport: server), now: { 1_000 })
+        var pending = await coordinator.hasPendingRetry
+        XCTAssertFalse(pending)
+        await coordinator.syncNow()
+        pending = await coordinator.hasPendingRetry
+        XCTAssertTrue(pending)
+        await coordinator.stop()
+        pending = await coordinator.hasPendingRetry
+        XCTAssertFalse(pending)
+    }
+
+    /// Once a sync succeeds, no retry is pending, so the periodic loop resumes syncing normally.
+    func testSuccessfulSyncClearsAnyPendingRetry() async throws {
+        struct Boom: Error {}
+        let server = FakeServer()
+        await server.setFailure(Boom())
+        let store = try LocalStore(path: nil, now: { 1_000 })
+        let coordinator = SyncCoordinator(engine: SyncEngine(store: store, transport: server), now: { 1_000 })
+        await coordinator.syncNow()
+        var pending = await coordinator.hasPendingRetry
+        XCTAssertTrue(pending)
+        await server.setFailure(nil)
+        await coordinator.syncNow()
+        pending = await coordinator.hasPendingRetry
+        XCTAssertFalse(pending)
+        await coordinator.stop()
+    }
 }
 
 final class PhaseRecorder: @unchecked Sendable {

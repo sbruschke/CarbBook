@@ -25,8 +25,8 @@ final class BarcodeResolverTests: XCTestCase {
         XCTAssertEqual(notFound, .notFound(code: "4006381333931"))
     }
 
-    /// Null carbs are "missing data" (the user fills them in), and `unavailable` is a result, not an
-    /// error or an offline queue entry.
+    /// Null carbs are "missing data" (the user fills them in). `unavailable` is a result, not an
+    /// error, but is also queued so it can be retried automatically.
     func testNullCarbDraftAndUnavailableAreResultsNotErrors() async throws {
         let store = try LocalStore(path: nil, now: { 1_000 })
         let api = APIClient(baseURL: URL(string: "https://x.test")!, transport: StubTransport { request in
@@ -39,7 +39,33 @@ final class BarcodeResolverTests: XCTestCase {
         XCTAssertNil(draft.food.carbsPer100g)
         let unavailable = try await resolver.resolve("222222")
         XCTAssertEqual(unavailable, .unavailable(code: "222222", message: "Open Food Facts timed out"))
+        XCTAssertEqual(try store.queuedBarcodes().map(\.code), ["222222"])
+    }
+
+    /// A 5xx from the server is treated like being offline: queue and let the user retry later.
+    func testServerErrorQueuesForRetry() async throws {
+        let store = try LocalStore(path: nil, now: { 1_000 })
+        let api = APIClient(baseURL: URL(string: "https://x.test")!, transport: StubTransport { _ in
+            (503, json(#"{"error":"unavailable","message":"Database unreachable"}"#))
+        }, token: { "t" })
+        let result = try await BarcodeResolver(store: store, api: api).resolve("333333")
+        XCTAssertEqual(result, .queuedOffline(code: "333333"))
+        XCTAssertEqual(try store.queuedBarcodes().map(\.code), ["333333"])
+    }
+
+    /// Not a plausible barcode: no request, nothing queued.
+    func testInvalidCodeIsRejectedWithoutARequestOrQueue() async throws {
+        let store = try LocalStore(path: nil, now: { 1_000 })
+        let stub = StubTransport { _ in (200, json(#"{"status":"not_found","code":"x"}"#)) }
+        let api = APIClient(baseURL: URL(string: "https://x.test")!, transport: stub, token: { "t" })
+        let result = try await BarcodeResolver(store: store, api: api).resolve("abc123")
+        XCTAssertEqual(result, .invalid(code: "abc123"))
+        XCTAssertEqual(stub.requests.count, 0)
         XCTAssertEqual(try store.queuedBarcodes().count, 0)
+
+        let tooShort = try await BarcodeResolver(store: store, api: api).resolve("12345")
+        XCTAssertEqual(tooShort, .invalid(code: "12345"))
+        XCTAssertEqual(stub.requests.count, 0)
     }
 
     func testUnauthorizedIsThrownNotQueued() async throws {

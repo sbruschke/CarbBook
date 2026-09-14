@@ -26,6 +26,7 @@ public actor SyncCoordinator {
     private var periodicTask: Task<Void, Never>?
     private var retryTask: Task<Void, Never>?
     public private(set) var phase: SyncPhase = .idle
+    var hasPendingRetry: Bool { retryTask != nil }
 
     public init(
         engine: SyncEngine,
@@ -50,7 +51,11 @@ public actor SyncCoordinator {
         periodicTask?.cancel()
         periodicTask = Task { [interval] in
             while !Task.isCancelled {
-                await self.syncNow()
+                // A backoff retry is already scheduled after a failure: don't let the periodic
+                // timer fire an extra attempt on top of it (that would defeat the backoff).
+                if await !self.hasPendingRetry {
+                    await self.syncNow()
+                }
                 try? await Task.sleep(for: interval)
             }
         }
@@ -93,6 +98,8 @@ public actor SyncCoordinator {
             do {
                 let report = try await engine.run(nowMs: now)
                 failures = 0
+                retryTask?.cancel()
+                retryTask = nil
                 setPhase(.idle, report)
             } catch APIError.unauthorized {
                 stop()
@@ -106,12 +113,17 @@ public actor SyncCoordinator {
                 retryTask = Task {
                     try? await Task.sleep(for: .seconds(delay))
                     if Task.isCancelled { return }
+                    await self.clearRetryTask()
                     await self.syncNow()
                 }
                 rerunRequested = false
             }
         } while rerunRequested
         running = false
+    }
+
+    private func clearRetryTask() {
+        retryTask = nil
     }
 
     private func setPhase(_ newPhase: SyncPhase, _ report: SyncReport?) {

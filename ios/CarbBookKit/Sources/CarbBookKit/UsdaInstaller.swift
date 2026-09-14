@@ -1,6 +1,11 @@
 import CarbBookCore
 import Crypto
 import Foundation
+#if canImport(Glibc)
+import Glibc
+#elseif canImport(Darwin)
+import Darwin
+#endif
 
 /// Downloads the USDA SQLite bundle once and again whenever the server's version changes (spec §5/§6).
 public struct UsdaInstaller: Sendable {
@@ -48,8 +53,15 @@ public struct UsdaInstaller: Sendable {
             try? FileManager.default.removeItem(at: partial)
             throw UsdaError.versionMismatch(expected: manifest.version, actual: downloadedVersion)
         }
-        if FileManager.default.fileExists(atPath: final.path) { try FileManager.default.removeItem(at: final) }
-        try FileManager.default.moveItem(at: partial, to: final)
+        // POSIX rename(2) is an atomic swap on the same volume (both files are under `directory`):
+        // readers of `installedLibrary()` see either the old file or the new one, never a gap or a
+        // half-written file. `FileManager.moveItem`/`replaceItemAt` refuse (or behave inconsistently
+        // across platforms) when the destination already exists, so this calls rename(2) directly.
+        guard rename(partial.path, final.path) == 0 else {
+            let error = POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+            try? FileManager.default.removeItem(at: partial)
+            throw error
+        }
         try await store.dbQueue.write { db in try store.setState(db, "usda_file", manifest.sqliteFile) }
         for old in try FileManager.default.contentsOfDirectory(atPath: directory.path) where old != manifest.sqliteFile {
             try? FileManager.default.removeItem(at: directory.appendingPathComponent(old))
