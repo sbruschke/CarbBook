@@ -50,4 +50,30 @@ final class TypesTests: XCTestCase {
         let jsonString = String(data: data, encoding: .utf8)!
         XCTAssertTrue(jsonString.contains("\"round_down_below_bg\":null"), jsonString)
     }
+
+    // Any-unit foods addendum: the server requires carbs_per_100ml / grams / carbs_g present as
+    // explicit JSON null, not omitted, same as round_down_below_bg above.
+    func testNilCarbsPer100mlEncodesAsExplicitNull() throws {
+        let food = FoodData(id: "f", name: "F", carbsPer100g: 50)
+        let json = String(data: try JSONEncoder().encode(food), encoding: .utf8)!
+        XCTAssertTrue(json.contains("\"carbs_per_100ml\":null"), json)
+    }
+
+    func testNilPortionGramsAndCarbsGEncodeAsExplicitNull() throws {
+        let portion = PortionData(id: "p", foodId: "f", label: "bar", kind: "count", quantity: 1, grams: nil)
+        let json = String(data: try JSONEncoder().encode(portion), encoding: .utf8)!
+        XCTAssertTrue(json.contains("\"grams\":null"), json)
+        XCTAssertTrue(json.contains("\"carbs_g\":null"), json)
+    }
+
+    func testFoodDecodesCarbsPer100ml() throws {
+        let food = try JSONDecoder().decode(FoodData.self, from: Data(#"{"id":"m","name":"M","carbs_per_100g":null,"carbs_per_100ml":20.5}"#.utf8))
+        XCTAssertEqual(food.carbsPer100ml, 20.5)
+    }
+
+    func testPortionDecodesNullGramsAndCarbsG() throws {
+        let portion = try JSONDecoder().decode(PortionData.self, from: Data(#"{"id":"p","food_id":"f","label":"bar","kind":"count","quantity":1,"grams":null,"carbs_g":22}"#.utf8))
+        XCTAssertNil(portion.grams)
+        XCTAssertEqual(portion.carbsG, 22)
+    }
 }

@@ -53,15 +53,41 @@ public struct InMemoryCatalog: Catalog {
     public func mealItems(_ mealId: Id) -> [MealItemData] { itemsByMeal[mealId] ?? [] }
 }
 
-private func isValidCarbsPer100g(_ value: Double?) -> Bool {
-    guard let value else { return false }
-    return value.isFinite && value >= 0 && value <= 100
+/// Mass path: carbs_per_100g if valid; else carbs_per_100ml + density; else incomplete.
+private func carbsForGrams(_ food: FoodData, _ portions: [PortionData], _ grams: Double) -> CarbResult {
+    if isValidCarbsPer100g(food.carbsPer100g) {
+        return CarbResult(carbsG: grams * food.carbsPer100g! / 100, complete: true)
+    }
+    if isValidCarbsPer100ml(food.carbsPer100ml), let density = densityOf(food, portions) {
+        return CarbResult(carbsG: (grams / density) * food.carbsPer100ml! / 100, complete: true)
+    }
+    return .incomplete
 }
 
 private func foodItemCarbs(_ catalog: Catalog, _ foodId: Id, _ amount: Double, _ unit: String) -> CarbResult {
-    guard let food = catalog.food(foodId), isValidCarbsPer100g(food.carbsPer100g),
-          let grams = foodAmountToGrams(amount, unit, food, catalog.portions(foodId)) else { return .incomplete }
-    return CarbResult(carbsG: grams * food.carbsPer100g! / 100, complete: true)
+    guard let food = catalog.food(foodId), isValidAmount(amount) else { return .incomplete }
+    let portions = catalog.portions(foodId)
+    if isVolumeUnit(unit), isValidCarbsPer100ml(food.carbsPer100ml) {
+        return CarbResult(carbsG: amount * Units.volumeMl[unit]! * food.carbsPer100ml! / 100, complete: true)
+    }
+    if unit.hasPrefix(Units.portionPrefix) {
+        let portionId = String(unit.dropFirst(Units.portionPrefix.count))
+        if let portion = portions.first(where: { $0.id == portionId }),
+           isValidPortionCarbs(portion.carbsG),
+           portion.quantity.isFinite, portion.quantity > 0 {
+            return CarbResult(carbsG: (amount / portion.quantity) * portion.carbsG!, complete: true)
+        }
+    }
+    // Mass units, volume without a valid per-100 ml basis, and portions without valid carbs
+    // all go through a known weight.
+    guard let grams = foodAmountToGrams(amount, unit, food, portions) else { return .incomplete }
+    if isVolumeUnit(unit) {
+        // Volume fallback is per-100 g + density only (per-100 ml was invalid above).
+        return isValidCarbsPer100g(food.carbsPer100g)
+            ? CarbResult(carbsG: grams * food.carbsPer100g! / 100, complete: true)
+            : .incomplete
+    }
+    return carbsForGrams(food, portions, grams)
 }
 
 private func mealTotalCarbs(_ catalog: Catalog, _ mealId: Id, _ visiting: inout Set<Id>) -> CarbResult {

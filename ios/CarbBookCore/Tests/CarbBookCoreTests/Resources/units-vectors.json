@@ -5,12 +5,22 @@
     { "id": "corn", "name": "Corn, cream style", "carbs_per_100g": 18.13 },
     { "id": "bread", "name": "Bread, white", "carbs_per_100g": 49 },
     { "id": "milk", "name": "Milk", "carbs_per_100g": 4.8, "density_g_per_ml": 1.03 },
-    { "id": "mystery", "name": "No label", "carbs_per_100g": null }
+    { "id": "mystery", "name": "No label", "carbs_per_100g": null },
+    { "id": "calrose", "name": "Calrose rice (1 cup = 48 g carbs)", "carbs_per_100g": null, "carbs_per_100ml": 20.2884136211058 },
+    { "id": "granola-bar", "name": "Granola bar (1 bar = 22 g carbs)", "carbs_per_100g": null },
+    { "id": "syrup", "name": "Syrup, both bases", "carbs_per_100g": 82, "carbs_per_100ml": 116, "density_g_per_ml": 1.42 },
+    { "id": "syrup-ml", "name": "Syrup, volume basis + density", "carbs_per_100g": null, "carbs_per_100ml": 116, "density_g_per_ml": 1.42 },
+    { "id": "cookies", "name": "Cookies", "carbs_per_100g": 60 },
+    { "id": "bad-ml", "name": "Invalid carbs per 100 ml", "carbs_per_100g": null, "carbs_per_100ml": 151 },
+    { "id": "bad-portion-food", "name": "Invalid portion carbs", "carbs_per_100g": null }
   ],
   "portions": [
     { "id": "rice-cup", "food_id": "rice", "label": "cup", "kind": "volume", "quantity": 1, "grams": 158 },
     { "id": "corn-cup", "food_id": "corn", "label": "cup", "kind": "volume", "quantity": 1, "grams": 256 },
-    { "id": "bread-slice", "food_id": "bread", "label": "slice", "kind": "count", "quantity": 1, "grams": 25 }
+    { "id": "bread-slice", "food_id": "bread", "label": "slice", "kind": "count", "quantity": 1, "grams": 25 },
+    { "id": "bar", "food_id": "granola-bar", "label": "bar", "kind": "count", "quantity": 1, "grams": null, "carbs_g": 22 },
+    { "id": "cookie", "food_id": "cookies", "label": "cookie", "kind": "count", "quantity": 1, "grams": 30, "carbs_g": 20 },
+    { "id": "bad-carbs", "food_id": "bad-portion-food", "label": "piece", "kind": "count", "quantity": 1, "grams": null, "carbs_g": -1 }
   ],
   "meals": [
     { "id": "rice-corn", "name": "Rice and cream style corn", "yield_servings": 2, "total_weight_g": 414 },
@@ -33,7 +43,9 @@
     { "name": "volume via derived density", "food_id": "rice", "amount": 2, "unit": "tbsp", "expect": 19.75 },
     { "name": "volume via explicit density", "food_id": "milk", "amount": 1, "unit": "cup", "expect": 243.685884 },
     { "name": "count portion", "food_id": "bread", "amount": 2, "unit": "p:bread-slice", "expect": 50 },
-    { "name": "volume without density", "food_id": "bread", "amount": 1, "unit": "cup", "expect": null }
+    { "name": "volume without density", "food_id": "bread", "amount": 1, "unit": "cup", "expect": null },
+    { "name": "volume carb basis has no weight", "food_id": "calrose", "amount": 1, "unit": "cup", "expect": null },
+    { "name": "portion without grams has no weight", "food_id": "granola-bar", "amount": 1, "unit": "p:bar", "expect": null }
   ],
   "carb_cases": [
     { "name": "food by cup", "ref_type": "food", "ref_id": "rice", "amount": 1, "unit": "cup", "expect": { "carbs_g": 44.556, "complete": true } },
@@ -47,14 +59,34 @@
     { "name": "meal grams", "ref_type": "meal", "ref_id": "rice-corn", "amount": 100, "unit": "g", "expect": { "carbs_g": 21.97314, "complete": true } },
     { "name": "nested meal", "ref_type": "meal", "ref_id": "plate", "amount": 1, "unit": "serving", "expect": { "carbs_g": 80.4766, "complete": true } },
     { "name": "meal grams without weight", "ref_type": "meal", "ref_id": "plate", "amount": 1, "unit": "g", "expect": { "carbs_g": 0, "complete": false } },
-    { "name": "meal with incomplete item", "ref_type": "meal", "ref_id": "bad", "amount": 1, "unit": "serving", "expect": { "carbs_g": 28.2, "complete": false } }
+    { "name": "meal with incomplete item", "ref_type": "meal", "ref_id": "bad", "amount": 1, "unit": "serving", "expect": { "carbs_g": 28.2, "complete": false } },
+    { "name": "carbs per 100 ml by cup", "ref_type": "food", "ref_id": "calrose", "amount": 1, "unit": "cup", "expect": { "carbs_g": 48, "complete": true } },
+    { "name": "carbs per 100 ml by half cup", "ref_type": "food", "ref_id": "calrose", "amount": 0.5, "unit": "cup", "expect": { "carbs_g": 24, "complete": true } },
+    { "name": "carbs per 100 ml by tbsp", "ref_type": "food", "ref_id": "calrose", "amount": 3, "unit": "tbsp", "expect": { "carbs_g": 9, "complete": true } },
+    { "name": "carbs per 100 ml, grams without density", "ref_type": "food", "ref_id": "calrose", "amount": 100, "unit": "g", "expect": { "carbs_g": 0, "complete": false } },
+    { "name": "portion carbs without grams", "ref_type": "food", "ref_id": "granola-bar", "amount": 2, "unit": "p:bar", "expect": { "carbs_g": 44, "complete": true } },
+    { "name": "portion carbs only, grams unit", "ref_type": "food", "ref_id": "granola-bar", "amount": 50, "unit": "g", "expect": { "carbs_g": 0, "complete": false } },
+    { "name": "both bases, volume uses per 100 ml", "ref_type": "food", "ref_id": "syrup", "amount": 1, "unit": "tbsp", "expect": { "carbs_g": 17.1526471463, "complete": true } },
+    { "name": "both bases, mass uses per 100 g", "ref_type": "food", "ref_id": "syrup", "amount": 21, "unit": "g", "expect": { "carbs_g": 17.22, "complete": true } },
+    { "name": "mass via per 100 ml and density", "ref_type": "food", "ref_id": "syrup-ml", "amount": 21, "unit": "g", "expect": { "carbs_g": 17.1549295775, "complete": true } },
+    { "name": "portion carbs win over portion grams", "ref_type": "food", "ref_id": "cookies", "amount": 1, "unit": "p:cookie", "expect": { "carbs_g": 20, "complete": true } },
+    { "name": "grams of a food with portion carbs", "ref_type": "food", "ref_id": "cookies", "amount": 30, "unit": "g", "expect": { "carbs_g": 18, "complete": true } },
+    { "name": "invalid carbs per 100 ml", "ref_type": "food", "ref_id": "bad-ml", "amount": 1, "unit": "cup", "expect": { "carbs_g": 0, "complete": false } },
+    { "name": "invalid portion carbs without grams", "ref_type": "food", "ref_id": "bad-portion-food", "amount": 1, "unit": "p:bad-carbs", "expect": { "carbs_g": 0, "complete": false } }
   ],
   "unit_list_cases": [
     { "ref_type": "food", "ref_id": "rice", "expect": ["g", "kg", "oz", "lb", "ml", "l", "tsp", "tbsp", "floz", "cup"] },
     { "ref_type": "food", "ref_id": "bread", "expect": ["g", "kg", "oz", "lb", "p:bread-slice"] },
     { "ref_type": "food", "ref_id": "milk", "expect": ["g", "kg", "oz", "lb", "ml", "l", "tsp", "tbsp", "floz", "cup"] },
     { "ref_type": "meal", "ref_id": "rice-corn", "expect": ["serving", "g", "kg", "oz", "lb"] },
-    { "ref_type": "meal", "ref_id": "plate", "expect": ["serving"] }
+    { "ref_type": "meal", "ref_id": "plate", "expect": ["serving"] },
+    { "ref_type": "food", "ref_id": "calrose", "expect": ["ml", "l", "tsp", "tbsp", "floz", "cup"] },
+    { "ref_type": "food", "ref_id": "granola-bar", "expect": ["p:bar"] },
+    { "ref_type": "food", "ref_id": "syrup", "expect": ["g", "kg", "oz", "lb", "ml", "l", "tsp", "tbsp", "floz", "cup"] },
+    { "ref_type": "food", "ref_id": "syrup-ml", "expect": ["g", "kg", "oz", "lb", "ml", "l", "tsp", "tbsp", "floz", "cup"] },
+    { "ref_type": "food", "ref_id": "cookies", "expect": ["g", "kg", "oz", "lb", "p:cookie"] },
+    { "ref_type": "food", "ref_id": "bad-ml", "expect": ["g", "kg", "oz", "lb"] },
+    { "ref_type": "food", "ref_id": "bad-portion-food", "expect": ["g", "kg", "oz", "lb"] }
   ],
   "cycle_cases": [
     { "meal_id": "plate", "candidate": "plate", "expect": true },

@@ -127,4 +127,43 @@ final class CarbsTests: XCTestCase {
         XCTAssertEqual(sumCarbs([CarbResult(carbsG: 10, complete: true), CarbResult(carbsG: 5, complete: false)]), CarbResult(carbsG: 15, complete: false))
         XCTAssertEqual(sumCarbs([]), CarbResult(carbsG: 0, complete: true))
     }
+
+    // Mirrors packages/core/test/carbs.test.ts "any-unit foods: carbs".
+    func testAnyUnitFoodsCarbs() {
+        let c = InMemoryCatalog(
+            foods: [
+                FoodData(id: "vol-fallback", name: "Per-100 ml invalid, per-100 g + density", carbsPer100g: 50, carbsPer100ml: 151, densityGPerMl: 2),
+                FoodData(id: "ml-edges", name: "Edges", carbsPer100g: nil, carbsPer100ml: 150),
+                FoodData(id: "ml-nan", name: "NaN", carbsPer100g: nil, carbsPer100ml: .nan, densityGPerMl: 1),
+                FoodData(id: "ml-neg", name: "Neg", carbsPer100g: nil, carbsPer100ml: -1),
+                FoodData(id: "portion-fallback", name: "Portion carbs invalid, grams valid", carbsPer100g: 40),
+                FoodData(id: "portion-none", name: "Portion carbs, no basis", carbsPer100g: nil),
+            ],
+            portions: [
+                PortionData(id: "big", foodId: "portion-fallback", label: "big", kind: "count", quantity: 2, grams: 50, carbsG: 501),
+                PortionData(id: "zero-q", foodId: "portion-none", label: "zq", kind: "count", quantity: 0, grams: nil, carbsG: 10),
+                PortionData(id: "serv", foodId: "portion-none", label: "serving", kind: "serving", quantity: 2, grams: nil, carbsG: 500),
+                PortionData(id: "grams-only", foodId: "portion-none", label: "g", kind: "count", quantity: 1, grams: 30, carbsG: nil),
+            ]
+        )
+
+        let volFallback = itemCarbs(c, .food, "vol-fallback", 10, "ml")
+        XCTAssertTrue(volFallback.complete)
+        XCTAssertEqual(volFallback.carbsG, 10, accuracy: 1e-9)
+
+        XCTAssertEqual(itemCarbs(c, .food, "ml-edges", 100, "ml"), CarbResult(carbsG: 150, complete: true))
+        XCTAssertFalse(itemCarbs(c, .food, "ml-nan", 100, "ml").complete)
+        XCTAssertFalse(itemCarbs(c, .food, "ml-nan", 100, "g").complete)
+        XCTAssertFalse(itemCarbs(c, .food, "ml-neg", 100, "ml").complete)
+
+        let portionFallback = itemCarbs(c, .food, "portion-fallback", 1, "p:big")
+        XCTAssertTrue(portionFallback.complete)
+        XCTAssertEqual(portionFallback.carbsG, 10, accuracy: 1e-9)
+
+        XCTAssertEqual(itemCarbs(c, .food, "portion-none", 1, "p:zero-q"), CarbResult(carbsG: 0, complete: false))
+        XCTAssertEqual(itemCarbs(c, .food, "portion-none", 1, "p:serv"), CarbResult(carbsG: 250, complete: true))
+        XCTAssertEqual(itemCarbs(c, .food, "portion-none", 1, "p:grams-only"), CarbResult(carbsG: 0, complete: false))
+        XCTAssertFalse(itemCarbs(c, .food, "portion-none", -1, "p:serv").complete)
+        XCTAssertFalse(itemCarbs(c, .food, "portion-none", .nan, "p:serv").complete)
+    }
 }
