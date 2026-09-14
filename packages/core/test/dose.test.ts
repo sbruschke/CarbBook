@@ -99,6 +99,12 @@ describe('activeSettings', () => {
     expect(activeSettings([old, settings, future], Date.UTC(2026, 8, 14))?.id).toBe('s1');
     expect(activeSettings([future], Date.UTC(2026, 8, 14))).toBeNull();
   });
+  it('breaks effective_from ties by the larger id', () => {
+    const a = { id: 'a', effective_from: Date.UTC(2026, 8, 14) };
+    const b = { id: 'b', effective_from: Date.UTC(2026, 8, 14) };
+    expect(activeSettings([a, b], Date.UTC(2026, 8, 14))?.id).toBe('b');
+    expect(activeSettings([b, a], Date.UTC(2026, 8, 14))?.id).toBe('b');
+  });
 });
 
 describe('recentDoseWarning', () => {
@@ -107,5 +113,65 @@ describe('recentDoseWarning', () => {
     expect(recentDoseWarning(now - 3 * 3600_000, now)).toBe(true);
     expect(recentDoseWarning(now - 5 * 3600_000, now)).toBe(false);
     expect(recentDoseWarning(null, now)).toBe(false);
+  });
+  it('warns for a dose logged in the future (clock skew)', () => {
+    const now = Date.UTC(2026, 8, 14, 12);
+    expect(recentDoseWarning(now + 10 * 60_000, now)).toBe(true);
+  });
+});
+
+describe('estimateDose validation', () => {
+  it('rejects invalid input with reason invalid_input and null window', () => {
+    expect(estimateDose({ settings, minutes: 1.5, carbs: { carbs_g: 10, complete: true }, bg: null }))
+      .toEqual({ ok: false, reason: 'invalid_input', window: null });
+    expect(estimateDose({ settings, minutes: -1, carbs: { carbs_g: 10, complete: true }, bg: null }))
+      .toEqual({ ok: false, reason: 'invalid_input', window: null });
+    expect(estimateDose({ settings, minutes: 1440, carbs: { carbs_g: 10, complete: true }, bg: null }))
+      .toEqual({ ok: false, reason: 'invalid_input', window: null });
+    expect(estimateDose({ settings, minutes: 600, carbs: { carbs_g: NaN, complete: true }, bg: null }))
+      .toEqual({ ok: false, reason: 'invalid_input', window: null });
+    expect(estimateDose({ settings, minutes: 600, carbs: { carbs_g: -1, complete: true }, bg: null }))
+      .toEqual({ ok: false, reason: 'invalid_input', window: null });
+    expect(estimateDose({ settings, minutes: 600, carbs: { carbs_g: 10, complete: true }, bg: NaN }))
+      .toEqual({ ok: false, reason: 'invalid_input', window: null });
+    expect(estimateDose({ settings, minutes: 600, carbs: { carbs_g: 10, complete: true }, bg: -1 }))
+      .toEqual({ ok: false, reason: 'invalid_input', window: null });
+  });
+
+  it('rejects invalid settings with reason invalid_settings and null window', () => {
+    const badStart = { ...settings, windows: [{ name: 'Bad', start: '25:99', ratio_g_per_unit: 8 }] };
+    expect(estimateDose({ settings: badStart, minutes: 600, carbs: { carbs_g: 10, complete: true }, bg: null }))
+      .toEqual({ ok: false, reason: 'invalid_settings', window: null });
+
+    const dupStart = { ...settings, windows: [
+      { name: 'A', start: '05:00', ratio_g_per_unit: 8 },
+      { name: 'B', start: '05:00', ratio_g_per_unit: 10 },
+    ] };
+    expect(estimateDose({ settings: dupStart, minutes: 600, carbs: { carbs_g: 10, complete: true }, bg: null }))
+      .toEqual({ ok: false, reason: 'invalid_settings', window: null });
+
+    const badThreshold = { ...settings, correction: { ...settings.correction, threshold: NaN } };
+    expect(estimateDose({ settings: badThreshold, minutes: 600, carbs: { carbs_g: 10, complete: true }, bg: null }))
+      .toEqual({ ok: false, reason: 'invalid_settings', window: null });
+
+    const badStep = { ...settings, correction: { ...settings.correction, step: 0 } };
+    expect(estimateDose({ settings: badStep, minutes: 600, carbs: { carbs_g: 10, complete: true }, bg: null }))
+      .toEqual({ ok: false, reason: 'invalid_settings', window: null });
+
+    const badUnitsPerStep = { ...settings, correction: { ...settings.correction, units_per_step: -1 } };
+    expect(estimateDose({ settings: badUnitsPerStep, minutes: 600, carbs: { carbs_g: 10, complete: true }, bg: null }))
+      .toEqual({ ok: false, reason: 'invalid_settings', window: null });
+
+    const badMode = { ...settings, correction: { ...settings.correction, mode: 'bogus' as never } };
+    expect(estimateDose({ settings: badMode, minutes: 600, carbs: { carbs_g: 10, complete: true }, bg: null }))
+      .toEqual({ ok: false, reason: 'invalid_settings', window: null });
+
+    const badIncrement = { ...settings, rounding: { ...settings.rounding, increment: 0 } };
+    expect(estimateDose({ settings: badIncrement, minutes: 600, carbs: { carbs_g: 10, complete: true }, bg: null }))
+      .toEqual({ ok: false, reason: 'invalid_settings', window: null });
+
+    const badRoundDownBg = { ...settings, rounding: { ...settings.rounding, round_down_below_bg: NaN } };
+    expect(estimateDose({ settings: badRoundDownBg, minutes: 600, carbs: { carbs_g: 10, complete: true }, bg: null }))
+      .toEqual({ ok: false, reason: 'invalid_settings', window: null });
   });
 });

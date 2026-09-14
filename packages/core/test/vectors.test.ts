@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import unitsVectors from '../../../testdata/units-vectors.json';
 import doseVectors from '../../../testdata/dose-vectors.json';
-import type { CorrectionRule, DoseSettingsData, FoodData, MealData, MealItemData, PortionData, RefType } from '../src/types';
+import type { CorrectionRule, DoseSettingsData, FoodData, MealData, MealItemData, PortionData, RefType, RoundingRule } from '../src/types';
 import { createCatalog, itemCarbs, wouldCreateCycle } from '../src/carbs';
 import { estimateDose, formatBreakdown, parseHHMM } from '../src/dose';
 import { foodAmountToGrams, foodUnits, mealUnits } from '../src/units';
@@ -28,6 +28,7 @@ const d = doseVectors as unknown as {
     complete?: boolean;
     bg: number | null;
     correction?: CorrectionRule;
+    rounding?: RoundingRule;
     expect: Record<string, unknown>;
   }[];
 };
@@ -35,6 +36,12 @@ const d = doseVectors as unknown as {
 const catalog = createCatalog(u);
 
 describe('units vectors', () => {
+  it('has cases to run', () => {
+    expect(u.grams_cases.length).toBeGreaterThan(0);
+    expect(u.carb_cases.length).toBeGreaterThan(0);
+    expect(u.unit_list_cases.length).toBeGreaterThan(0);
+    expect(u.cycle_cases.length).toBeGreaterThan(0);
+  });
   for (const c of u.grams_cases) {
     it(`grams: ${c.name}`, () => {
       const food = catalog.food(c.food_id)!;
@@ -67,9 +74,14 @@ describe('units vectors', () => {
 });
 
 describe('dose vectors', () => {
+  it('has cases to run', () => {
+    expect(d.cases.length).toBeGreaterThan(0);
+  });
   for (const c of d.cases) {
     it(c.name, () => {
-      const settings = c.correction ? { ...d.settings, correction: c.correction } : d.settings;
+      let settings = d.settings;
+      if (c.correction) settings = { ...settings, correction: c.correction };
+      if (c.rounding) settings = { ...settings, rounding: c.rounding };
       const r = estimateDose({
         settings,
         minutes: parseHHMM(c.time),

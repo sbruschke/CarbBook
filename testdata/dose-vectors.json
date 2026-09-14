@@ -55,6 +55,21 @@
       "correction": { "threshold": 200, "step": 50, "units_per_step": 1, "mode": "proportional" },
       "expect": { "ok": true, "window": "Dinner", "meal_units": 9, "correction_units": 1.5, "raw_units": 10.5, "units": 11, "rounded_down": false } },
     { "name": "incomplete carbs", "time": "18:00", "carbs": 40, "complete": false, "bg": 150,
-      "expect": { "ok": false, "reason": "incomplete_carbs", "window": "Dinner" } }
+      "expect": { "ok": false, "reason": "incomplete_carbs", "window": "Dinner" } },
+    { "name": "BG 300 completes second step", "time": "18:00", "carbs": 72, "bg": 300,
+      "expect": { "ok": true, "window": "Dinner", "meal_units": 9, "correction_units": 2, "raw_units": 11, "units": 11, "rounded_down": false } },
+    { "name": "BG 301 starts third step", "time": "18:00", "carbs": 72, "bg": 301,
+      "expect": { "ok": true, "window": "Dinner", "meal_units": 9, "correction_units": 3, "raw_units": 12, "units": 12, "rounded_down": false } },
+    { "name": "half-unit increment", "time": "12:00", "carbs": 26, "bg": null,
+      "rounding": { "increment": 0.5, "round_down_below_bg": 130 },
+      "expect": { "ok": true, "window": "Lunch", "meal_units": 3.25, "correction_units": 0, "raw_units": 3.25, "units": 3.5, "rounded_down": false } },
+    { "name": "half-unit increment rounds down", "time": "12:00", "carbs": 26, "bg": 125,
+      "rounding": { "increment": 0.5, "round_down_below_bg": 130 },
+      "expect": { "ok": true, "window": "Lunch", "meal_units": 3.25, "correction_units": 0, "raw_units": 3.25, "units": 3, "rounded_down": true } },
+    { "name": "invalid step refuses", "time": "18:00", "carbs": 72, "bg": 400,
+      "correction": { "threshold": 200, "step": 0, "units_per_step": 1, "mode": "started" },
+      "expect": { "ok": false, "reason": "invalid_settings", "window": null } },
+    { "name": "negative carbs refuse", "time": "18:00", "carbs": -40, "bg": null,
+      "expect": { "ok": false, "reason": "invalid_input", "window": null } }
   ]
 }

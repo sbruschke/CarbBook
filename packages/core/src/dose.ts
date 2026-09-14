@@ -40,8 +40,12 @@ export function correctionUnits(rule: CorrectionRule, bg: number | null): number
   }
 }
 
+/**
+ * Rounds a raw dose to `rule.increment`. Pure: assumes `rule.increment > 0` (validated by
+ * callers, e.g. `estimateDose`, before this is reached) — does not substitute a default.
+ */
 export function roundDose(raw: number, rule: RoundingRule, bg: number | null): { units: number; rounded_down: boolean } {
-  const increment = rule.increment > 0 ? rule.increment : 1;
+  const increment = rule.increment;
   const roundedDown = bg != null && rule.round_down_below_bg != null && bg < rule.round_down_below_bg;
   const steps = roundedDown ? Math.floor(raw / increment + EPS) : Math.floor(raw / increment + 0.5 + EPS);
   return { units: Number((steps * increment).toFixed(4)), rounded_down: roundedDown };
@@ -68,9 +72,52 @@ export type DoseEstimate =
       rounded_down: boolean;
       round_down_below_bg: number | null;
     }
-  | { ok: false; reason: 'no_window' | 'invalid_ratio' | 'incomplete_carbs'; window: DoseWindow | null };
+  | {
+      ok: false;
+      reason: 'no_window' | 'invalid_ratio' | 'incomplete_carbs' | 'invalid_input' | 'invalid_settings';
+      window: DoseWindow | null;
+    };
+
+const isFiniteNumber = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n);
+
+function hasInvalidInput(input: DoseInput): boolean {
+  if (!Number.isInteger(input.minutes) || input.minutes < 0 || input.minutes > 1439) return true;
+  if (!isFiniteNumber(input.carbs.carbs_g) || input.carbs.carbs_g < 0) return true;
+  if (input.bg != null && (!isFiniteNumber(input.bg) || input.bg < 0)) return true;
+  return false;
+}
+
+const VALID_CORRECTION_MODES = new Set(['started', 'full', 'proportional']);
+
+function hasInvalidSettings(settings: DoseSettingsData): boolean {
+  const starts: number[] = [];
+  for (const window of settings.windows) {
+    let start: number;
+    try {
+      start = parseHHMM(window.start);
+    } catch {
+      return true;
+    }
+    if (starts.includes(start)) return true;
+    starts.push(start);
+  }
+
+  const correction = settings.correction;
+  if (!isFiniteNumber(correction.threshold)) return true;
+  if (!isFiniteNumber(correction.step) || correction.step <= 0) return true;
+  if (!isFiniteNumber(correction.units_per_step) || correction.units_per_step < 0) return true;
+  if (!VALID_CORRECTION_MODES.has(correction.mode)) return true;
+
+  const rounding = settings.rounding;
+  if (!isFiniteNumber(rounding.increment) || rounding.increment <= 0) return true;
+  if (rounding.round_down_below_bg != null && !isFiniteNumber(rounding.round_down_below_bg)) return true;
+
+  return false;
+}
 
 export function estimateDose(input: DoseInput): DoseEstimate {
+  if (hasInvalidInput(input)) return { ok: false, reason: 'invalid_input', window: null };
+  if (hasInvalidSettings(input.settings)) return { ok: false, reason: 'invalid_settings', window: null };
   const window = pickWindow(input.settings.windows, input.minutes);
   if (!window) return { ok: false, reason: 'no_window', window: null };
   if (!(window.ratio_g_per_unit > 0)) return { ok: false, reason: 'invalid_ratio', window };
@@ -107,14 +154,25 @@ export function formatBreakdown(estimate: Extract<DoseEstimate, { ok: true }>): 
   return text;
 }
 
-export function activeSettings<T extends Pick<DoseSettingsData, 'effective_from'>>(versions: T[], atMs: number): T | null {
+export function activeSettings<T extends Pick<DoseSettingsData, 'effective_from' | 'id'>>(
+  versions: T[],
+  atMs: number,
+): T | null {
   let best: T | null = null;
   for (const v of versions) {
-    if (v.effective_from <= atMs && (best === null || v.effective_from > best.effective_from)) best = v;
+    if (v.effective_from > atMs) continue;
+    if (
+      best === null ||
+      v.effective_from > best.effective_from ||
+      (v.effective_from === best.effective_from && v.id > best.id)
+    ) {
+      best = v;
+    }
   }
   return best;
 }
 
+/** Warns near a logged dose in either time direction, including clock-skewed future timestamps. */
 export function recentDoseWarning(lastDoseAtMs: number | null, nowMs: number, hours = 4): boolean {
-  return lastDoseAtMs != null && nowMs - lastDoseAtMs >= 0 && nowMs - lastDoseAtMs < hours * HOUR_MS;
+  return lastDoseAtMs != null && nowMs - lastDoseAtMs < hours * HOUR_MS;
 }
