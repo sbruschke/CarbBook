@@ -39,7 +39,9 @@ public func pickWindow(_ windows: [DoseWindow], _ minutes: Int) -> DoseWindow? {
 }
 
 public func correctionUnits(_ rule: CorrectionRule, _ bg: Double?) -> Double {
-    guard let bg, bg > rule.threshold, rule.step > 0 else { return 0 }
+    // Written as TS's `bg <= threshold || step <= 0` so NaN inputs yield NaN, not 0.
+    guard let bg else { return 0 }
+    if bg <= rule.threshold || rule.step <= 0 { return 0 }
     let steps = (bg - rule.threshold) / rule.step
     switch rule.mode {
     case "started": return (steps - EPS).rounded(.up) * rule.unitsPerStep

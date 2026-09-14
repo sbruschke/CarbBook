@@ -50,6 +50,17 @@ final class DoseTests: XCTestCase {
         XCTAssertEqual(correctionUnits(proportional, 275), 1.5, accuracy: 1e-9)
     }
 
+    func testCorrectionUnitsNaNMatchesTypeScript() {
+        // TS: `NaN <= threshold` and `step <= 0` are false, so NaN flows through as NaN.
+        let rule = seedSettings.correction
+        XCTAssertTrue(correctionUnits(rule, .nan).isNaN)
+        var nanThreshold = rule; nanThreshold.threshold = .nan
+        XCTAssertTrue(correctionUnits(nanThreshold, 250).isNaN)
+        var nanStep = rule; nanStep.step = .nan
+        XCTAssertTrue(correctionUnits(nanStep, 250).isNaN)
+        XCTAssertEqual(correctionUnits(rule, nil), 0)
+    }
+
     func testRoundDose() {
         XCTAssertTrue(roundDose(9.5, seedSettings.rounding, 140) == (10, false))
         XCTAssertTrue(roundDose(9.9, seedSettings.rounding, 125) == (9, true))

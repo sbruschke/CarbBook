@@ -24,6 +24,31 @@ final class JSCompatTests: XCTestCase {
         XCTAssertEqual(JS.toFixed(10.5, 4), "10.5000")
     }
 
+    // Expected values from node: `(x).toFixed(d)`.
+    func testToFixedExactTiesUseTheExactBinaryValue() {
+        XCTAssertEqual(JS.toFixed(656489253044128.375, 2), "656489253044128.38") // nextUp would give .50
+        XCTAssertEqual(JS.toFixed(1.005, 2), "1.00")
+        XCTAssertEqual(JS.toFixed(2.5, 2), "2.50")
+        XCTAssertEqual(JS.toFixed(2.5, 0), "3")
+        XCTAssertEqual(JS.toFixed(0.125, 2), "0.13")
+        XCTAssertEqual(JS.toFixed(0.125, 1), "0.1")
+        XCTAssertEqual(JS.toFixed(8.345, 2), "8.35")
+        XCTAssertEqual(JS.toFixed(1.45, 1), "1.4")
+        XCTAssertEqual(JS.toFixed(0.5, 0), "1")
+        XCTAssertEqual(JS.toFixed(-0.5, 0), "-1")
+        XCTAssertEqual(JS.toFixed(9.995, 2), "9.99")
+        XCTAssertEqual(JS.toFixed(99.5, 0), "100")
+    }
+
+    func testToFixedExtremesMatchJavaScript() {
+        XCTAssertEqual(JS.toFixed(1e21, 2), "1e+21")
+        XCTAssertEqual(JS.toFixed(-1e21, 2), "-1e+21")
+        XCTAssertEqual(JS.toFixed(1e25, 2), "1e+25")
+        XCTAssertEqual(JS.toFixed(.infinity, 2), "Infinity")
+        XCTAssertEqual(JS.toFixed(-.infinity, 2), "-Infinity")
+        XCTAssertEqual(JS.toFixed(.nan, 2), "NaN")
+    }
+
     func testNumberStringMatchesJavaScript() {
         XCTAssertEqual(JS.numberString(9), "9")
         XCTAssertEqual(JS.numberString(-0.0), "0")
