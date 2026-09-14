@@ -1,4 +1,4 @@
-import { isNewer } from '@carbbook/core';
+import { createCatalog, isNewer, type MealItemData, wouldCreateCycle } from '@carbbook/core';
 import type { Role } from '../auth/users';
 import { type Db, nextServerSeq } from '../db';
 import { columnsOf, isSyncTable, type TableSpec, TABLE_SPECS } from './tables';
@@ -9,7 +9,7 @@ export interface PushChange {
   record: unknown;
 }
 
-export type RejectReason = 'unknown_table' | 'invalid' | 'forbidden' | 'cycle';
+export type RejectReason = 'unknown_table' | 'invalid' | 'forbidden' | 'cycle' | 'append_only';
 
 export type PushResult =
   | { table: string; id: string; status: 'accepted'; server_seq: number }
@@ -34,7 +34,49 @@ function upsert(db: Db, spec: TableSpec, row: SqlRow): void {
   ).run(row);
 }
 
-function applyOne(db: Db, _role: Role, change: PushChange): PushResult {
+/** Would saving this meal_item make a meal contain itself? Uses core's wouldCreateCycle. */
+function createsCycle(db: Db, row: SqlRow): boolean {
+  const items = db
+    .prepare(
+      `SELECT id, meal_id, ref_type, ref_id, amount, unit, position
+         FROM meal_item WHERE deleted = 0 AND id <> ?`,
+    )
+    .all(row.id) as MealItemData[];
+  const candidate = {
+    id: row.id,
+    meal_id: row.meal_id,
+    ref_type: row.ref_type,
+    ref_id: row.ref_id,
+    amount: row.amount,
+    unit: row.unit,
+    position: row.position,
+  } as MealItemData;
+  const catalog = createCatalog({ meal_items: [...items, candidate] });
+  return wouldCreateCycle(catalog, candidate.meal_id, candidate.ref_id);
+}
+
+/**
+ * dose_settings versions are append-only (spec §7): once a version exists, a push may not soft-delete
+ * it or change the fields that drive dosing. Only brand-new ids (no `existing` row) are unconstrained.
+ */
+function dosSettingsAppendOnlyViolation(db: Db, row: SqlRow): 'delete' | 'edit' | null {
+  const existing = db
+    .prepare('SELECT effective_from, windows, correction, rounding FROM dose_settings WHERE id = ?')
+    .get(row.id) as { effective_from: number; windows: string; correction: string; rounding: string } | undefined;
+  if (!existing) return null;
+  if (row.deleted === 1) return 'delete';
+  if (
+    row.effective_from !== existing.effective_from ||
+    row.windows !== existing.windows ||
+    row.correction !== existing.correction ||
+    row.rounding !== existing.rounding
+  ) {
+    return 'edit';
+  }
+  return null;
+}
+
+function applyOne(db: Db, role: Role, change: PushChange): PushResult {
   const id = recordId(change.record);
   const table = String(change.table);
   if (!isSyncTable(change.table)) {
@@ -46,12 +88,39 @@ function applyOne(db: Db, _role: Role, change: PushChange): PushResult {
   const row = validation.row;
   const rowId = row.id as string;
 
+  if (spec.ownerOnly && role !== 'owner') {
+    return { table, id: rowId, status: 'rejected', reason: 'forbidden', message: `Only the owner can change ${table}` };
+  }
+
+  // Append-only safety must hold regardless of LWW freshness: an older or stale attempt to
+  // delete/edit an existing dose_settings version is rejected, not silently ignored, so the
+  // client learns the write is forbidden rather than merely stale.
+  if (spec.name === 'dose_settings') {
+    const violation = dosSettingsAppendOnlyViolation(db, row);
+    if (violation === 'delete') {
+      return {
+        table, id: rowId, status: 'rejected', reason: 'append_only',
+        message: 'dose_settings rows are append-only: cannot delete an existing version',
+      };
+    }
+    if (violation === 'edit') {
+      return {
+        table, id: rowId, status: 'rejected', reason: 'append_only',
+        message: 'dose_settings rows are append-only: cannot edit an existing version, push a new one instead',
+      };
+    }
+  }
+
   const stored = db
     .prepare(`SELECT updated_at, updated_by, server_seq FROM ${spec.name} WHERE id = ?`)
     .get(rowId) as { updated_at: number; updated_by: string; server_seq: number } | undefined;
   const incoming = { updated_at: row.updated_at as number, updated_by: row.updated_by as string };
   if (stored && !isNewer(incoming, stored)) {
     return { table, id: rowId, status: 'ignored', server_seq: stored.server_seq };
+  }
+
+  if (spec.name === 'meal_item' && row.deleted === 0 && row.ref_type === 'meal' && createsCycle(db, row)) {
+    return { table, id: rowId, status: 'rejected', reason: 'cycle', message: 'A meal cannot contain itself' };
   }
 
   const serverSeq = nextServerSeq(db);
