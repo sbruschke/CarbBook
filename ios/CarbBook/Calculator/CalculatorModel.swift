@@ -50,7 +50,7 @@ final class CalculatorModel {
     /// Called only from the text field's binding, i.e. when the user types.
     func setTaken(_ text: String) { takenField.userTyped(text) }
 
-    var takenIsMalformed: Bool { NumberParsing.isMalformed(taken) }
+    var takenIsMalformed: Bool { TakenDoseInput.isMalformed(taken) }
 
     /// True whenever the user has typed in "Taken", even if the text equals the estimate.
     var takenEditedByUser: Bool { takenField.editedByUser }

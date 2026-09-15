@@ -71,7 +71,7 @@ struct FoodEditorView: View {
                     Text("Carbs missing: enter them from the label").font(.footnote).foregroundStyle(.orange)
                 }
             case .label:
-                NumberField(label: "Amount", text: $form.labelAmount)
+                NumberField(label: "Amount", text: $form.labelAmount, allowsFraction: true)
                 Picker("Unit", selection: $form.labelUnit) {
                     ForEach(FoodLabel.units, id: \.self) { Text(FoodLabel.unitName($0)).tag($0) }
                 }
@@ -127,16 +127,21 @@ struct FoodEditorView: View {
                     } else {
                         TextField("Label (e.g. slice)", text: $portion.label)
                     }
-                    NumberField(label: "Quantity", text: $portion.quantity)
-                    NumberField(label: portion.kind == "volume" ? "Weighs" : "Weighs (optional)", text: $portion.grams, unit: "g")
-                    if portion.kind != "volume" {
-                        NumberField(label: "Carbs (optional)", text: $portion.carbsG, unit: "g")
+                    NumberField(label: "Quantity", text: $portion.quantity, allowsFraction: true)
+                    NumberField(label: "Weighs (optional)", text: $portion.grams, unit: "g")
+                    NumberField(label: "Carbs (optional)", text: $portion.carbsG, unit: "g")
+                    if portion.kind == "volume" {
+                        Text("A volume portion's carbs replace the food's carbs per 100 ml; they aren't saved on the portion itself.")
+                            .font(.caption).foregroundStyle(.secondary)
                     }
                 }
             }
             .onDelete { form.portions.remove(atOffsets: $0) }
             Button("Add portion") {
                 form.portions.append(FoodForm.Portion(id: app.store.newId(), label: "", kind: "count", quantity: "1", grams: "", carbsG: ""))
+            }
+            if let note = form.portionVolumeCarbsNote {
+                Text(note).font(.footnote).foregroundStyle(.orange)
             }
         }
     }

@@ -6,7 +6,9 @@ import Foundation
 /// - carbs are entered per 100 g, or "from label" in any unit (g, volume, named piece/serving);
 /// - saving one carb basis keeps the other stored basis unless the user removes it;
 /// - save needs at least one valid basis (per 100 g, per 100 ml, or a piece with carbs);
-/// - every number field parses strictly (`NumberParsing.parseAmount`); typed-but-malformed text is an error.
+/// - every number field parses strictly; typed-but-malformed text is an error. Label amount and portion
+///   quantity use `NumberParsing.parseAmount` (fractions allowed); carbs, fiber, density, grams and label
+///   weight use `NumberParsing.parseNonNegative` (decimals only — a fractional gram is never an entry).
 public struct FoodForm: Equatable, Sendable {
     public enum CarbsMode: String, Sendable { case per100g, label }
 
@@ -97,7 +99,7 @@ public struct FoodForm: Equatable, Sendable {
         case blank, value(Double), malformed
 
         init(_ text: String) {
-            if FoodForm.blank(text) { self = .blank } else if let value = NumberParsing.parseAmount(text) { self = .value(value) } else { self = .malformed }
+            if FoodForm.blank(text) { self = .blank } else if let value = NumberParsing.parseNonNegative(text) { self = .value(value) } else { self = .malformed }
         }
 
         var value: Double? { if case .value(let v) = self { return v } else { return nil } }
@@ -105,11 +107,13 @@ public struct FoodForm: Equatable, Sendable {
 
     /// The current label entry's basis, or its error.
     public var labelEntry: Result<FoodLabel.Basis, LabelError> {
-        if NumberParsing.isMalformed(labelAmount) { return .failure(LabelError("Amount isn't a valid number.")) }
-        if NumberParsing.isMalformed(labelCarbs) { return .failure(LabelError("Carbs isn't a valid number.")) }
-        if labelUnit != "g", NumberParsing.isMalformed(labelWeight) { return .failure(LabelError("Weight isn't a valid number.")) }
-        return FoodLabel.basis(unit: labelUnit, amount: NumberParsing.parseAmount(labelAmount), carbs: NumberParsing.parseAmount(labelCarbs),
-                               weight: labelUnit == "g" ? nil : NumberParsing.parseAmount(labelWeight), label: labelName)
+        if NumberParsing.isMalformed(labelAmount, using: NumberParsing.parseAmount) { return .failure(LabelError("Amount isn't a valid number.")) }
+        if NumberParsing.isMalformed(labelCarbs, using: NumberParsing.parseNonNegative) { return .failure(LabelError("Carbs isn't a valid number.")) }
+        if labelUnit != "g", NumberParsing.isMalformed(labelWeight, using: NumberParsing.parseNonNegative) {
+            return .failure(LabelError("Weight isn't a valid number."))
+        }
+        return FoodLabel.basis(unit: labelUnit, amount: NumberParsing.parseAmount(labelAmount), carbs: NumberParsing.parseNonNegative(labelCarbs),
+                               weight: labelUnit == "g" ? nil : NumberParsing.parseNonNegative(labelWeight), label: labelName)
     }
 
     /// One-line feedback under the label fields.
@@ -126,7 +130,7 @@ public struct FoodForm: Equatable, Sendable {
     }
 
     private var labelWeightValue: Double? {
-        guard labelUnit != "g", let weight = NumberParsing.parseAmount(labelWeight), weight > 0 else { return nil }
+        guard labelUnit != "g", let weight = NumberParsing.parseNonNegative(labelWeight), weight > 0 else { return nil }
         return weight
     }
 
@@ -136,6 +140,47 @@ public struct FoodForm: Equatable, Sendable {
     /// The stored basis that saving keeps (shown as "Also saved: …" with a remove button).
     public var keptG: Double? { !editsG && !removedBaseG ? base?.carbsPer100g : nil }
     public var keptMl: Double? { !editsMl && !removedBaseMl ? base?.carbsPer100ml : nil }
+
+    /// The carbsPer100ml a fresh volume reading would save, from the current (not yet saved) form
+    /// fields — the label entry if it is a volume reading, else the first volume portion row, mirroring
+    /// `build()`. Best-effort: ignores rows with blank or malformed fields, and returns nil while the
+    /// readings conflict (save reports that).
+    private var portionVolumeCarbsCandidate: Double? {
+        var candidates: [(source: String, value: Double)] = []
+        if carbsMode == .label, case .success(let basis) = labelEntry, let ml = basis.carbsPer100ml { candidates.append(("the label entry", ml)) }
+        for row in portions where row.kind == "volume" && isVolumeUnit(row.label) {
+            guard let quantity = NumberParsing.parseAmount(row.quantity), quantity > 0,
+                  let carbs = NumberParsing.parseNonNegative(row.carbsG) else { continue }
+            let mapped = PortionEntry.map(.init(unit: row.label, quantity: quantity, grams: nil, carbs: carbs))
+            if let value = mapped.carbsPer100ml, isValidCarbsPer100ml(value) { candidates.append(("row", value)) }
+        }
+        guard candidates.contains(where: { $0.source != "the label entry" }), case .success(let value) = Self.resolveVolume(candidates) else { return nil }
+        return value
+    }
+
+    /// Web `resolveVolumeCarbs`: every pair of fresh carbs-per-100-ml readings must agree within 1%
+    /// (relative to the larger); the first disagreeing pair blocks save, naming both. When all agree the
+    /// first reading wins (the label entry is appended first when present, else the first portion row).
+    static func resolveVolume(_ candidates: [(source: String, value: Double)]) -> Result<Double?, LabelError> {
+        for i in candidates.indices {
+            for j in candidates.indices where j > i {
+                let a = candidates[i], b = candidates[j]
+                let diff = abs(a.value - b.value) / max(abs(a.value), abs(b.value), 1e-9)
+                if diff > 0.01 {
+                    return .failure(LabelError("\(a.source) and \(b.source) imply different carbs per 100 ml; enter it in one place only."))
+                }
+            }
+        }
+        return .success(candidates.first?.value)
+    }
+
+    /// Shown under the Portions section when a volume-unit portion's carbs would overwrite an
+    /// already-saved `carbsPer100ml` that's more than 1% different from it.
+    public var portionVolumeCarbsNote: String? {
+        guard let existing = base?.carbsPer100ml, existing.isFinite, let candidate = portionVolumeCarbsCandidate else { return nil }
+        guard abs(candidate - existing) > abs(existing) * 0.01 else { return nil }
+        return "This replaces saved carbs per volume (\(FoodLabel.trim2(existing)) g per 100 ml)."
+    }
 
     /// Adds a portion, or updates the matching one (re-entering a label updates it rather than duplicating it).
     static func merge(_ rows: [Portion], _ patch: FoodLabel.PortionPatch, newId: () -> Id) -> [Portion] {
@@ -162,12 +207,15 @@ public struct FoodForm: Equatable, Sendable {
         var carbsPer100g: Double?
         var carbsPer100ml: Double?
         var rows = portions
+        /// A fresh (this-edit) source of `carbsPer100ml`, so two that disagree can be reported by name
+        /// instead of one silently overwriting the other.
+        var mlCandidates: [(source: String, value: Double)] = []
 
         switch carbsMode {
         case .per100g:
             if Self.blank(carbsText) {
                 problems.append("Carbs are missing: enter them from the label.")
-            } else if let value = NumberParsing.parseAmount(carbsText), isValidCarbsPer100g(value) {
+            } else if let value = NumberParsing.parseNonNegative(carbsText), isValidCarbsPer100g(value) {
                 carbsPer100g = value
             } else {
                 problems.append("Carbs per 100 g must be a number from 0 to 100.")
@@ -178,6 +226,7 @@ public struct FoodForm: Equatable, Sendable {
             case .success(let basis):
                 carbsPer100g = basis.carbsPer100g
                 carbsPer100ml = basis.carbsPer100ml
+                if let ml = basis.carbsPer100ml { mlCandidates.append(("the label entry", ml)) }
                 if let patch = basis.portion { rows = Self.merge(rows, patch, newId: newId) }
                 if labelUnit == "g", let amount = NumberParsing.parseAmount(labelAmount), amount > 0 {
                     rows = Self.merge(rows, FoodLabel.PortionPatch(label: FoodLabel.labelServing, kind: "serving", quantity: 1,
@@ -206,11 +255,15 @@ public struct FoodForm: Equatable, Sendable {
         for (i, row) in rows.enumerated() {
             let n = i + 1
             let label = row.label.trimmingCharacters(in: .whitespacesAndNewlines)
+            let isVolume = row.kind == "volume"
             let quantity = NumberParsing.parseAmount(row.quantity)
             let grams = Field(row.grams)
-            let carbs = row.kind == "volume" ? Field.blank : Field(row.carbsG)
+            // A volume unit's carbs never land on the portion row (server rule); they set
+            // carbsPer100ml instead. Like web, every row's typed carbs must still be in the portion
+            // carbs range, and a volume row's implied carbs per 100 ml is range-checked below too.
+            let carbs = Field(row.carbsG)
             if label.isEmpty { problems.append("Portion \(n) needs a label.") }
-            if row.kind == "volume" && !isVolumeUnit(row.label) { problems.append("Portion \(n): pick a volume unit.") }
+            if isVolume && !isVolumeUnit(row.label) { problems.append("Portion \(n): pick a volume unit.") }
             if !(quantity.map { $0 > 0 } ?? false) { problems.append("Portion \(n) needs a quantity above 0.") }
             if grams == .malformed || (grams.value.map { !isValidPortionGrams($0) } ?? false) {
                 problems.append("Portion \(n): grams must be a number above 0.")
@@ -218,12 +271,40 @@ public struct FoodForm: Equatable, Sendable {
             if carbs == .malformed || (carbs.value.map { !isValidPortionCarbs($0) } ?? false) {
                 problems.append("Portion \(n): carbs must be a number from 0 to \(NumberParsing.editText(Units.maxPortionCarbsG)).")
             }
-            if row.kind == "volume" && grams == .blank { problems.append("Portion \(n) needs grams above 0.") }
-            if row.kind != "volume" && grams == .blank && carbs == .blank { problems.append("Portion \(n) needs grams or carbs.") }
+            if grams == .blank && carbs == .blank { problems.append("Portion \(n) needs grams or carbs.") }
+
+            var mapped: PortionEntry.Output?
+            if isVolume, let quantity, quantity > 0, isVolumeUnit(row.label), grams != .malformed, carbs != .malformed {
+                mapped = PortionEntry.map(.init(unit: row.label, quantity: quantity, grams: grams.value, carbs: carbs.value))
+                if let candidate = mapped?.carbsPer100ml {
+                    if isValidCarbsPer100ml(candidate) {
+                        mlCandidates.append(("Portion \(n)", candidate))
+                    } else {
+                        problems.append("Portion \(n): carbs per 100 ml must be a number from 0 to \(NumberParsing.editText(Units.maxCarbsPer100ml)).")
+                    }
+                }
+            }
+
             // A USDA copy gets fresh portion ids; otherwise ids are kept (new rows already have fresh ones).
             let id = copy && basePortionIds.contains(row.id) ? newId() : row.id
-            saved.append(PortionData(id: id, foodId: foodId, label: label, kind: row.kind, quantity: quantity ?? 0,
-                                     grams: grams.value, carbsG: carbs.value))
+            if isVolume {
+                // A carbs-only volume row (no weight) saves no portion row at all — only carbsPer100ml.
+                if let gramsValue = grams.value {
+                    saved.append(PortionData(id: id, foodId: foodId, label: label, kind: row.kind, quantity: quantity ?? 0,
+                                             grams: gramsValue, carbsG: nil))
+                }
+            } else {
+                saved.append(PortionData(id: id, foodId: foodId, label: label, kind: row.kind, quantity: quantity ?? 0,
+                                         grams: grams.value, carbsG: carbs.value))
+            }
+        }
+        // Fresh (this-edit) sources implying different carbsPer100ml (any pair of: the label entry and
+        // each volume portion row) block save instead of one silently overwriting another; when all
+        // agree, the label entry wins if present, else the first row (a differing already-*saved*
+        // value is instead surfaced non-blockingly via `portionVolumeCarbsNote`).
+        switch Self.resolveVolume(mlCandidates) {
+        case .failure(let error): problems.append(error.message)
+        case .success(let value): if let value { carbsPer100ml = value }
         }
 
         let hasBasis = isValidCarbsPer100g(carbsPer100g) || isValidCarbsPer100ml(carbsPer100ml)

@@ -86,6 +86,12 @@ final class CalculatorInputsTests: XCTestCase {
             XCTAssertEqual((error as? TakenDoseError)?.message, "Taken dose must be a number")
         }
         XCTAssertThrowsError(try TakenDoseInput.unitsForLog("abc"))
+        // A fraction is never a dose entry ("1/2" is not "0.5 u"; "5/2" is not "2.5 u").
+        for text in ["1/2", "5/2", "½", "1 1/2"] {
+            XCTAssertThrowsError(try TakenDoseInput.unitsForLog(text), text)
+            XCTAssertTrue(TakenDoseInput.isMalformed(text), text)
+        }
+        XCTAssertFalse(TakenDoseInput.isMalformed(""))
     }
 
     func testTakenForEditNeverWipesStoredValueOnInvalidText() throws {

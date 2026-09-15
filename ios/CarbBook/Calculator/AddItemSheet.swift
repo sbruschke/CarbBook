@@ -84,7 +84,7 @@ struct SaveMealSheet: View {
         NavigationStack {
             Form {
                 TextField("Meal name", text: $name)
-                NumberField(label: "Yield", text: $yieldText, unit: "servings")
+                NumberField(label: "Yield", text: $yieldText, unit: "servings", allowsFraction: true)
                 NumberField(label: "Total weight (optional)", text: $weightText, unit: "g")
                 if let error { Text(error).foregroundStyle(.red) }
             }
@@ -98,7 +98,7 @@ struct SaveMealSheet: View {
 
     private func save() {
         guard !name.trimmingCharacters(in: .whitespaces).isEmpty else { error = "Enter a name."; return }
-        guard let yield = parseNumber(yieldText), yield > 0 else { error = "Yield must be more than 0 servings."; return }
+        guard let yield = NumberParsing.parseAmount(yieldText), yield > 0 else { error = "Yield must be more than 0 servings."; return }
         let weightTrimmed = weightText.trimmingCharacters(in: .whitespaces)
         var weight: Double?
         if !weightTrimmed.isEmpty {

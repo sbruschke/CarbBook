@@ -28,7 +28,7 @@ struct MealEditorView: View {
 
     /// The saved catalog with this meal replaced by the unsaved draft.
     private var draftCatalog: InMemoryCatalog {
-        let draftMeal = MealData(id: mealId, name: name, yieldServings: parseNumber(yieldText) ?? 0,
+        let draftMeal = MealData(id: mealId, name: name, yieldServings: NumberParsing.parseAmount(yieldText) ?? 0,
                                  totalWeightG: parseNumber(weightText))
         return InMemoryCatalog(
             foods: allFoods, portions: allPortions,
@@ -46,7 +46,7 @@ struct MealEditorView: View {
         Form {
             Section {
                 TextField("Name", text: $name)
-                NumberField(label: "Yield", text: $yieldText, unit: "servings")
+                NumberField(label: "Yield", text: $yieldText, unit: "servings", allowsFraction: true)
                 NumberField(label: "Total weight (optional)", text: $weightText, unit: "g")
                 TextField("Notes", text: $notes, axis: .vertical)
             } footer: {
@@ -99,8 +99,8 @@ struct MealEditorView: View {
                     .foregroundStyle(carbs.complete ? Color.primary : Color.orange)
             }
             HStack {
-                TextField("Amount", text: amountBinding)
-                    .keyboardType(.decimalPad)
+                TextField("e.g. 2/3", text: amountBinding)
+                    .keyboardType(.numbersAndPunctuation)
                     .frame(maxWidth: 110)
                 UnitPicker(unit: item.unit, units: units, portions: value.refType == .food ? catalog.portions(value.refId) : [])
             }
@@ -169,7 +169,7 @@ struct MealEditorView: View {
 
     private func save() {
         guard !name.trimmingCharacters(in: .whitespaces).isEmpty else { error = "Enter a name."; return }
-        guard let yield = parseNumber(yieldText), yield > 0 else { error = "Yield must be more than 0 servings."; return }
+        guard let yield = NumberParsing.parseAmount(yieldText), yield > 0 else { error = "Yield must be more than 0 servings."; return }
         guard !AmountInput.hasInvalidAmount(items) else { error = "\(AmountInput.invalidMessage). Fix it before saving."; return }
         let weightTrimmed = weightText.trimmingCharacters(in: .whitespaces)
         var weight: Double?

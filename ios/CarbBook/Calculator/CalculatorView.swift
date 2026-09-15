@@ -200,8 +200,8 @@ struct LineRow: View {
                     .monospacedDigit()
             }
             HStack {
-                TextField("Amount", text: $amountText)
-                    .keyboardType(.decimalPad)
+                TextField("e.g. 2/3", text: $amountText)
+                    .keyboardType(.numbersAndPunctuation)
                     .padding(6)
                     .background(Theme.fieldBackground)
                     .clipShape(RoundedRectangle(cornerRadius: 8))

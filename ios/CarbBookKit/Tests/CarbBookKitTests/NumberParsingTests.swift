@@ -1,4 +1,5 @@
 @testable import CarbBookKit
+import Foundation
 import XCTest
 
 final class NumberParsingTests: XCTestCase {
@@ -21,7 +22,6 @@ final class NumberParsingTests: XCTestCase {
         XCTAssertNil(NumberParsing.parseAmount("NaN"))
         XCTAssertNil(NumberParsing.parseAmount("-5"))
         XCTAssertNil(NumberParsing.parseAmount("5."))
-        XCTAssertNil(NumberParsing.parseAmount(".5"))
         XCTAssertNil(NumberParsing.parseAmount("5,2.1"))
         XCTAssertNil(NumberParsing.parseAmount("abc"))
         XCTAssertNil(NumberParsing.parseAmount("5 g"))
@@ -40,12 +40,12 @@ final class NumberParsingTests: XCTestCase {
     }
 
     func testIsMalformedDistinguishesBlankFromInvalid() {
-        XCTAssertFalse(NumberParsing.isMalformed(""))
-        XCTAssertFalse(NumberParsing.isMalformed("   "))
-        XCTAssertFalse(NumberParsing.isMalformed("12.5"))
-        XCTAssertTrue(NumberParsing.isMalformed("12.5.6"))
-        XCTAssertTrue(NumberParsing.isMalformed("abc"))
-        XCTAssertTrue(NumberParsing.isMalformed("1e5"))
+        XCTAssertFalse(NumberParsing.isMalformed("", using: NumberParsing.parseNonNegative))
+        XCTAssertFalse(NumberParsing.isMalformed("   ", using: NumberParsing.parseNonNegative))
+        XCTAssertFalse(NumberParsing.isMalformed("12.5", using: NumberParsing.parseNonNegative))
+        XCTAssertTrue(NumberParsing.isMalformed("12.5.6", using: NumberParsing.parseNonNegative))
+        XCTAssertTrue(NumberParsing.isMalformed("abc", using: NumberParsing.parseNonNegative))
+        XCTAssertTrue(NumberParsing.isMalformed("1e5", using: NumberParsing.parseNonNegative))
         XCTAssertFalse(NumberParsing.isMalformed("120", using: NumberParsing.parseWholeNumber))
         XCTAssertTrue(NumberParsing.isMalformed("120.5", using: NumberParsing.parseWholeNumber))
     }
@@ -64,5 +64,114 @@ final class NumberParsingTests: XCTestCase {
             XCTAssertEqual(NumberParsing.parseAmount(NumberParsing.editText(value)), value)
         }
         XCTAssertEqual(NumberParsing.parseWholeNumber(NumberParsing.editText(130, maxFractionDigits: 0)), 130)
+    }
+
+    func testParseAmountAcceptsFractions() {
+        XCTAssertEqual(NumberParsing.parseAmount("1/3"), 1.0 / 3.0)
+        XCTAssertEqual(NumberParsing.parseAmount("2/3"), 2.0 / 3.0)
+        XCTAssertEqual(NumberParsing.parseAmount("1 1/2"), 1.5)
+        XCTAssertEqual(NumberParsing.parseAmount("2 2/3"), 2.0 + 2.0 / 3.0)
+        XCTAssertEqual(NumberParsing.parseAmount("½"), 0.5)
+        XCTAssertEqual(NumberParsing.parseAmount("⅔"), 2.0 / 3.0)
+        XCTAssertEqual(NumberParsing.parseAmount("1½"), 1.5)
+        XCTAssertEqual(NumberParsing.parseAmount("1 ½"), 1.5)
+        XCTAssertEqual(NumberParsing.parseAmount("2⅔"), 2.0 + 2.0 / 3.0)
+        XCTAssertEqual(NumberParsing.parseAmount(".5"), 0.5)
+    }
+
+    func testParseAmountRejectsMalformedFractions() {
+        for text in ["-1", "1/0", "0/0", "/3", "1/", "1//3", "3/2/1", "1/-3", "1.5/2", "1 1", "1 1/0", "½½"] {
+            XCTAssertNil(NumberParsing.parseAmount(text), text)
+        }
+    }
+
+    /// A 2+-digit numerator greater than its denominator ("11/2") is a likely mistyped mixed number
+    /// ("1 1/2") that would otherwise silently read as 5.5 — a 3.7× overdose. A mixed number's own
+    /// fraction part must be < 1 ("1 3/2" makes no sense as a mixed number). Single-digit numerators
+    /// and numerators not greater than the denominator are unaffected.
+    func testParseAmountRejectsAmbiguousFractions() {
+        for text in ["11/2", "13/4", "10/3", "1 3/2", "2 4/4"] {
+            XCTAssertNil(NumberParsing.parseAmount(text), text)
+        }
+        XCTAssertEqual(NumberParsing.parseAmount("4/3"), 4.0 / 3.0)
+        XCTAssertEqual(NumberParsing.parseAmount("3/2"), 1.5)
+        XCTAssertEqual(NumberParsing.parseAmount("12/16"), 0.75) // 2-digit numerator, but not greater than the denominator.
+    }
+
+    func testParseAmountRejectsNonFiniteResults() {
+        XCTAssertNil(NumberParsing.parseAmount(String(repeating: "1", count: 400)))
+        // Both huge enough to overflow to Double.infinity; infinity/infinity is NaN, not a number.
+        XCTAssertNil(NumberParsing.parseAmount(String(repeating: "9", count: 400) + "/" + String(repeating: "9", count: 401)))
+    }
+
+    /// Runs the shared vectors in testdata/ (copied into Resources/ by scripts/sync-testdata.sh):
+    /// every `amount.accept`/`amount.reject` case against `parseAmount`, every `bg` case against
+    /// `parseWholeNumber`. Kept in sync with web/src/ui/format.ts.
+    func testNumberParseVectors() throws {
+        struct AcceptCase: Decodable { let text: String; let value: Double }
+        struct Vectors: Decodable {
+            struct Amount: Decodable { let accept: [AcceptCase]; let reject: [String] }
+            struct Bg: Decodable { let accept: [AcceptCase]; let reject: [String] }
+            let tolerance: Double
+            let amount: Amount
+            let bg: Bg
+            let decimal: Amount
+        }
+        let url = try XCTUnwrap(Bundle.module.url(forResource: "number-parse-vectors", withExtension: "json", subdirectory: "Resources"))
+        let vectors = try JSONDecoder().decode(Vectors.self, from: Data(contentsOf: url))
+        XCTAssertFalse(vectors.amount.accept.isEmpty)
+        XCTAssertFalse(vectors.amount.reject.isEmpty)
+        for c in vectors.amount.accept {
+            XCTAssertEqual(try XCTUnwrap(NumberParsing.parseAmount(c.text), c.text), c.value, accuracy: vectors.tolerance, c.text)
+        }
+        for text in vectors.amount.reject {
+            XCTAssertNil(NumberParsing.parseAmount(text), text)
+        }
+        for c in vectors.bg.accept {
+            XCTAssertEqual(try XCTUnwrap(NumberParsing.parseWholeNumber(c.text), c.text), c.value, accuracy: vectors.tolerance, c.text)
+        }
+        for text in vectors.bg.reject {
+            XCTAssertNil(NumberParsing.parseWholeNumber(text), text)
+        }
+    }
+
+    /// `decimal` vectors against `parseNonNegative` (carbs, fiber, weights, ratios, taken dose...).
+    func testDecimalVectors() throws {
+        struct AcceptCase: Decodable { let text: String; let value: Double }
+        struct Vectors: Decodable {
+            struct Section: Decodable { let accept: [AcceptCase]; let reject: [String] }
+            let tolerance: Double
+            let decimal: Section
+        }
+        let url = try XCTUnwrap(Bundle.module.url(forResource: "number-parse-vectors", withExtension: "json", subdirectory: "Resources"))
+        let vectors = try JSONDecoder().decode(Vectors.self, from: Data(contentsOf: url))
+        XCTAssertFalse(vectors.decimal.accept.isEmpty)
+        for fraction in ["1/2", "5/2", "½", "1 1/2"] { XCTAssertTrue(vectors.decimal.reject.contains(fraction), fraction) }
+        for c in vectors.decimal.accept {
+            XCTAssertEqual(try XCTUnwrap(NumberParsing.parseNonNegative(c.text), c.text), c.value, accuracy: vectors.tolerance, c.text)
+        }
+        for text in vectors.decimal.reject {
+            XCTAssertNil(NumberParsing.parseNonNegative(text), text)
+        }
+    }
+
+    func testAmountRejectsIrregularSpacingLeadingCommaAndSign() {
+        for text in [",5", "1  1/2", "1\t½", "1\u{00A0}½", "+1", "1  ½", "1\t1/2", "1\u{00A0}1/2"] {
+            XCTAssertNil(NumberParsing.parseAmount(text), text)
+        }
+        XCTAssertEqual(NumberParsing.parseAmount("1 ½"), 1.5)
+        XCTAssertEqual(NumberParsing.parseAmount("1 1/2"), 1.5)
+    }
+
+    /// Dose settings: fractions never reach a ratio, units per step or increment; mg/dL fields are whole.
+    func testDoseSettingsInputRejectsFractions() {
+        for text in ["1/2", "5/2", "½", "1 1/2", "", "abc"] {
+            XCTAssertTrue(DoseSettingsInput.decimal(text).isNaN, text)
+            XCTAssertTrue(DoseSettingsInput.mgdl(text).isNaN, text)
+        }
+        XCTAssertEqual(DoseSettingsInput.decimal("12,5"), 12.5)
+        XCTAssertEqual(DoseSettingsInput.decimal("0.5"), 0.5)
+        XCTAssertEqual(DoseSettingsInput.mgdl("150"), 150)
+        XCTAssertTrue(DoseSettingsInput.mgdl("150.5").isNaN)
     }
 }

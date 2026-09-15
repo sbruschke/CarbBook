@@ -18,11 +18,12 @@ enum Theme {
     }
 }
 
-/// Parses user-typed amounts strictly (`NumberParsing.parseAmount`, in CarbBookKit so it has
-/// Linux-runnable tests): only plain decimal digits with an optional fractional part, "," accepted
-/// as the decimal separator. Malformed text (hex, exponents, "Infinity", empty…) is never silently 0.
+/// Parses a non-amount number field (weights, carbs, fiber) strictly (`NumberParsing.parseNonNegative`,
+/// in CarbBookKit so it has Linux-runnable tests): decimal digits, "," accepted as the decimal
+/// separator, NO fractions. Malformed text (hex, exponents, "Infinity", "1/2", empty…) is never
+/// silently 0. Amount fields (item amounts, yield/servings) call `NumberParsing.parseAmount` directly.
 func parseNumber(_ text: String) -> Double? {
-    NumberParsing.parseAmount(text)
+    NumberParsing.parseNonNegative(text)
 }
 
 /// Whole-number-only fields (BG): rejects a typed decimal instead of rounding or truncating it.
@@ -67,18 +68,22 @@ func date(ms: Int64) -> Date { Date(timeIntervalSince1970: Double(ms) / 1000) }
 
 func ms(_ date: Date) -> Int64 { Int64((date.timeIntervalSince1970 * 1000).rounded()) }
 
-/// A labelled grey number well (ChaosControl's ChaosInputField).
+/// A labelled grey number well (ChaosControl's ChaosInputField). `allowsFraction` is for amount
+/// fields (item amounts, portion quantities, servings): it switches to a keyboard that can type "/"
+/// and shows a fraction-friendly placeholder, so "2/3" can be typed directly instead of ".66667".
+/// Carbs, weights, ratios, BG and dose-settings fields keep `allowsFraction: false` (the default).
 struct NumberField: View {
     let label: String
     @Binding var text: String
     var unit: String = ""
+    var allowsFraction: Bool = false
 
     var body: some View {
         HStack {
             Text(label)
             Spacer()
-            TextField(label, text: $text)
-                .keyboardType(.decimalPad)
+            TextField(allowsFraction ? "e.g. 2/3" : label, text: $text)
+                .keyboardType(allowsFraction ? .numbersAndPunctuation : .decimalPad)
                 .multilineTextAlignment(.trailing)
                 .frame(maxWidth: 110)
                 .padding(6)

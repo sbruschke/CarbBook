@@ -115,17 +115,17 @@ struct DoseSettingsEditorView: View {
             error = "Only the owner can change dose settings."
             return
         }
-        // Every amount is parsed strictly; a malformed field becomes NaN (never a silent 0), which
+        // Every field is parsed strictly (decimals for ratio/units/increment, whole mg/dL otherwise, never fractions); a malformed field becomes NaN (never a silent 0), which
         // both validateDoseSettings and hasInvalidSettings reject via their isFinite checks below.
         let draft = DoseSettingsData(
             id: "draft",
             effectiveFrom: ms(effectiveFrom),
             windows: windows.map { DoseWindow(name: $0.name.trimmingCharacters(in: .whitespaces), start: hhmm($0.start),
-                                              ratioGPerUnit: parseNumber($0.ratio) ?? .nan) },
-            correction: CorrectionRule(threshold: parseNumber(threshold) ?? .nan, step: parseNumber(step) ?? .nan,
-                                       unitsPerStep: parseNumber(unitsPerStep) ?? .nan, mode: mode),
-            rounding: RoundingRule(increment: parseNumber(increment) ?? .nan,
-                                   roundDownBelowBg: roundDownEnabled ? (parseNumber(roundDownBelow) ?? .nan) : nil))
+                                              ratioGPerUnit: DoseSettingsInput.decimal($0.ratio)) },
+            correction: CorrectionRule(threshold: DoseSettingsInput.mgdl(threshold), step: DoseSettingsInput.mgdl(step),
+                                       unitsPerStep: DoseSettingsInput.decimal(unitsPerStep), mode: mode),
+            rounding: RoundingRule(increment: DoseSettingsInput.decimal(increment),
+                                   roundDownBelowBg: roundDownEnabled ? DoseSettingsInput.mgdl(roundDownBelow) : nil))
         let version = newDoseSettingsVersion(from: draft, effectiveFrom: ms(effectiveFrom), newId: app.store.newId)
         if let message = validateDoseSettings(version) {
             error = message
