@@ -15,7 +15,7 @@ import { saveMeal } from '../meals/saveMeal';
 import type { SearchResult } from '../search/search';
 import { BgField, resolveBg } from '../ui/BgField';
 import { DoseCard } from '../ui/DoseCard';
-import { formatCarbs, formatTime, fromDateTimeLocal, parseNonNegative, toDateTimeLocal } from '../ui/format';
+import { formatCarbs, formatTime, fromDateTimeLocal, parseAmount, parseNonNegative, toDateTimeLocal } from '../ui/format';
 import { type DraftItem, draftItemCarbs, ItemEditor, itemName, newDraftItem } from '../ui/ItemEditor';
 import { ScannerDialog } from '../ui/ScannerDialog';
 import { SearchPanel } from '../ui/SearchPanel';
@@ -60,7 +60,7 @@ export function Calculator() {
   const suggested = estimate?.ok ? estimate.units : null;
   const takenValue = takenEdited ? takenText : suggested === null ? '' : String(suggested);
   const autoWindow = windowName === null ? (estimate?.window?.name ?? null) : null;
-  const badAmounts = items.some((item) => parseNonNegative(item.amount) === null);
+  const badAmounts = items.some((item) => parseAmount(item.amount) === null);
 
   function addFood(refType: 'food' | 'meal', refId: string, extra = catalog) {
     setItems((current) => [...current, newDraftItem(extra, refType, refId, uuidv7(now()))]);
@@ -136,7 +136,7 @@ export function Calculator() {
             ref_type: item.ref_type,
             ref_id: item.ref_id,
             display_name: itemName(catalog, item.ref_type, item.ref_id),
-            amount: parseNonNegative(item.amount)!,
+            amount: parseAmount(item.amount)!,
             unit: item.unit,
             carbs_g: results[index]!.carbs_g,
           },
@@ -149,7 +149,7 @@ export function Calculator() {
   }
 
   async function saveAsMeal(form: MealForm) {
-    const yieldServings = parseNonNegative(form.yieldText);
+    const yieldServings = parseAmount(form.yieldText);
     const weight = form.weightText.trim() === '' ? null : parseNonNegative(form.weightText);
     if (!form.name.trim()) return setMessage('Give the meal a name.');
     if (!(yieldServings !== null && yieldServings > 0)) return setMessage('Yield must be more than 0 servings.');
@@ -253,7 +253,12 @@ export function Calculator() {
           </label>
           <label>
             Yield (servings)
-            <input inputMode="decimal" value={mealForm.yieldText} onChange={(e) => setMealForm({ ...mealForm, yieldText: e.target.value })} />
+            <input
+              inputMode="text"
+              placeholder="e.g. 2/3"
+              value={mealForm.yieldText}
+              onChange={(e) => setMealForm({ ...mealForm, yieldText: e.target.value })}
+            />
           </label>
           <label>
             Total weight (g, optional)

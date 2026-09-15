@@ -437,4 +437,91 @@ describe('FoodEditor: keeps the carb basis the user did not edit', () => {
     await waitFor(() => expect(done).toEqual(['bar']));
     expect(await services.db.portion.get('bar-p')).toMatchObject({ kind: 'volume', label: 'cup', grams: 40, carbs_g: null });
   });
+
+  it('the user\'s case: "2/3 cup, 30 g carbs" (no weight) via From label sets carbs_per_100ml, and 1/3 cup / 1 tbsp compute correctly', async () => {
+    services = makeServices();
+    const user = userEvent.setup();
+    const done = renderEditor();
+    await user.type(screen.getByLabelText('Name'), 'Rice pudding');
+    await user.click(screen.getByLabelText(/^From label/));
+    await user.selectOptions(screen.getByLabelText('Unit'), 'cup');
+    await user.type(screen.getByLabelText('Amount'), '2/3');
+    await user.type(screen.getByLabelText('Carbs (g)'), '30');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(done).toHaveLength(1));
+    const food = await services.db.food.get(done[0]!);
+    expect(food!.carbs_per_100ml).toBeCloseTo(19.020387769786694, 9);
+    expect(food!.carbs_per_100g).toBeNull();
+    expect(await services.db.portion.toArray()).toEqual([]);
+
+    // 1/3 cup -> 15 g carbs, 1 tbsp -> 2.8125 g carbs (worked example from the user's label).
+    const catalog = createCatalog({ foods: [food!], portions: [], meals: [], meal_items: [] });
+    const oneThirdCup = itemCarbs(catalog, 'food', food!.id, 1 / 3, 'cup');
+    expect(oneThirdCup.complete).toBe(true);
+    expect(oneThirdCup.carbs_g).toBeCloseTo(15, 9);
+    const oneTbsp = itemCarbs(catalog, 'food', food!.id, 1, 'tbsp');
+    expect(oneTbsp.complete).toBe(true);
+    expect(oneTbsp.carbs_g).toBeCloseTo(2.8125, 9);
+  });
+
+  it('a Portions-section volume row with a fraction quantity and carbs (no weight) overrides carbs_per_100ml and creates no portion', async () => {
+    services = makeServices();
+    const user = userEvent.setup();
+    const done = renderEditor();
+    await user.type(screen.getByLabelText('Name'), 'Rice pudding');
+    await user.click(screen.getByLabelText('Per 100 g'));
+    await user.type(screen.getByLabelText('Carbs per 100 g'), '48');
+    await user.click(screen.getByRole('button', { name: 'Add portion' }));
+    await user.selectOptions(screen.getByLabelText('Portion 1 kind'), 'volume');
+    await user.selectOptions(screen.getByLabelText('Portion 1 label'), 'cup');
+    await user.clear(screen.getByLabelText('Portion 1 quantity'));
+    await user.type(screen.getByLabelText('Portion 1 quantity'), '2/3');
+    await user.type(screen.getByLabelText('Portion 1 carbs (g)'), '30');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(done).toHaveLength(1));
+    const food = await services.db.food.get(done[0]!);
+    expect(food!.carbs_per_100g).toBe(48);
+    expect(food!.carbs_per_100ml).toBeCloseTo(19.020387769786694, 9);
+    expect(await services.db.portion.toArray()).toEqual([]);
+  });
+
+  it('a Portions-section volume row with a fraction quantity and a weight still creates the volume portion', async () => {
+    services = makeServices();
+    const user = userEvent.setup();
+    const done = renderEditor();
+    await user.type(screen.getByLabelText('Name'), 'Rice pudding');
+    await user.click(screen.getByLabelText('Per 100 g'));
+    await user.type(screen.getByLabelText('Carbs per 100 g'), '48');
+    await user.click(screen.getByRole('button', { name: 'Add portion' }));
+    await user.selectOptions(screen.getByLabelText('Portion 1 kind'), 'volume');
+    await user.selectOptions(screen.getByLabelText('Portion 1 label'), 'cup');
+    await user.clear(screen.getByLabelText('Portion 1 quantity'));
+    await user.type(screen.getByLabelText('Portion 1 quantity'), '2/3');
+    await user.type(screen.getByLabelText('Portion 1 grams'), '158');
+    await user.type(screen.getByLabelText('Portion 1 carbs (g)'), '30');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(done).toHaveLength(1));
+    const food = await services.db.food.get(done[0]!);
+    expect(food!.carbs_per_100ml).toBeCloseTo(19.020387769786694, 9);
+    const portions = await services.db.portion.toArray();
+    expect(portions).toEqual([expect.objectContaining({ label: 'cup', kind: 'volume', quantity: 2 / 3, grams: 158, carbs_g: null })]);
+  });
+
+  it('warns inline when a portion row would replace a differing saved carbs_per_100ml', async () => {
+    services = makeServices();
+    const food = synced(foodData({ id: 'rp', name: 'Rice pudding', carbs_per_100g: null, carbs_per_100ml: 10 }));
+    await services.db.food.put(food);
+    const user = userEvent.setup();
+    renderEditor({ existing: { food, portions: [] } });
+    await user.click(screen.getByRole('button', { name: 'Add portion' }));
+    await user.selectOptions(screen.getByLabelText('Portion 1 kind'), 'volume');
+    await user.selectOptions(screen.getByLabelText('Portion 1 label'), 'cup');
+    await user.clear(screen.getByLabelText('Portion 1 quantity'));
+    await user.type(screen.getByLabelText('Portion 1 quantity'), '2/3');
+    await user.type(screen.getByLabelText('Portion 1 carbs (g)'), '30');
+    expect(await screen.findByTestId('portion-carbs-override-note')).toHaveTextContent('This replaces the saved carbs per cup/ml.');
+  });
 });

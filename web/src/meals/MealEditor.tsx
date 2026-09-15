@@ -5,7 +5,7 @@ import { useServices } from '../app/services';
 import { buildCatalog, type CatalogData } from '../db/catalog';
 import { parseUsdaFoodId, uuidv7 } from '../lib/ids';
 import type { SearchResult } from '../search/search';
-import { formatCarbs, parseNonNegative } from '../ui/format';
+import { formatCarbs, parseAmount, parseNonNegative } from '../ui/format';
 import { type DraftItem, ItemEditor, newDraftItem } from '../ui/ItemEditor';
 import { SearchPanel } from '../ui/SearchPanel';
 import { saveMeal, withDraftMeal } from './saveMeal';
@@ -34,7 +34,7 @@ export function MealEditor(props: { data: CatalogData; mealId: string | null; on
   const meal: MealData = {
     id,
     name: name.trim(),
-    yield_servings: parseNonNegative(yieldText) ?? Number.NaN,
+    yield_servings: parseAmount(yieldText) ?? Number.NaN,
     total_weight_g: weightText.trim() === '' ? null : (parseNonNegative(weightText) ?? Number.NaN),
     notes: notes.trim() || null,
   };
@@ -63,7 +63,7 @@ export function MealEditor(props: { data: CatalogData; mealId: string | null; on
     if (!(meal.yield_servings > 0)) problems.push('Yield must be more than 0 servings.');
     if (meal.total_weight_g != null && !(meal.total_weight_g > 0)) problems.push('Total weight must be empty or more than 0 g.');
     if (items.length === 0) problems.push('Add at least one component.');
-    if (items.some((i) => parseNonNegative(i.amount) === null)) problems.push('Every component needs an amount.');
+    if (items.some((i) => parseAmount(i.amount) === null)) problems.push('Every component needs an amount.');
     setErrors(problems);
     if (problems.length > 0) return;
     const keys = new Set(items.map((i) => i.key));
@@ -90,7 +90,7 @@ export function MealEditor(props: { data: CatalogData; mealId: string | null; on
       </label>
       <label>
         Yield (servings)
-        <input inputMode="decimal" value={yieldText} onChange={(e) => setYieldText(e.target.value)} />
+        <input inputMode="text" placeholder="e.g. 2/3" value={yieldText} onChange={(e) => setYieldText(e.target.value)} />
       </label>
       <label>
         Total weight (g, optional)

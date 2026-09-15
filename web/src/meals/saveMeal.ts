@@ -1,7 +1,7 @@
 import type { MealData, MealItemData } from '@carbbook/core';
 import type { CatalogData } from '../db/catalog';
 import type { Change, Store } from '../db/store';
-import { parseNonNegative } from '../ui/format';
+import { parseAmount } from '../ui/format';
 import type { DraftItem } from '../ui/ItemEditor';
 import { saveUsdaFoodsFor } from '../usda/materialize';
 
@@ -18,7 +18,7 @@ export async function saveMeal(store: Store, meal: MealData, items: DraftItem[],
           meal_id: meal.id,
           ref_type: item.ref_type,
           ref_id: item.ref_id,
-          amount: parseNonNegative(item.amount)!,
+          amount: parseAmount(item.amount)!,
           unit: item.unit,
           position,
         },
@@ -38,7 +38,7 @@ export function withDraftMeal(data: CatalogData, meal: MealData, items: DraftIte
       meal_id: meal.id,
       ref_type: item.ref_type,
       ref_id: item.ref_id,
-      amount: parseNonNegative(item.amount) ?? Number.NaN,
+      amount: parseAmount(item.amount) ?? Number.NaN,
       unit: item.unit,
       position,
       ...meta,
