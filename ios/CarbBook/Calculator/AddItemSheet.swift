@@ -84,7 +84,7 @@ struct SaveMealSheet: View {
         NavigationStack {
             Form {
                 TextField("Meal name", text: $name)
-                NumberField(label: "Yield", text: $yieldText, unit: "servings")
+                NumberField(label: "Yield", text: $yieldText, unit: "servings", allowsFraction: true)
                 NumberField(label: "Total weight (optional)", text: $weightText, unit: "g")
                 if let error { Text(error).foregroundStyle(.red) }
             }

@@ -67,18 +67,22 @@ func date(ms: Int64) -> Date { Date(timeIntervalSince1970: Double(ms) / 1000) }
 
 func ms(_ date: Date) -> Int64 { Int64((date.timeIntervalSince1970 * 1000).rounded()) }
 
-/// A labelled grey number well (ChaosControl's ChaosInputField).
+/// A labelled grey number well (ChaosControl's ChaosInputField). `allowsFraction` is for amount
+/// fields (item amounts, portion quantities, servings): it switches to a keyboard that can type "/"
+/// and shows a fraction-friendly placeholder, so "2/3" can be typed directly instead of ".66667".
+/// Carbs, weights, ratios, BG and dose-settings fields keep `allowsFraction: false` (the default).
 struct NumberField: View {
     let label: String
     @Binding var text: String
     var unit: String = ""
+    var allowsFraction: Bool = false
 
     var body: some View {
         HStack {
             Text(label)
             Spacer()
-            TextField(label, text: $text)
-                .keyboardType(.decimalPad)
+            TextField(allowsFraction ? "e.g. 2/3" : label, text: $text)
+                .keyboardType(allowsFraction ? .numbersAndPunctuation : .decimalPad)
                 .multilineTextAlignment(.trailing)
                 .frame(maxWidth: 110)
                 .padding(6)

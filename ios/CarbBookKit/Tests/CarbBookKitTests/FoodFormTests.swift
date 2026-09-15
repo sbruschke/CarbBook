@@ -149,18 +149,48 @@ final class FoodFormTests: XCTestCase {
         ]
         XCTAssertEqual(errors(form), [
             "Portion 1 needs grams or carbs.",
-            "Portion 2 needs grams above 0.",
+            "Portion 2 needs grams or carbs.",
             "Portion 3: grams must be a number above 0.",
             "Portion 3: carbs must be a number from 0 to 500.",
         ])
     }
 
-    func testVolumePortionNeverSavesCarbs() throws {
+    func testVolumePortionWithWeightAndCarbsSavesTheWeightAndSetsCarbsPer100ml() throws {
         var form = FoodForm(food: nil, portions: [])
         form.name = "Milk"
         form.carbsText = "5"
         form.portions = [FoodForm.Portion(id: "a", label: "cup", kind: "volume", quantity: "1", grams: "244", carbsG: "12")]
-        XCTAssertNil(try built(form).portions.first?.carbsG)
+        let out = try built(form)
+        XCTAssertNil(out.portions.first?.carbsG)
+        XCTAssertEqual(out.portions.first?.grams, 244)
+        // Node-verified: 12 / (1 * 236.5882365) * 100 = 5.07210340527645.
+        XCTAssertEqual(try XCTUnwrap(out.food.carbsPer100ml), 5.07210340527645, accuracy: 1e-9)
+    }
+
+    /// The user's reported case: a 2/3 cup portion labelled "carbs 30" sets carbsPer100ml and saves
+    /// no portion row (no weight was entered); core `itemCarbs` then reads back 15 g at 1/3 cup and
+    /// 2.8125 g at 1 tbsp (node-verified).
+    func testVolumeCarbsOnlyPortionSetsCarbsPer100mlAndItemCarbsRoundTrips() throws {
+        var form = FoodForm(food: nil, portions: [])
+        form.name = "Juice"
+        form.carbsText = "0" // per-100g mode still requires its own field; the portion sets carbsPer100ml separately.
+        form.portions = [FoodForm.Portion(id: "a", label: "cup", kind: "volume", quantity: "2/3", grams: "", carbsG: "30")]
+        let out = try built(form)
+        XCTAssertEqual(out.portions, [])
+        XCTAssertEqual(try XCTUnwrap(out.food.carbsPer100ml), 19.02038776978669, accuracy: 1e-9)
+        let catalog = InMemoryCatalog(foods: [out.food])
+        XCTAssertEqual(itemCarbs(catalog, .food, out.food.id, 1.0 / 3.0, "cup").carbsG, 15, accuracy: 1e-9)
+        XCTAssertEqual(itemCarbs(catalog, .food, out.food.id, 1, "tbsp").carbsG, 2.8125, accuracy: 1e-9)
+    }
+
+    func testVolumePortionReplacesADifferentSavedCarbsPer100mlWithANote() throws {
+        let rice = FoodData(id: "f1", name: "Rice", source: "custom", carbsPer100g: nil, carbsPer100ml: 20.2884136211058)
+        var form = FoodForm(food: rice, portions: [])
+        XCTAssertNil(form.portionVolumeCarbsNote)
+        form.portions = [FoodForm.Portion(id: "a", label: "cup", kind: "volume", quantity: "1", grams: "", carbsG: "30")]
+        XCTAssertEqual(form.portionVolumeCarbsNote, "This replaces saved carbs per volume (20.29 g per 100 ml).")
+        let out = try built(form)
+        XCTAssertNotEqual(out.food.carbsPer100ml, rice.carbsPer100ml)
     }
 
     func testUsdaEditMakesCustomCopyWithNewPortionIds() throws {

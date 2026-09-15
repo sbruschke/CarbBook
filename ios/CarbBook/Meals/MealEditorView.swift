@@ -46,7 +46,7 @@ struct MealEditorView: View {
         Form {
             Section {
                 TextField("Name", text: $name)
-                NumberField(label: "Yield", text: $yieldText, unit: "servings")
+                NumberField(label: "Yield", text: $yieldText, unit: "servings", allowsFraction: true)
                 NumberField(label: "Total weight (optional)", text: $weightText, unit: "g")
                 TextField("Notes", text: $notes, axis: .vertical)
             } footer: {
@@ -99,8 +99,8 @@ struct MealEditorView: View {
                     .foregroundStyle(carbs.complete ? Color.primary : Color.orange)
             }
             HStack {
-                TextField("Amount", text: amountBinding)
-                    .keyboardType(.decimalPad)
+                TextField("e.g. 2/3", text: amountBinding)
+                    .keyboardType(.numbersAndPunctuation)
                     .frame(maxWidth: 110)
                 UnitPicker(unit: item.unit, units: units, portions: value.refType == .food ? catalog.portions(value.refId) : [])
             }
