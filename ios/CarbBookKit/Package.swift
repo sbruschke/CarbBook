@@ -27,6 +27,7 @@ let package = Package(
         .testTarget(
             name: "CarbBookKitTests",
             dependencies: ["CarbBookKit"],
+            resources: [.copy("Resources")],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
     ]

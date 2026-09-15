@@ -5,19 +5,73 @@ import Foundation
 /// silently treated as 0 or as "empty" — it has to surface as a validation error, or (for BG) reach
 /// core's `invalid_input` refusal. Kept here, outside the UI target, so it can be unit tested on Linux.
 public enum NumberParsing {
-    private static let amountPattern = "^[0-9]+(\\.[0-9]+)?$"
+    private static let decimalPattern = "^([0-9]+(\\.[0-9]+)?|\\.[0-9]+)$"
+    private static let digitsPattern = "^[0-9]+$"
     private static let wholeNumberPattern = "^[0-9]+$"
 
-    /// Amount fields (carbs, fiber, grams, quantities, servings, ratios, thresholds…): non-negative
-    /// decimal digits, with an optional fractional part after "." or a single "," (comma is accepted
-    /// only here, not for `parseWholeNumber`). Trimmed first; empty, exponents ("1e5"), hex ("0x10"),
-    /// "Infinity"/"NaN" and negative numbers all fail to parse (return nil), never becoming 0.
+    /// Unicode vulgar-fraction glyphs accepted alone or right after a whole number (with or without a
+    /// space): "1½" and "1 ½" both mean 1.5. Shared with testdata/number-parse-vectors.json.
+    private static let unicodeFractions: [Character: (Double, Double)] = [
+        "½": (1, 2), "⅓": (1, 3), "⅔": (2, 3), "¼": (1, 4), "¾": (3, 4), "⅛": (1, 8),
+    ]
+
+    /// Amount fields (carbs, fiber, grams, quantities, servings, ratios, thresholds, portion
+    /// quantities…): non-negative decimal digits, with an optional fractional part after "." (or
+    /// leading, as in ".5") or a single "," decimal separator (comma is accepted only here, not for
+    /// `parseWholeNumber`); or a fraction — "1/3", a mixed number "1 1/2", or a single Unicode vulgar
+    /// fraction glyph alone or after a whole number ("1½", "1 ½"). Trimmed first; empty, exponents
+    /// ("1e5"), hex ("0x10"), "Infinity"/"NaN", negative numbers, and malformed fractions (zero or
+    /// negative denominators, extra slashes, decimals inside a fraction, more than one Unicode glyph)
+    /// all fail to parse (return nil), never becoming 0.
     public static func parseAmount(_ text: String) -> Double? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
-        let normalized = trimmed.replacingOccurrences(of: ",", with: ".")
-        guard normalized.range(of: amountPattern, options: .regularExpression) != nil else { return nil }
+
+        let glyphCount = trimmed.filter { unicodeFractions[$0] != nil }.count
+        if glyphCount > 0 {
+            guard glyphCount == 1, let last = trimmed.last, let fraction = unicodeFractions[last] else { return nil }
+            let prefix = String(trimmed.dropLast()).trimmingCharacters(in: .whitespaces)
+            let whole: Double
+            if prefix.isEmpty {
+                whole = 0
+            } else {
+                guard prefix.range(of: digitsPattern, options: .regularExpression) != nil, let w = Double(prefix) else { return nil }
+                whole = w
+            }
+            return whole + fraction.0 / fraction.1
+        }
+
+        let parts = trimmed.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
+        switch parts.count {
+        case 1:
+            return parseToken(parts[0])
+        case 2:
+            guard parts[0].range(of: digitsPattern, options: .regularExpression) != nil, let whole = Double(parts[0]) else { return nil }
+            guard let fraction = parseFraction(parts[1]) else { return nil }
+            return whole + fraction
+        default:
+            return nil
+        }
+    }
+
+    /// A single space-free token: an ASCII fraction ("n/d") if it contains "/", else a plain decimal.
+    private static func parseToken(_ token: String) -> Double? {
+        if token.contains("/") { return parseFraction(token) }
+        let normalized = token.replacingOccurrences(of: ",", with: ".")
+        guard normalized.range(of: decimalPattern, options: .regularExpression) != nil else { return nil }
         return Double(normalized)
+    }
+
+    /// "n/d" with non-negative integer numerator and denominator (no sign, no decimal, no extra
+    /// slashes) and a non-zero denominator.
+    private static func parseFraction(_ token: String) -> Double? {
+        let comps = token.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
+        guard comps.count == 2 else { return nil }
+        guard comps[0].range(of: digitsPattern, options: .regularExpression) != nil,
+              comps[1].range(of: digitsPattern, options: .regularExpression) != nil,
+              let numerator = Double(comps[0]), let denominator = Double(comps[1]), denominator != 0
+        else { return nil }
+        return numerator / denominator
     }
 
     /// Whole-number-only fields (BG): non-negative decimal digits, no "." or ",". Trimmed first;
