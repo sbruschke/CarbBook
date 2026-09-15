@@ -100,3 +100,58 @@ export function parseWholeNumber(text: string): number | null {
   if (trimmed === '') return null;
   return /^\d+$/.test(trimmed) ? Number(trimmed) : null;
 }
+
+/** Unicode vulgar fractions supported by `parseAmount`, and their exact `[numerator, denominator]`. */
+const UNICODE_FRACTIONS: Record<string, [number, number]> = {
+  '½': [1, 2],
+  '⅓': [1, 3],
+  '⅔': [2, 3],
+  '¼': [1, 4],
+  '¾': [3, 4],
+  '⅛': [1, 8],
+};
+const UNICODE_FRACTION_CHARS = Object.keys(UNICODE_FRACTIONS).join('');
+
+/**
+ * A non-negative amount from a text field, accepting fractions (shared spec:
+ * `testdata/number-parse-vectors.json`, `amount`). Backs food/meal amounts, label amounts,
+ * portion quantities and servings — fields where "1/3" or "2/3 cup" are how the source (a
+ * nutrition label, a measuring cup) actually reads. Accepts, in order:
+ *  - a plain or leading-dot decimal ("1", "1.5", ".5"), or a single comma as decimal separator ("1,5");
+ *  - an ASCII fraction "n/d" (denominator non-zero);
+ *  - an ASCII mixed number "w n/d" (single space);
+ *  - a unicode vulgar fraction (½ ⅓ ⅔ ¼ ¾ ⅛) alone, or preceded by a whole number with or
+ *    without a space ("1½", "1 ½").
+ * Every value is exact (numerator / denominator, no rounding). Returns null for anything else,
+ * including negative numbers, hex/exponent forms, and malformed fractions ("1/0", "1 1", "1//3").
+ * Carbs grams, weights, ratios, BG and dose settings are NOT amounts: they keep `parseNonNegative`
+ * (decimal + comma only, no fractions) since a fractional gram or ratio is never a legitimate entry.
+ */
+export function parseAmount(text: string): number | null {
+  const trimmed = text.trim();
+  if (trimmed === '') return null;
+
+  const commaDecimal = /^\d+,\d+$/.test(trimmed) ? trimmed.replace(',', '.') : trimmed;
+  if (/^(\d+\.\d+|\.\d+|\d+)$/.test(commaDecimal)) return Number(commaDecimal);
+
+  const asciiFraction = /^(\d+)\/(\d+)$/.exec(trimmed);
+  if (asciiFraction) {
+    const [, num, den] = asciiFraction.map(Number) as [number, number, number];
+    return den === 0 ? null : num / den;
+  }
+
+  const asciiMixed = /^(\d+) (\d+)\/(\d+)$/.exec(trimmed);
+  if (asciiMixed) {
+    const [, whole, num, den] = asciiMixed.map(Number) as [number, number, number, number];
+    return den === 0 ? null : whole + num / den;
+  }
+
+  const unicodeFraction = new RegExp(`^(\\d+)?[ ]?([${UNICODE_FRACTION_CHARS}])$`).exec(trimmed);
+  if (unicodeFraction) {
+    const whole = unicodeFraction[1] === undefined ? 0 : Number(unicodeFraction[1]);
+    const [num, den] = UNICODE_FRACTIONS[unicodeFraction[2]!]!;
+    return whole + num / den;
+  }
+
+  return null;
+}

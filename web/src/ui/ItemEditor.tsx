@@ -7,7 +7,7 @@ import {
   PORTION_PREFIX,
   type RefType,
 } from '@carbbook/core';
-import { formatCarbs, parseNonNegative } from './format';
+import { formatCarbs, parseAmount } from './format';
 import { UnitPicker } from './UnitPicker';
 
 /** An item being edited: amount is the raw text so half-typed numbers survive. */
@@ -36,7 +36,7 @@ export function unitsFor(catalog: Catalog, refType: RefType, refId: string): str
 
 /** Carbs for a draft item via core; a missing or invalid amount counts as incomplete. */
 export function draftItemCarbs(catalog: Catalog, item: DraftItem): CarbResult {
-  const amount = parseNonNegative(item.amount);
+  const amount = parseAmount(item.amount);
   return amount === null ? { carbs_g: 0, complete: false } : itemCarbs(catalog, item.ref_type, item.ref_id, amount, item.unit);
 }
 
@@ -70,7 +70,7 @@ export function ItemEditor(props: {
       {items.map((item, index) => {
         const name = itemName(catalog, item.ref_type, item.ref_id);
         const result = draftItemCarbs(catalog, item);
-        const amountMissing = parseNonNegative(item.amount) === null;
+        const amountMissing = parseAmount(item.amount) === null;
         return (
           <li key={item.key} className="item-row" data-testid="item-row">
             <div className="item-name">
@@ -80,7 +80,8 @@ export function ItemEditor(props: {
             <div className="item-controls">
               <input
                 aria-label={`Amount of ${name}`}
-                inputMode="decimal"
+                inputMode="text"
+                placeholder="e.g. 2/3"
                 value={item.amount}
                 onChange={(e) => update(item.key, { amount: e.target.value })}
               />
