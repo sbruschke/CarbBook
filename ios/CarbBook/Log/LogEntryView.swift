@@ -42,7 +42,7 @@ struct LogEntryView: View {
                 LabeledContent("Carbs", value: "\(formatNumber(current.totalCarbsG))g")
                 LabeledContent("Suggested", value: current.suggestedUnits.map { "\(formatNumber($0, digits: 2))u" } ?? "—")
                 NumberField(label: "Taken", text: $taken, unit: "u")
-                if takenEdited && NumberParsing.isMalformed(taken) {
+                if takenEdited && TakenDoseInput.isMalformed(taken) {
                     Text(TakenDoseError.malformed.message).font(.caption).foregroundStyle(.red)
                 }
                 TextField("Notes", text: $notes, axis: .vertical)

@@ -218,6 +218,78 @@ final class FoodFormTests: XCTestCase {
         XCTAssertEqual(errors(form), ["Portion 1 and Portion 2 imply different carbs per 100 ml; enter it in one place only."])
     }
 
+    private func mlRow(_ id: String, _ quantity: String, _ carbs: String) -> FoodForm.Portion {
+        FoodForm.Portion(id: id, label: "ml", kind: "volume", quantity: quantity, grams: "", carbsG: carbs)
+    }
+
+    /// Pairwise, like web: 100 and 99.2 are each within 1% of the first reading (100), but 100.9 vs
+    /// 99.2 is 1.68% apart, so save is blocked naming that pair.
+    func testEveryPairOfVolumeReadingsMustAgree() {
+        var form = FoodForm(food: nil, portions: [])
+        form.name = "Juice"
+        form.carbsText = "0"
+        form.portions = [mlRow("a", "1000", "100"), mlRow("b", "1000", "100.9"), mlRow("c", "1000", "99.2")]
+        XCTAssertEqual(errors(form), ["Portion 2 and Portion 3 imply different carbs per 100 ml; enter it in one place only."])
+    }
+
+    func testAgreeingLabelEntryAndRowUseTheLabelEntry() throws {
+        var form = FoodForm(food: nil, portions: [])
+        form.name = "Juice"
+        form.carbsMode = .label
+        form.labelUnit = "ml"
+        form.labelAmount = "100"
+        form.labelCarbs = "10"
+        form.portions = [FoodForm.Portion(id: "a", label: "cup", kind: "volume", quantity: "1", grams: "", carbsG: "23.8")] // 10.06 / 100 ml
+        XCTAssertEqual(try XCTUnwrap(try built(form).food.carbsPer100ml), 10, accuracy: 1e-9)
+    }
+
+    func testAgreeingRowsUseTheFirstRow() throws {
+        var form = FoodForm(food: nil, portions: [])
+        form.name = "Juice"
+        form.carbsText = "0"
+        form.portions = [mlRow("a", "1000", "100"), mlRow("b", "500", "50.4")] // 10 and 10.08 / 100 ml
+        XCTAssertEqual(try XCTUnwrap(try built(form).food.carbsPer100ml), 10, accuracy: 1e-9)
+    }
+
+    func testVolumeRowCarbsUseThePortionCarbsRange() {
+        var form = FoodForm(food: nil, portions: [])
+        form.name = "Syrup"
+        form.carbsText = "0"
+        form.portions = [FoodForm.Portion(id: "a", label: "l", kind: "volume", quantity: "1", grams: "", carbsG: "600")]
+        XCTAssertTrue(errors(form).contains("Portion 1: carbs must be a number from 0 to 500."), "\(errors(form))")
+    }
+
+    /// Carbs, fiber, grams and label carbs/weight are decimal fields: "1/2" and "5/2" are errors, never 0.5 / 2.5.
+    func testCarbsFieldsRejectFractions() {
+        for fraction in ["1/2", "5/2"] {
+            var per100 = FoodForm(food: nil, portions: [])
+            per100.name = "Bread"
+            per100.carbsText = fraction
+            XCTAssertTrue(errors(per100).contains("Carbs per 100 g must be a number from 0 to 100."), fraction)
+
+            per100.carbsText = "50"
+            per100.fiber = fraction
+            per100.portions = [FoodForm.Portion(id: "a", label: "slice", kind: "count", quantity: "1/2", grams: fraction, carbsG: fraction)]
+            XCTAssertEqual(errors(per100), [
+                "Fiber per 100 g must be a number from 0 to 100.",
+                "Portion 1: grams must be a number above 0.",
+                "Portion 1: carbs must be a number from 0 to 500.",
+            ], fraction)
+
+            var label = FoodForm(food: nil, portions: [])
+            label.name = "Cereal"
+            label.carbsMode = .label
+            label.labelUnit = "cup"
+            label.labelAmount = "2/3" // label amount is an amount: fractions are fine here
+            label.labelCarbs = fraction
+            XCTAssertEqual(label.labelResultText, "Carbs isn't a valid number.", fraction)
+            label.labelCarbs = "30"
+            label.labelUnit = FoodLabel.other
+            label.labelWeight = fraction
+            XCTAssertEqual(label.labelResultText, "Weight isn't a valid number.", fraction)
+        }
+    }
+
     func testUsdaEditMakesCustomCopyWithNewPortionIds() throws {
         let usda = FoodData(id: "usda-1", name: "Rice", source: "usda", sourceRef: "1", carbsPer100g: 28.2)
         let cup = PortionData(id: "usda-portion-1", foodId: "usda-1", label: "cup", kind: "volume", quantity: 1, grams: 158)

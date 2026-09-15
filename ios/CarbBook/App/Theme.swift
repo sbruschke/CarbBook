@@ -18,11 +18,12 @@ enum Theme {
     }
 }
 
-/// Parses user-typed amounts strictly (`NumberParsing.parseAmount`, in CarbBookKit so it has
-/// Linux-runnable tests): only plain decimal digits with an optional fractional part, "," accepted
-/// as the decimal separator. Malformed text (hex, exponents, "Infinity", empty…) is never silently 0.
+/// Parses a non-amount number field (weights, carbs, fiber) strictly (`NumberParsing.parseNonNegative`,
+/// in CarbBookKit so it has Linux-runnable tests): decimal digits, "," accepted as the decimal
+/// separator, NO fractions. Malformed text (hex, exponents, "Infinity", "1/2", empty…) is never
+/// silently 0. Amount fields (item amounts, yield/servings) call `NumberParsing.parseAmount` directly.
 func parseNumber(_ text: String) -> Double? {
-    NumberParsing.parseAmount(text)
+    NumberParsing.parseNonNegative(text)
 }
 
 /// Whole-number-only fields (BG): rejects a typed decimal instead of rounding or truncating it.

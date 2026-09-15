@@ -60,8 +60,13 @@ public enum TakenDoseInput {
     /// "Log it": empty means carbs only (nil); malformed text blocks the save.
     public static func unitsForLog(_ text: String) throws -> Double? {
         if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return nil }
-        guard let value = NumberParsing.parseAmount(text) else { throw TakenDoseError.malformed }
+        guard let value = NumberParsing.parseNonNegative(text) else { throw TakenDoseError.malformed }
         return value
+    }
+
+    /// Typed-but-invalid "Taken" text (decimal only: a fraction is never a dose entry).
+    public static func isMalformed(_ text: String) -> Bool {
+        NumberParsing.isMalformed(text, using: NumberParsing.parseNonNegative)
     }
 
     /// Log entry edit: an unedited field keeps the stored value verbatim (display rounding must not
