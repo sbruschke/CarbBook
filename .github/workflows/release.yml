@@ -1,0 +1,123 @@
+name: release
+
+# Every push to main that touches the iOS app publishes a GitHub Release with
+# CarbBook-<version>-build<N>.ipa attached. ipa-sync (~/Projects/ipa-hub) picks it up with a
+# read-only token and serves it at https://ipa.dxshdw.dev/source.json for LiveContainer.
+# The marketing version comes from ios/project.yml, the build number from this workflow's run number.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'ios/CarbBook/**'
+      - 'ios/CarbBookKit/Sources/**'
+      - 'ios/CarbBookKit/Package.swift'
+      - 'ios/CarbBookCore/Sources/**'
+      - 'ios/CarbBookCore/Package.swift'
+      - 'ios/project.yml'
+      - '.github/workflows/release.yml'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish (default: MARKETING_VERSION in ios/project.yml)'
+        required: false
+
+jobs:
+  release:
+    runs-on: macos-26
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve release metadata
+        id: meta
+        run: |
+          set -euo pipefail
+          VERSION="${{ github.event.inputs.version }}"
+          [[ -n "$VERSION" ]] || VERSION="$(ios/scripts/version.sh)"
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "error: bad version '$VERSION'" >&2; exit 1; }
+          BUILD="${{ github.run_number }}"
+          NOTES="$RUNNER_TEMP/release-notes.txt"
+          git log -1 --format='%s' > "$NOTES"
+          {
+            echo "version=$VERSION"
+            echo "build=$BUILD"
+            echo "ipa_name=CarbBook-${VERSION}-build${BUILD}.ipa"
+            echo "tag=v${VERSION}-build${BUILD}"
+            echo "notes_file=$NOTES"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Select Xcode 26.6
+        run: |
+          sudo xcode-select -s /Applications/Xcode_26.6.app
+          xcodebuild -version
+          xcodebuild -showsdks | grep -i iphoneos
+
+      - name: Package tests (macOS)
+        run: |
+          (cd ios/CarbBookCore && swift test)
+          (cd ios/CarbBookKit && swift test)
+
+      - name: Install XcodeGen
+        run: |
+          brew install xcodegen
+          xcodegen --version
+
+      - name: Generate Xcode project
+        working-directory: ios
+        run: xcodegen generate
+
+      - name: Build unsigned .app
+        run: |
+          set +e
+          xcodebuild \
+            -project ios/CarbBook.xcodeproj \
+            -scheme CarbBook \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            MARKETING_VERSION="${{ steps.meta.outputs.version }}" \
+            CURRENT_PROJECT_VERSION="${{ steps.meta.outputs.build }}" \
+            -IDEPackageSupportUseBuiltinSCM=YES \
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            build 2>&1 | tee "$RUNNER_TEMP/xcodebuild.log"
+          rc=${PIPESTATUS[0]}
+          if [ $rc -ne 0 ]; then
+            echo "=== Swift diagnostics ==="
+            grep -E "(error|warning):" "$RUNNER_TEMP/xcodebuild.log" | head -150 || true
+            exit $rc
+          fi
+
+      - name: Package .ipa
+        id: package
+        run: |
+          set -euo pipefail
+          mkdir -p build/Payload
+          cp -R build/Build/Products/Release-iphoneos/CarbBook.app build/Payload/
+          (cd build && zip -qr "${{ steps.meta.outputs.ipa_name }}" Payload)
+          echo "ipa_path=build/${{ steps.meta.outputs.ipa_name }}" >> "$GITHUB_OUTPUT"
+
+      - name: Publish GitHub Release (ipa.dxshdw.dev hub)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release create "${{ steps.meta.outputs.tag }}" "${{ steps.package.outputs.ipa_path }}" \
+            --repo "${{ github.repository }}" \
+            --target "${{ github.sha }}" \
+            --title "CarbBook ${{ steps.meta.outputs.tag }}" \
+            --notes-file "${{ steps.meta.outputs.notes_file }}"
+
+      - name: Summary
+        run: |
+          {
+            echo "### CarbBook ${{ steps.meta.outputs.tag }}"
+            echo ""
+            echo "Release asset: ${{ steps.meta.outputs.ipa_name }}. ipa-sync publishes it to https://ipa.dxshdw.dev/source.json."
+          } >> "$GITHUB_STEP_SUMMARY"

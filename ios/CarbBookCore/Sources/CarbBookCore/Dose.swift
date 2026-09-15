@@ -68,6 +68,15 @@ public protocol EffectiveVersion {
 
 extension DoseSettingsData: EffectiveVersion {}
 
+/// The one shared filter for "usable" dose-settings versions: drops any version whose id is in
+/// `rejectedIds` (a still-in-effect push rejection — see `LocalStore.rejectedDoseSettingsIds()` on
+/// iOS). `evaluateCalculator` and `recalculateLogEntry` apply this before picking a window; screens
+/// that show which versions can currently be used (e.g. Settings' active/version-history display)
+/// should call it too, rather than re-implementing the filter.
+public func eligibleDoseSettingsVersions<T: EffectiveVersion>(_ versions: [T], rejectedIds: Set<Id>) -> [T] {
+    rejectedIds.isEmpty ? versions : versions.filter { !rejectedIds.contains($0.id) }
+}
+
 /// Newest non-deleted version with effective_from ≤ atMs; ties go to the larger id (JS string order).
 public func activeSettings<T: EffectiveVersion>(_ versions: [T], _ atMs: Int64) -> T? {
     var best: T?
