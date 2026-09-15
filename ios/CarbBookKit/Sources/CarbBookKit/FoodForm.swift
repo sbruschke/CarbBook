@@ -129,6 +129,51 @@ public struct FoodForm: Equatable, Sendable {
         }
     }
 
+    /// Per 100 g entry shown per serving (web `servingCarbsNotes`): one line per piece/serving row, with
+    /// its own carbs when it has them (core uses those for that unit), else carbs per 100 g × its weight.
+    public var servingCarbsNotes: [String] {
+        guard carbsMode == .per100g, let per100g = NumberParsing.parseNonNegative(carbsText), isValidCarbsPer100g(per100g) else { return [] }
+        return portions.compactMap { row in
+            let label = row.label.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard row.kind != "volume", !label.isEmpty else { return nil }
+            let grams = NumberParsing.parseNonNegative(row.grams).flatMap { $0 > 0 ? $0 : nil }
+            let carbs = Self.blank(row.carbsG)
+                ? FoodLabel.servingCarbs(carbsPer100g: per100g, grams: grams)
+                : NumberParsing.parseNonNegative(row.carbsG)
+            guard let carbs else { return nil }
+            let qty = NumberParsing.parseAmount(row.quantity) == 1 ? "" : "\(row.quantity.trimmingCharacters(in: .whitespaces)) "
+            let weight = grams.map { " (\(FoodLabel.trim2($0)) g)" } ?? ""
+            return "= \(FoodLabel.trim2(carbs)) g carbs per \(qty)\(label)\(weight)"
+        }
+    }
+
+    /// Shown (and blocking on save) when a weighed piece/serving row's own carbs disagree with carbs per
+    /// 100 g (web `servingCarbsConflict`).
+    public var servingCarbsConflict: String? {
+        carbsMode == .per100g ? Self.servingCarbsConflict(portions, carbsPer100g: NumberParsing.parseNonNegative(carbsText)) : nil
+    }
+
+    /// A weighed piece/serving row with its own carbs must agree with carbs per 100 g (within 1%, 0.05 g,
+    /// and the 2-decimal per-100 g rounding): core logs that unit from the row's carbs and grams from per 100 g, so a mismatch means
+    /// "1 bar" and "35 g" silently give different carbs (e.g. after editing per 100 g only).
+    static func servingCarbsConflict(_ rows: [Portion], carbsPer100g: Double?) -> String? {
+        guard let per100g = carbsPer100g, isValidCarbsPer100g(per100g) else { return nil }
+        for row in rows where row.kind != "volume" {
+            guard let grams = NumberParsing.parseNonNegative(row.grams), grams > 0,
+                  let carbs = NumberParsing.parseNonNegative(row.carbsG) else { continue }
+            let implied = per100g * grams / 100
+            let diff = abs(implied - carbs)
+            // Label entry stores per 100 g to 2 decimals (±0.005), worth up to grams × 0.00005 g here.
+            let roundingSlack = grams * 0.00005 + 1e-9
+            if diff > 0.05 && diff > roundingSlack && diff / max(implied, carbs, 1e-9) > 0.01 {
+                let label = row.label.trimmingCharacters(in: .whitespacesAndNewlines)
+                return "\(label.isEmpty ? "A portion" : label) (\(FoodLabel.trim2(grams)) g) has \(FoodLabel.trim2(carbs)) g carbs, but "
+                    + "\(FoodLabel.trim2(per100g)) g per 100 g gives \(FoodLabel.trim2(implied)) g. Fix one so they match."
+            }
+        }
+        return nil
+    }
+
     private var labelWeightValue: Double? {
         guard labelUnit != "g", let weight = NumberParsing.parseNonNegative(labelWeight), weight > 0 else { return nil }
         return weight
@@ -236,6 +281,7 @@ public struct FoodForm: Equatable, Sendable {
         }
         if !editsG { carbsPer100g = keptG }
         if !editsMl { carbsPer100ml = keptMl }
+        if let conflict = Self.servingCarbsConflict(rows, carbsPer100g: carbsPer100g) { problems.append(conflict) }
 
         let fiberField = Field(fiber)
         let fiberValue = fiberField.value

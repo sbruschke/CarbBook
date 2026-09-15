@@ -66,7 +66,10 @@ describe('Foods screen', () => {
     await user.click(await screen.findByRole('button', { name: 'Scan barcode' }));
     expect(await screen.findByRole('heading', { name: 'New food' })).toBeInTheDocument();
     expect(screen.getByLabelText('Name')).toHaveValue('Noodle kit');
-    expect(screen.getByLabelText('Carbs per 100 g')).toHaveValue('71.15');
+    // 71.15 g per 100 g × 52 g serving, shown per serving.
+    expect(screen.getByLabelText('Portion name')).toHaveValue('serving');
+    expect(screen.getByLabelText('Carbs (g)')).toHaveValue('37');
+    expect(screen.getByLabelText('Weighs (g)')).toHaveValue('52');
     expect(screen.getByText('0737628064502')).toBeInTheDocument();
   });
 

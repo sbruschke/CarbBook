@@ -84,9 +84,29 @@ public enum FoodLabel {
                               portion: PortionPatch(label: trimmed, kind: kind, quantity: amount, grams: weight, carbsG: carbs)))
     }
 
-    /// The carb basis as the user entered it ("48 g carbs per cup"), or nil with no valid basis.
+    /// Carbs in a serving of `grams` at `carbsPer100g`, 2 decimals (display/prefill only).
+    public static func servingCarbs(carbsPer100g: Double?, grams: Double?) -> Double? {
+        guard isValidCarbsPer100g(carbsPer100g), let grams, grams.isFinite, grams > 0 else { return nil }
+        return (carbsPer100g! * grams / 100 * 100).rounded() / 100
+    }
+
+    /// The carb basis per serving where the food has one ("24 g carbs per bar", "24 g carbs per label
+    /// serving (35 g)", "48 g carbs per cup"), then per 100 g; nil with no valid basis (web `foodBasisSummary`).
     public static func basisSummary(_ food: FoodData, _ portions: [PortionData]) -> String? {
-        if isValidCarbsPer100g(food.carbsPer100g) { return "\(trim2(food.carbsPer100g!)) g carbs per 100 g" }
+        // Lowest id first, so web and iOS pick the same portion whatever order rows were loaded in.
+        let byId = portions.sorted { $0.id < $1.id }
+        if let piece = byId.first(where: { $0.kind != "volume" && isValidPortionCarbs($0.carbsG) }) {
+            let qty = piece.quantity == 1 ? "" : "\(trim2(piece.quantity)) "
+            return "\(trim2(piece.carbsG!)) g carbs per \(qty)\(piece.label)"
+        }
+        if isValidCarbsPer100g(food.carbsPer100g) {
+            // A row with (invalid) carbs of its own is not logged from per 100 g, so it isn't a derived serving.
+            if let serving = byId.first(where: { $0.kind != "volume" && $0.carbsG == nil && isValidPortionGrams($0.grams) }) {
+                let qty = serving.quantity == 1 ? "" : "\(trim2(serving.quantity)) "
+                return "\(trim2(food.carbsPer100g! * serving.grams! / 100)) g carbs per \(qty)\(serving.label) (\(trim2(serving.grams!)) g)"
+            }
+            return "\(trim2(food.carbsPer100g!)) g carbs per 100 g"
+        }
         if isValidCarbsPer100ml(food.carbsPer100ml) {
             if let vp = portions.first(where: { $0.kind == "volume" && isVolumeUnit($0.label) && $0.grams != nil }) {
                 let n = food.carbsPer100ml! * vp.quantity * Units.volumeMl[vp.label]! / 100
@@ -94,10 +114,6 @@ public enum FoodLabel {
                 return "\(trim2(n)) g carbs per \(qty)\(vp.label)"
             }
             return "\(trim2(food.carbsPer100ml! * Units.volumeMl["cup"]! / 100)) g carbs per cup"
-        }
-        if let piece = portions.first(where: { $0.kind != "volume" && isValidPortionCarbs($0.carbsG) }) {
-            let qty = piece.quantity == 1 ? "" : "\(trim2(piece.quantity)) "
-            return "\(trim2(piece.carbsG!)) g carbs per \(qty)\(piece.label)"
         }
         return nil
     }

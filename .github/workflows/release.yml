@@ -108,7 +108,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          gh release create "${{ steps.meta.outputs.tag }}" "${{ steps.package.outputs.ipa_path }}" \
+          # icon.png is the hub's iconURL for LiveContainer (ipa-hub apps.yaml `icon: icon.png`).
+          cp ios/CarbBook/Assets.xcassets/AppIcon.appiconset/icon-1024.png build/icon.png
+          gh release create "${{ steps.meta.outputs.tag }}" "${{ steps.package.outputs.ipa_path }}" build/icon.png \
             --repo "${{ github.repository }}" \
             --target "${{ github.sha }}" \
             --title "CarbBook ${{ steps.meta.outputs.tag }}" \

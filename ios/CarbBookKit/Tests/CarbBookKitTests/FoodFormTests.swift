@@ -104,6 +104,60 @@ final class FoodFormTests: XCTestCase {
         XCTAssertEqual(piece.portions.first?.grams, "")
     }
 
+    func testServingCarbsNotesShowPer100gPerServing() {
+        let bar = FoodData(id: "f", name: "Bar", carbsPer100g: 68.57)
+        let serving = PortionData(id: "s", foodId: "f", label: "label serving", kind: "serving", quantity: 1, grams: 35)
+        let cup = PortionData(id: "c", foodId: "f", label: "cup", kind: "volume", quantity: 1, grams: 120)
+        let piece = PortionData(id: "p", foodId: "f", label: "piece", kind: "count", quantity: 1, grams: 10, carbsG: 6.86)
+        var form = FoodForm(food: bar, portions: [serving, cup, piece])
+        XCTAssertEqual(form.carbsMode, .per100g)
+        XCTAssertEqual(form.servingCarbsNotes, ["= 24 g carbs per label serving (35 g)", "= 6.86 g carbs per piece (10 g)"])
+        XCTAssertNil(form.servingCarbsConflict)
+        form.carbsText = "50"
+        XCTAssertEqual(form.servingCarbsNotes, ["= 17.5 g carbs per label serving (35 g)", "= 6.86 g carbs per piece (10 g)"])
+        XCTAssertEqual(form.servingCarbsConflict, "piece (10 g) has 6.86 g carbs, but 50 g per 100 g gives 5 g. Fix one so they match.")
+        form.carbsText = "150"
+        XCTAssertEqual(form.servingCarbsNotes, [])
+        XCTAssertNil(form.servingCarbsConflict)
+        form.carbsText = "50"
+        form.carbsMode = .label
+        XCTAssertEqual(form.servingCarbsNotes, [])
+    }
+
+    func testPieceLabelWithWeightIsCheckedAgainstOtherRowsAndToleratesRounding() throws {
+        var form = FoodForm(food: nil, portions: [])
+        form.name = "Bars"
+        form.carbsMode = .label
+        form.labelUnit = FoodLabel.other
+        form.labelName = "bar"
+        form.labelAmount = "1"
+        form.labelCarbs = "24"
+        form.labelWeight = "35"
+        form.portions = [FoodForm.Portion(id: "s", label: "slice", kind: "count", quantity: "1", grams: "30", carbsG: "20")]
+        XCTAssertEqual(errors(form), ["slice (30 g) has 20 g carbs, but 68.57 g per 100 g gives 20.57 g. Fix one so they match."])
+
+        var greens = FoodForm(food: nil, portions: [])
+        greens.name = "Greens"
+        greens.carbsMode = .label
+        greens.labelUnit = FoodLabel.other
+        greens.labelName = "bag"
+        greens.labelAmount = "1"
+        greens.labelCarbs = "1"
+        greens.labelWeight = "1500"
+        XCTAssertEqual(try built(greens).food.carbsPer100g, 0.07, "per 100 g rounding alone must not block (1500 g bag = 1 g carbs)")
+    }
+
+    func testPer100gEditThatDisagreesWithAServingsOwnCarbsBlocksSave() throws {
+        let bar = FoodData(id: "f", name: "Bar", source: "off", carbsPer100g: 68.57)
+        let serving = PortionData(id: "s", foodId: "f", label: "serving", kind: "serving", quantity: 1, grams: 35, carbsG: 24)
+        var form = FoodForm(food: bar, portions: [serving])
+        XCTAssertNoThrow(try built(form), "the scanned food as saved is consistent")
+        form.carbsText = "85.71"
+        XCTAssertEqual(errors(form), ["serving (35 g) has 24 g carbs, but 85.71 g per 100 g gives 30 g. Fix one so they match."])
+        form.portions[0].carbsG = "30"
+        XCTAssertEqual(try built(form).portions.first?.carbsG, 30)
+    }
+
     func testReenteringAPieceLabelUpdatesThePortion() throws {
         let bar = PortionData(id: "p1", foodId: "f2", label: "bar", kind: "count", quantity: 1, grams: nil, carbsG: 22)
         var form = FoodForm(food: FoodData(id: "f2", name: "Bar", source: "custom", carbsPer100g: nil), portions: [bar])

@@ -60,10 +60,10 @@ struct BarcodeFlowView: View {
 
     @ViewBuilder private func resolvedView(_ resolution: BarcodeResolution) -> some View {
         switch resolution {
-        case .local(let food, _):
-            foundView(food, note: "Saved on this phone.")
-        case .known(let food, _):
-            foundView(food, note: "Saved on the server; syncing it to this phone.")
+        case .local(let food, let portions):
+            foundView(food, portions: portions, note: "Saved on this phone.")
+        case .known(let food, let portions):
+            foundView(food, portions: portions, note: "Saved on the server; syncing it to this phone.")
         case .draft(let draft):
             OffDraftForm(draft: draft) { food in finish(food) }
         case .notFound(let code):
@@ -77,12 +77,12 @@ struct BarcodeFlowView: View {
         }
     }
 
-    private func foundView(_ food: FoodData, note: String) -> some View {
+    private func foundView(_ food: FoodData, portions: [PortionData], note: String) -> some View {
         Form {
             Section {
                 Text(food.name).font(.headline)
                 if let brand = food.brand { Text(brand).foregroundStyle(.secondary) }
-                Text(food.carbsPer100g.map { "\(formatNumber($0))g carbs per 100 g" } ?? "No carb data")
+                Text(FoodLabel.basisSummary(food, portions) ?? "No carb data")
                 Text(note).font(.footnote).foregroundStyle(.secondary)
             }
             Button("Use this food") {
@@ -124,80 +124,57 @@ struct BarcodeFlowView: View {
     }
 }
 
-/// Confirms an Open Food Facts draft. Missing carbs must be entered from the label before saving.
+/// Confirms an Open Food Facts draft: carbs per serving when OFF lists a serving weight, else per 100 g.
+/// Missing carbs must be entered from the label before saving. Rules live in CarbBookKit `OffDraftEntry`.
 struct OffDraftForm: View {
     @Environment(AppModel.self) private var app
-    let draft: OffDraft
     let onSaved: (FoodData) -> Void
-    @State private var name = ""
-    @State private var brand = ""
-    @State private var carbs = ""
-    @State private var fiber = ""
-    @State private var error: String?
+    @State private var entry: OffDraftEntry
+    @State private var errors: [String] = []
+
+    init(draft: OffDraft, onSaved: @escaping (FoodData) -> Void) {
+        self.onSaved = onSaved
+        _entry = State(initialValue: OffDraftEntry(draft: draft))
+    }
 
     var body: some View {
         Form {
             Section("From Open Food Facts") {
-                TextField("Name", text: $name)
-                TextField("Brand", text: $brand)
-                NumberField(label: "Carbs", text: $carbs, unit: "g/100g")
-                if draft.food.carbsPer100g == nil && parseNumber(carbs) == nil {
+                TextField("Name", text: $entry.name)
+                TextField("Brand", text: $entry.brand)
+                if let grams = entry.servingGrams {
+                    LabeledContent("Serving", value: "1 serving (\(NumberParsing.editText(grams, maxFractionDigits: 2)) g)")
+                    NumberField(label: "Carbs per serving", text: $entry.carbs, unit: "g")
+                    if let per100g = entry.per100gText { Text(per100g).font(.footnote).foregroundStyle(.secondary) }
+                } else {
+                    NumberField(label: "Carbs", text: $entry.carbs, unit: "g/100g")
+                }
+                if entry.carbsMissing {
                     Text("Carbs missing. Enter them from the label.").foregroundStyle(.orange)
                 }
-                NumberField(label: "Fiber", text: $fiber, unit: "g/100g")
-                if let serving = draft.servingSize { LabeledContent("Label serving", value: serving) }
-                ForEach(draft.portions, id: \.label) { portion in
-                    LabeledContent(portion.label, value: "\(formatNumber(portion.grams))g")
-                }
-                LabeledContent("Barcode", value: draft.barcode)
+                NumberField(label: "Fiber", text: $entry.fiber, unit: "g/100g")
+                if let serving = entry.draft.servingSize { LabeledContent("Label serving", value: serving) }
+                LabeledContent("Barcode", value: entry.draft.barcode)
             }
-            if let error { Text(error).foregroundStyle(.red) }
+            ForEach(errors, id: \.self) { Text($0).foregroundStyle(.red) }
             Button("Save food") { save() }
                 .buttonStyle(.borderedProminent)
-        }
-        .onAppear {
-            name = draft.food.name
-            brand = draft.food.brand ?? ""
-            carbs = NumberParsing.editText(draft.food.carbsPer100g, maxFractionDigits: 2)
-            fiber = NumberParsing.editText(draft.food.fiberPer100g, maxFractionDigits: 2)
         }
     }
 
     private func save() {
-        guard let carbsValue = parseNumber(carbs), carbsValue >= 0, carbsValue <= 100 else {
-            error = "Enter carbs per 100 g between 0 and 100."
-            return
-        }
-        if let fiberValue = parseNumber(fiber) {
-            guard fiberValue >= 0, fiberValue <= 100 else {
-                error = "Fiber must be between 0 and 100 g per 100 g."
-                return
+        switch entry.build(newId: { app.store.newId() }) {
+        case .failure(let failure):
+            errors = failure.messages
+        case .success(let records):
+            do {
+                try app.save([SyncChange.encode("food", records.food)]
+                    + records.portions.map { try SyncChange.encode("portion", $0) }
+                    + [SyncChange.encode("barcode", records.barcode)])
+                onSaved(records.food)
+            } catch {
+                errors = ["Could not save: \(error)"]
             }
-            guard fiberValue <= carbsValue else {
-                error = "Fiber can't be more than carbs."
-                return
-            }
-        } else if !fiber.trimmingCharacters(in: .whitespaces).isEmpty {
-            error = "Fiber isn't a valid number."
-            return
-        }
-        var confirmed = draft.food
-        confirmed.name = name.trimmingCharacters(in: .whitespaces)
-        confirmed.brand = brand.isEmpty ? nil : brand
-        confirmed.carbsPer100g = carbsValue
-        confirmed.fiberPer100g = parseNumber(fiber)
-        let records = recordsFromOffDraft(draft, confirmed: confirmed, newId: app.store.newId)
-        if let message = validateFood(records.food) {
-            error = message
-            return
-        }
-        do {
-            try app.save([SyncChange.encode("food", records.food)]
-                + records.portions.map { try SyncChange.encode("portion", $0) }
-                + [SyncChange.encode("barcode", records.barcode)])
-            onSaved(records.food)
-        } catch {
-            self.error = "Could not save: \(error)"
         }
     }
 }
