@@ -95,7 +95,7 @@ final class NumberParsingTests: XCTestCase {
         }
         XCTAssertEqual(NumberParsing.parseAmount("4/3"), 4.0 / 3.0)
         XCTAssertEqual(NumberParsing.parseAmount("3/2"), 1.5)
-        XCTAssertEqual(NumberParsing.parseAmount("12/16"), 12.0 / 16.0)
+        XCTAssertEqual(NumberParsing.parseAmount("12/16"), 0.75) // 2-digit numerator, but not greater than the denominator.
     }
 
     func testParseAmountRejectsNonFiniteResults() {
