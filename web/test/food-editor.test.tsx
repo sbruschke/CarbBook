@@ -510,12 +510,167 @@ describe('FoodEditor: keeps the carb basis the user did not edit', () => {
     expect(portions).toEqual([expect.objectContaining({ label: 'cup', kind: 'volume', quantity: 2 / 3, grams: 158, carbs_g: null })]);
   });
 
-  it('warns inline when a portion row would replace a differing saved carbs_per_100ml', async () => {
+  it('blocks saving when two volume portion rows imply different carbs per volume', async () => {
     services = makeServices();
+    const user = userEvent.setup();
+    renderEditor();
+    await user.type(screen.getByLabelText('Name'), 'Rice pudding');
+    await user.type(screen.getByLabelText('Carbs per 100 g'), '48');
+    await user.click(screen.getByRole('button', { name: 'Add portion' }));
+    await user.selectOptions(screen.getByLabelText('Portion 1 kind'), 'volume');
+    await user.selectOptions(screen.getByLabelText('Portion 1 label'), 'cup');
+    await user.clear(screen.getByLabelText('Portion 1 quantity'));
+    await user.type(screen.getByLabelText('Portion 1 quantity'), '2/3');
+    await user.type(screen.getByLabelText('Portion 1 carbs (g)'), '30');
+    await user.click(screen.getByRole('button', { name: 'Add portion' }));
+    await user.selectOptions(screen.getByLabelText('Portion 2 kind'), 'volume');
+    await user.selectOptions(screen.getByLabelText('Portion 2 label'), 'tbsp');
+    await user.type(screen.getByLabelText('Portion 2 carbs (g)'), '5');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('2/3 cup = 30 g and 1 tbsp = 5 g give different carbs per volume');
+    expect(await services.db.food.count()).toBe(0);
+  });
+
+  it('blocks saving when a portion row disagrees with the "From label" volume entry', async () => {
+    services = makeServices();
+    const user = userEvent.setup();
+    renderEditor();
+    await user.type(screen.getByLabelText('Name'), 'Rice pudding');
+    await user.click(screen.getByLabelText(/^From label/));
+    await user.selectOptions(screen.getByLabelText('Unit'), 'cup');
+    await user.type(screen.getByLabelText('Amount'), '1');
+    await user.type(screen.getByLabelText('Carbs (g)'), '48');
+    await user.click(screen.getByRole('button', { name: 'Add portion' }));
+    await user.selectOptions(screen.getByLabelText('Portion 1 kind'), 'volume');
+    await user.selectOptions(screen.getByLabelText('Portion 1 label'), 'tbsp');
+    await user.type(screen.getByLabelText('Portion 1 carbs (g)'), '5');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('1 cup = 48 g and 1 tbsp = 5 g give different carbs per volume');
+    expect(await services.db.food.count()).toBe(0);
+  });
+
+  it('allows saving when volume entries agree within 1%, preferring the "From label" value', async () => {
+    services = makeServices();
+    const user = userEvent.setup();
+    const done = renderEditor();
+    await user.type(screen.getByLabelText('Name'), 'Rice pudding');
+    await user.click(screen.getByLabelText(/^From label/));
+    await user.selectOptions(screen.getByLabelText('Unit'), 'cup');
+    await user.type(screen.getByLabelText('Amount'), '1');
+    await user.type(screen.getByLabelText('Carbs (g)'), '48');
+    await user.click(screen.getByRole('button', { name: 'Add portion' }));
+    await user.selectOptions(screen.getByLabelText('Portion 1 kind'), 'volume');
+    await user.selectOptions(screen.getByLabelText('Portion 1 label'), 'tbsp');
+    // 1 tbsp = 3 g carbs is exactly the same carbs-per-ml as 1 cup = 48 g (tbsp is 1/16 cup).
+    await user.type(screen.getByLabelText('Portion 1 carbs (g)'), '3');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(done).toHaveLength(1));
+    const food = await services.db.food.get(done[0]!);
+    expect(food!.carbs_per_100ml).toBeCloseTo(20.2884136211058, 6);
+  });
+
+  it('blocks saving when the implied carbs per 100 ml exceeds 150', async () => {
+    services = makeServices();
+    const user = userEvent.setup();
+    renderEditor();
+    await user.type(screen.getByLabelText('Name'), 'Concentrate');
+    await user.type(screen.getByLabelText('Carbs per 100 g'), '48');
+    await user.click(screen.getByRole('button', { name: 'Add portion' }));
+    await user.selectOptions(screen.getByLabelText('Portion 1 kind'), 'volume');
+    await user.selectOptions(screen.getByLabelText('Portion 1 label'), 'tsp');
+    await user.type(screen.getByLabelText('Portion 1 carbs (g)'), '10');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('Carbs per 100 ml must be a number from 0 to 150.');
+    expect(await services.db.food.count()).toBe(0);
+  });
+
+  it('blocks saving a carbs-only volume row with a zero quantity', async () => {
+    services = makeServices();
+    const user = userEvent.setup();
+    renderEditor();
+    await user.type(screen.getByLabelText('Name'), 'Rice pudding');
+    await user.type(screen.getByLabelText('Carbs per 100 g'), '48');
+    await user.click(screen.getByRole('button', { name: 'Add portion' }));
+    await user.selectOptions(screen.getByLabelText('Portion 1 kind'), 'volume');
+    await user.selectOptions(screen.getByLabelText('Portion 1 label'), 'cup');
+    await user.clear(screen.getByLabelText('Portion 1 quantity'));
+    await user.type(screen.getByLabelText('Portion 1 quantity'), '0');
+    await user.type(screen.getByLabelText('Portion 1 carbs (g)'), '30');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('Portion 1 needs a quantity above 0.');
+    expect(await services.db.food.count()).toBe(0);
+  });
+
+  it('editing a food with both saved per-100 g and per-100 ml keeps both unless explicitly removed', async () => {
+    services = makeServices();
+    const syrup = synced(foodData({ id: 'syrup', name: 'Syrup', carbs_per_100g: 82, carbs_per_100ml: 116 }));
+    await services.db.food.put(syrup);
+    const user = userEvent.setup();
+    const done = renderEditor({ existing: { food: syrup, portions: [] } });
+    expect(screen.getByTestId('kept-basis-ml')).toHaveTextContent('116 g carbs per 100 ml');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(done).toEqual(['syrup']));
+    expect(await services.db.food.get('syrup')).toMatchObject({ carbs_per_100g: 82, carbs_per_100ml: 116 });
+  });
+
+  it('the label Amount field accepts fractions (parseAmount, not parseNonNegative)', async () => {
+    services = makeServices();
+    const user = userEvent.setup();
+    const done = renderEditor();
+    await user.type(screen.getByLabelText('Name'), 'Concentrate sample');
+    await user.click(screen.getByLabelText(/^From label/));
+    await user.type(screen.getByLabelText('Amount'), '3/2');
+    await user.type(screen.getByLabelText('Carbs (g)'), '1');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(done).toHaveLength(1));
+    const food = await services.db.food.get(done[0]!);
+    expect(food!.carbs_per_100g).toBeCloseTo(66.67, 2);
+    const portions = await services.db.portion.toArray();
+    expect(portions).toEqual([expect.objectContaining({ label: 'label serving', kind: 'serving', quantity: 1, grams: 1.5 })]);
+  });
+
+  it('blocks saving when the "Weighs (g)" field is malformed instead of silently dropping the portion', async () => {
+    services = makeServices();
+    const user = userEvent.setup();
+    renderEditor();
+    await user.type(screen.getByLabelText('Name'), 'Rice pudding');
+    await user.click(screen.getByLabelText(/^From label/));
+    await user.selectOptions(screen.getByLabelText('Unit'), 'cup');
+    await user.type(screen.getByLabelText('Amount'), '1');
+    await user.type(screen.getByLabelText('Carbs (g)'), '20');
+    await user.type(screen.getByLabelText('Weighs (g)'), 'abc');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('Weight must be a number greater than 0.');
+    expect(await services.db.food.count()).toBe(0);
+  });
+
+  it('warns inline (and would block on save) when a portion row disagrees with the "From label" volume entry', async () => {
+    services = makeServices();
+    // Opening this food for edit pre-fills "From label" as 100 ml = 10 g (its existing basis).
     const food = synced(foodData({ id: 'rp', name: 'Rice pudding', carbs_per_100g: null, carbs_per_100ml: 10 }));
     await services.db.food.put(food);
     const user = userEvent.setup();
     renderEditor({ existing: { food, portions: [] } });
+    await user.click(screen.getByRole('button', { name: 'Add portion' }));
+    await user.selectOptions(screen.getByLabelText('Portion 1 kind'), 'volume');
+    await user.selectOptions(screen.getByLabelText('Portion 1 label'), 'cup');
+    await user.clear(screen.getByLabelText('Portion 1 quantity'));
+    await user.type(screen.getByLabelText('Portion 1 quantity'), '2/3');
+    await user.type(screen.getByLabelText('Portion 1 carbs (g)'), '30');
+    expect(await screen.findByTestId('portion-carbs-override-note')).toHaveTextContent(
+      '100 ml = 10 g and 2/3 cup = 30 g give different carbs per volume',
+    );
+  });
+
+  it('shows the plain "replaces the saved" note when a portion row disagrees only with the saved value, not the current label entry', async () => {
+    services = makeServices();
+    const food = synced(foodData({ id: 'rp2', name: 'Rice pudding 2', carbs_per_100g: null, carbs_per_100ml: 10 }));
+    await services.db.food.put(food);
+    const user = userEvent.setup();
+    renderEditor({ existing: { food, portions: [] } });
+    // Switch to "Per 100 g" so the "From label" volume fields are no longer an active entry.
+    await user.click(screen.getByLabelText('Per 100 g'));
+    await user.type(screen.getByLabelText('Carbs per 100 g'), '48');
     await user.click(screen.getByRole('button', { name: 'Add portion' }));
     await user.selectOptions(screen.getByLabelText('Portion 1 kind'), 'volume');
     await user.selectOptions(screen.getByLabelText('Portion 1 label'), 'cup');

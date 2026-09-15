@@ -123,7 +123,11 @@ const UNICODE_FRACTION_CHARS = Object.keys(UNICODE_FRACTIONS).join('');
  *  - a unicode vulgar fraction (½ ⅓ ⅔ ¼ ¾ ⅛) alone, or preceded by a whole number with or
  *    without a space ("1½", "1 ½").
  * Every value is exact (numerator / denominator, no rounding). Returns null for anything else,
- * including negative numbers, hex/exponent forms, and malformed fractions ("1/0", "1 1", "1//3").
+ * including negative numbers, hex/exponent forms, malformed fractions ("1/0", "1 1", "1//3"),
+ * non-finite results (an absurdly long digit string), and two ambiguous-typo shapes that are
+ * far more likely a mistyped mixed number than a deliberate improper fraction: a plain "n/d"
+ * whose numerator has 2+ digits and exceeds the denominator ("11/2", "13/4"; "4/3", "12/16"
+ * are still accepted), and a mixed "w n/d" whose fraction part is >= 1 ("1 3/2", "2 4/4").
  * Carbs grams, weights, ratios, BG and dose settings are NOT amounts: they keep `parseNonNegative`
  * (decimal + comma only, no fractions) since a fractional gram or ratio is never a legitimate entry.
  */
@@ -132,25 +136,45 @@ export function parseAmount(text: string): number | null {
   if (trimmed === '') return null;
 
   const commaDecimal = /^\d+,\d+$/.test(trimmed) ? trimmed.replace(',', '.') : trimmed;
-  if (/^(\d+\.\d+|\.\d+|\d+)$/.test(commaDecimal)) return Number(commaDecimal);
-
-  const asciiFraction = /^(\d+)\/(\d+)$/.exec(trimmed);
-  if (asciiFraction) {
-    const [, num, den] = asciiFraction.map(Number) as [number, number, number];
-    return den === 0 ? null : num / den;
+  if (/^(\d+\.\d+|\.\d+|\d+)$/.test(commaDecimal)) {
+    const value = Number(commaDecimal);
+    return Number.isFinite(value) ? value : null;
   }
 
+  // Plain "n/d": with 2+ numerator digits and numerator > denominator, this is very likely a
+  // mistyped mixed number ("11/2" meant "1 1/2") rather than a genuine, deliberately-typed
+  // improper fraction — reject it rather than silently returning 3.7x the intended value.
+  const asciiFraction = /^(\d+)\/(\d+)$/.exec(trimmed);
+  if (asciiFraction) {
+    const [, numText, denText] = asciiFraction as unknown as [string, string, string];
+    const num = Number(numText);
+    const den = Number(denText);
+    if (den === 0) return null;
+    if (numText.length >= 2 && num > den) return null;
+    const value = num / den;
+    return Number.isFinite(value) ? value : null;
+  }
+
+  // Mixed "w n/d": a fraction part >= 1 ("1 3/2", "2 4/4") is malformed — never write it as
+  // meaning "whole + fraction >= next whole", so reject rather than guess.
   const asciiMixed = /^(\d+) (\d+)\/(\d+)$/.exec(trimmed);
   if (asciiMixed) {
-    const [, whole, num, den] = asciiMixed.map(Number) as [number, number, number, number];
-    return den === 0 ? null : whole + num / den;
+    const [, wholeText, numText, denText] = asciiMixed as unknown as [string, string, string, string];
+    const whole = Number(wholeText);
+    const num = Number(numText);
+    const den = Number(denText);
+    if (den === 0) return null;
+    if (num / den >= 1) return null;
+    const value = whole + num / den;
+    return Number.isFinite(value) ? value : null;
   }
 
   const unicodeFraction = new RegExp(`^(\\d+)?[ ]?([${UNICODE_FRACTION_CHARS}])$`).exec(trimmed);
   if (unicodeFraction) {
     const whole = unicodeFraction[1] === undefined ? 0 : Number(unicodeFraction[1]);
     const [num, den] = UNICODE_FRACTIONS[unicodeFraction[2]!]!;
-    return whole + num / den;
+    const value = whole + num / den;
+    return Number.isFinite(value) ? value : null;
   }
 
   return null;

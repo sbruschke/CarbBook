@@ -60,12 +60,36 @@ function initialLabelFields(
   return { mode: 'per100', ...blank };
 }
 
+/** A single volume-basis reading: a "From label" volume entry, or a Portions-section volume row with carbs. */
+interface VolumeCarbsEntry {
+  /** e.g. "2/3 cup = 30 g", for naming conflicts to the user. */
+  name: string;
+  /** Implied carbs per 100 ml. */
+  value: number;
+}
+
+/** The "From label" entry, when it is a volume unit with a valid amount and carbs. */
+function labelVolumeEntry(params: { unit: LabelUnit; amountText: string; carbsText: string }): VolumeCarbsEntry | null {
+  const { unit, amountText, carbsText } = params;
+  if (!VOLUME_LABELS.includes(unit)) return null;
+  const amount = parseAmount(amountText);
+  const carbs = parseNonNegative(carbsText);
+  if (amount === null || !(amount > 0) || carbs === null) return null;
+  const value = (carbs / (amount * VOLUME_UNITS[unit as VolumeUnit])) * 100;
+  return { name: `${amountText.trim()} ${unit} = ${carbsText.trim()} g`, value };
+}
+
 /**
- * A volume portion row with carbs entered (with or without weight) also fixes the food's
- * carbs_per_100ml, the same math as the "From label" volume entry: carbs / (quantity * unit ml) * 100.
- * The first such row wins; a carbs-only row (no weight) sets this without creating a portion row.
+ * Every volume-basis reading in play: the "From label" volume entry (if any) plus every
+ * Portions-section volume row with carbs entered (with or without weight) — each implies the
+ * food's carbs_per_100ml, the same math as the "From label" volume entry:
+ * carbs / (quantity * unit ml) * 100. A carbs-only row (no weight) sets this without creating a
+ * portion row. When two readings disagree by more than 1%, saving is blocked rather than
+ * silently picking one — a wrong carbs-per-volume basis is a wrong insulin dose. When they all
+ * agree, the "From label" entry wins if present, else the first Portions-section row.
  */
-function volumeCarbsOverride(rows: PortionDraft[]): { value: number; unit: VolumeUnit } | { error: string } | null {
+function resolveVolumeCarbs(rows: PortionDraft[], label: VolumeCarbsEntry | null): { value: number } | { error: string } | null {
+  const entries: VolumeCarbsEntry[] = label ? [label] : [];
   for (const p of rows) {
     if (p.kind !== 'volume' || p.carbsG.trim() === '') continue;
     if (!VOLUME_LABELS.includes(p.label)) continue;
@@ -74,10 +98,20 @@ function volumeCarbsOverride(rows: PortionDraft[]): { value: number; unit: Volum
     const quantity = parseAmount(p.quantity);
     if (carbs === null || quantity === null || !(quantity > 0)) continue;
     const value = (carbs / (quantity * VOLUME_UNITS[unit])) * 100;
-    if (!isValidCarbsPer100ml(value)) return { error: `Carbs per 100 ml must be a number from 0 to ${MAX_CARBS_PER_100ML}.` };
-    return { value, unit };
+    entries.push({ name: `${p.quantity.trim()} ${unit} = ${p.carbsG.trim()} g`, value });
   }
-  return null;
+  if (entries.length === 0) return null;
+  for (let i = 0; i < entries.length; i++) {
+    for (let j = i + 1; j < entries.length; j++) {
+      const a = entries[i]!;
+      const b = entries[j]!;
+      const diff = Math.abs(a.value - b.value) / Math.max(Math.abs(a.value), Math.abs(b.value), 1e-9);
+      if (diff > 0.01) return { error: `${a.name} and ${b.name} give different carbs per volume.` };
+    }
+  }
+  const value = entries[0]!.value;
+  if (!isValidCarbsPer100ml(value)) return { error: `Carbs per 100 ml must be a number from 0 to ${MAX_CARBS_PER_100ML}.` };
+  return { value };
 }
 
 /** Adds a portion, or updates the one that matches (a re-entered label updates its basis rather than duplicating it). */
@@ -166,15 +200,23 @@ export function FoodEditor(props: {
   const keptG = !editsG && !removedBases.g ? (base?.carbs_per_100g ?? null) : null;
   const keptMl = !editsMl && !removedBases.ml ? (base?.carbs_per_100ml ?? null) : null;
 
-  // Inline warning (before save) when a portion row's carbs would replace a different saved carbs_per_100ml.
-  const portionsOverridePreview = volumeCarbsOverride(portions);
+  // The "From label" entry, when it names a volume unit — folded into the same conflict check as
+  // the Portions-section volume rows (spec: label + rows must agree within 1%, or saving is blocked).
+  const activeLabelVolumeEntry =
+    carbsMode === 'label' ? labelVolumeEntry({ unit: labelUnit, amountText: labelAmountText, carbsText: labelCarbsText }) : null;
+
+  // Inline warning (before save): a conflict between volume readings (surfaced early, in the
+  // same words save() will block with), or — absent a conflict — that a portion row would
+  // replace a different saved carbs_per_100ml.
+  const portionsOverridePreview = resolveVolumeCarbs(portions, activeLabelVolumeEntry);
   const overrideNote =
-    portionsOverridePreview &&
-    !('error' in portionsOverridePreview) &&
-    base?.carbs_per_100ml != null &&
-    Math.abs(base.carbs_per_100ml - portionsOverridePreview.value) / Math.max(Math.abs(base.carbs_per_100ml), 1e-9) > 0.01
-      ? 'This replaces the saved carbs per cup/ml.'
-      : null;
+    portionsOverridePreview && 'error' in portionsOverridePreview
+      ? portionsOverridePreview.error
+      : portionsOverridePreview &&
+          base?.carbs_per_100ml != null &&
+          Math.abs(base.carbs_per_100ml - portionsOverridePreview.value) / Math.max(Math.abs(base.carbs_per_100ml), 1e-9) > 0.01
+        ? 'This replaces the saved carbs per cup/ml.'
+        : null;
 
   const updatePortion = (key: string, patch: Partial<PortionDraft>) =>
     setPortions((rows) => rows.map((row) => (row.key === key ? { ...row, ...patch } : row)));
@@ -202,19 +244,24 @@ export function FoodEditor(props: {
         if (labelEntry.portion) rows = mergePortion(rows, labelEntry.portion);
       }
       if (labelUnit === 'g') {
-        const amount = parseNonNegative(labelAmountText);
+        const amount = parseAmount(labelAmountText);
         if (amount !== null && amount > 0) {
           rows = mergePortion(rows, { label: LABEL_SERVING, kind: 'serving', quantity: 1, grams: amount, carbs_g: null });
         }
+      }
+      // A malformed (non-empty, unparseable) "Weighs (g)" entry must not silently drop the portion.
+      if (labelUnit !== 'g' && labelWeightText.trim() !== '' && !(labelWeight !== null && labelWeight > 0)) {
+        problems.push('Weight must be a number greater than 0.');
       }
     }
 
     if (!editsG) carbsPer100g = keptG;
     if (!editsMl) carbsPer100ml = keptMl;
 
-    // A volume portion row with carbs entered fixes carbs_per_100ml from the label,
-    // taking precedence over the "From label" section and any previously saved value.
-    const portionsOverride = volumeCarbsOverride(rows);
+    // A volume portion row with carbs entered fixes carbs_per_100ml from the label, and must agree
+    // with the "From label" volume entry and every other such row — taking precedence over any
+    // previously saved value once they do.
+    const portionsOverride = resolveVolumeCarbs(rows, activeLabelVolumeEntry);
     if (portionsOverride) {
       if ('error' in portionsOverride) problems.push(portionsOverride.error);
       else carbsPer100ml = portionsOverride.value;
