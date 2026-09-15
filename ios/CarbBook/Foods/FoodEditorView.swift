@@ -70,6 +70,10 @@ struct FoodEditorView: View {
                 if form.carbsText.trimmingCharacters(in: .whitespaces).isEmpty {
                     Text("Carbs missing: enter them from the label").font(.footnote).foregroundStyle(.orange)
                 }
+                ForEach(Array(form.servingCarbsNotes.enumerated()), id: \.offset) { Text($0.element).font(.footnote).foregroundStyle(.secondary) }
+                if let conflict = form.servingCarbsConflict {
+                    Text(conflict).font(.footnote).foregroundStyle(.orange)
+                }
             case .label:
                 NumberField(label: "Amount", text: $form.labelAmount, allowsFraction: true)
                 Picker("Unit", selection: $form.labelUnit) {

@@ -20,6 +20,14 @@ const NOODLE_DRAFT: FoodDraft = {
   serving_size: '1 pouch (52 g)',
 };
 
+/** Open Food Facts 0016000358447 as fetched 2026-09-15: 24 g carbs per 35 g serving. */
+const BAR_DRAFT: FoodDraft = {
+  food: { name: 'Chewy Trail Mix Bar', brand: 'Nature Valley', source: 'off', source_ref: '0016000358447', carbs_per_100g: 68.5714285714286, fiber_per_100g: 5.71428571428571 },
+  portions: [{ label: 'label serving', kind: 'serving', quantity: 1, grams: 35 }],
+  barcode: '0016000358447',
+  serving_size: '35g',
+};
+
 function renderEditor(props: { existing?: Parameters<typeof FoodEditor>[0]['existing']; prefill?: FoodPrefill } = {}) {
   const done: (string | null)[] = [];
   renderWith(<FoodEditor {...props} onDone={(id) => done.push(id)} />, services);
@@ -34,7 +42,7 @@ describe('label helpers', () => {
     expect(carbsPer100gFromLabel(null, 5)).toBeNull();
   });
 
-  it('turns an Open Food Facts draft into editor prefill', () => {
+  it('turns an Open Food Facts draft with a serving weight into per-serving label prefill', () => {
     expect(prefillFromDraft(NOODLE_DRAFT)).toEqual({
       name: 'Noodle kit',
       brand: 'Thai Kitchen',
@@ -42,10 +50,19 @@ describe('label helpers', () => {
       fiber_per_100g: null,
       source: 'off',
       source_ref: '0737628064502',
-      portions: NOODLE_DRAFT.portions,
+      portions: [],
       barcode: '0737628064502',
       note: 'From Open Food Facts. Check against the label: serving size "1 pouch (52 g)".',
+      label: { unit: 'other', name: 'serving', amount: '1', carbs: '', weight: '52' },
     });
+    expect(prefillFromDraft(BAR_DRAFT).label).toEqual({ unit: 'other', name: 'serving', amount: '1', carbs: '24', weight: '35' });
+  });
+
+  it('keeps per 100 g prefill for a draft without a serving weight', () => {
+    const draft: FoodDraft = { ...BAR_DRAFT, portions: [], serving_size: null };
+    const prefill = prefillFromDraft(draft);
+    expect(prefill.label).toBeUndefined();
+    expect(prefill.carbs_per_100g).toBe(68.5714285714286);
   });
 });
 
@@ -174,7 +191,7 @@ describe('FoodEditor', () => {
     expect(screen.queryByRole('button', { name: /Delete food/ })).toBeNull();
   });
 
-  it('blocks saving an Open Food Facts draft until missing carbs are typed', async () => {
+  it('blocks saving an Open Food Facts draft until missing carbs per serving are typed', async () => {
     services = makeServices();
     const user = userEvent.setup();
     const done = renderEditor({ prefill: prefillFromDraft(NOODLE_DRAFT) });
@@ -182,15 +199,118 @@ describe('FoodEditor', () => {
     expect(screen.getByText(/serving size "1 pouch \(52 g\)"/)).toBeInTheDocument();
     expect(screen.getByTestId('carbs-missing')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Save' }));
-    expect(screen.getByRole('alert')).toHaveTextContent('Carbs are missing');
+    expect(screen.getByRole('alert')).toHaveTextContent('Enter the carbs from the label.');
     expect(done).toEqual([]);
 
-    await user.type(screen.getByLabelText('Carbs per 100 g'), '71.15');
+    await user.type(screen.getByLabelText('Carbs (g)'), '37');
     await user.click(screen.getByRole('button', { name: 'Save' }));
     await waitFor(() => expect(done).toHaveLength(1));
     expect(await services.db.food.get(done[0]!)).toMatchObject({ source: 'off', source_ref: '0737628064502', brand: 'Thai Kitchen', carbs_per_100g: 71.15 });
     expect(await services.db.barcode.toArray()).toEqual([expect.objectContaining({ code: '0737628064502', food_id: done[0] })]);
-    expect(await services.db.portion.toArray()).toEqual([expect.objectContaining({ label: 'label serving', grams: 52 })]);
+    expect(await services.db.portion.toArray()).toEqual([
+      expect.objectContaining({ label: 'serving', kind: 'serving', quantity: 1, grams: 52, carbs_g: 37 }),
+    ]);
+  });
+
+  it('a scanned bar opens as 1 serving (35 g) = 24 g carbs; logging 1 serving gives 24 g and 35 g gives 24 g', async () => {
+    services = makeServices();
+    const user = userEvent.setup();
+    const done = renderEditor({ prefill: prefillFromDraft(BAR_DRAFT) });
+    expect(screen.getByLabelText(/^From label/)).toBeChecked();
+    expect(screen.getByLabelText('Amount')).toHaveValue('1');
+    expect(screen.getByLabelText('Unit')).toHaveValue('other');
+    expect(screen.getByLabelText('Portion name')).toHaveValue('serving');
+    expect(screen.getByLabelText('Carbs (g)')).toHaveValue('24');
+    expect(screen.getByLabelText('Weighs (g)')).toHaveValue('35');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(done).toHaveLength(1));
+    const food = (await services.db.food.get(done[0]!))!;
+    expect(food).toMatchObject({ carbs_per_100g: 68.57, fiber_per_100g: 5.71428571428571 });
+    const portions = await services.db.portion.toArray();
+    expect(portions).toEqual([expect.objectContaining({ label: 'serving', kind: 'serving', quantity: 1, grams: 35, carbs_g: 24 })]);
+    const catalog = createCatalog({ foods: [food], portions });
+    expect(itemCarbs(catalog, 'food', food.id, 1, `p:${portions[0]!.id}`)).toMatchObject({ complete: true, carbs_g: 24 });
+    expect(itemCarbs(catalog, 'food', food.id, 35, 'g').carbs_g).toBeCloseTo(24, 2);
+  });
+
+  it('shows a per 100 g entry per serving for weighed portions without their own carbs', async () => {
+    services = makeServices();
+    const bar = synced(foodData({ id: 'bar', name: 'Bar', carbs_per_100g: 68.57 }));
+    const serving = synced(portionData({ id: 'srv', food_id: 'bar', label: 'label serving', kind: 'serving', quantity: 1, grams: 35 }));
+    const cup = synced(portionData({ id: 'cup', food_id: 'bar', label: 'cup', kind: 'volume', quantity: 1, grams: 120 }));
+    const piece = synced(portionData({ id: 'pc', food_id: 'bar', label: 'piece', kind: 'count', quantity: 1, grams: 10, carbs_g: 6.86 }));
+    const user = userEvent.setup();
+    renderEditor({ existing: { food: bar, portions: [serving, cup, piece] } });
+    expect(screen.getByLabelText('Carbs per 100 g')).toHaveValue('68.57');
+    const notes = () => screen.getAllByTestId('serving-carbs').map((n) => n.textContent);
+    expect(notes()).toEqual(['= 24 g carbs per label serving (35 g)', '= 6.86 g carbs per piece (10 g)']);
+    expect(screen.queryByTestId('serving-carbs-conflict')).toBeNull();
+    await user.clear(screen.getByLabelText('Carbs per 100 g'));
+    await user.type(screen.getByLabelText('Carbs per 100 g'), '50');
+    expect(notes()).toEqual(['= 17.5 g carbs per label serving (35 g)', '= 6.86 g carbs per piece (10 g)']);
+    expect(screen.getByTestId('serving-carbs-conflict')).toHaveTextContent('piece (10 g) has 6.86 g carbs, but 50 g per 100 g gives 5 g. Fix one so they match.');
+    await user.clear(screen.getByLabelText('Carbs per 100 g'));
+    await user.type(screen.getByLabelText('Carbs per 100 g'), '150');
+    expect(screen.queryByTestId('serving-carbs')).toBeNull();
+  });
+
+  it('a piece label with a weight is checked against other weighed rows with their own carbs', async () => {
+    services = makeServices();
+    const user = userEvent.setup();
+    const done = renderEditor();
+    await user.type(screen.getByLabelText('Name'), 'Bars');
+    await user.click(screen.getByLabelText(/^From label/));
+    await user.type(screen.getByLabelText('Amount'), '1');
+    await user.selectOptions(screen.getByLabelText('Unit'), 'other');
+    await user.type(screen.getByLabelText('Portion name'), 'bar');
+    await user.type(screen.getByLabelText('Carbs (g)'), '24');
+    await user.type(screen.getByLabelText('Weighs (g)'), '35');
+    await user.click(screen.getByRole('button', { name: 'Add portion' }));
+    await user.type(screen.getByLabelText('Portion 1 label'), 'slice');
+    await user.type(screen.getByLabelText('Portion 1 grams'), '30');
+    await user.type(screen.getByLabelText('Portion 1 carbs (g)'), '20');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('slice (30 g) has 20 g carbs, but 68.57 g per 100 g gives 20.57 g.');
+    expect(done).toEqual([]);
+  });
+
+  it('a very heavy, very low-carb piece label is not blocked by per 100 g rounding (1500 g bag = 1 g carbs)', async () => {
+    services = makeServices();
+    const user = userEvent.setup();
+    const done = renderEditor();
+    await user.type(screen.getByLabelText('Name'), 'Greens');
+    await user.click(screen.getByLabelText(/^From label/));
+    await user.type(screen.getByLabelText('Amount'), '1');
+    await user.selectOptions(screen.getByLabelText('Unit'), 'other');
+    await user.type(screen.getByLabelText('Portion name'), 'bag');
+    await user.type(screen.getByLabelText('Carbs (g)'), '1');
+    await user.type(screen.getByLabelText('Weighs (g)'), '1500');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(done).toHaveLength(1));
+    expect(await services.db.food.get(done[0]!)).toMatchObject({ carbs_per_100g: 0.07 });
+  });
+
+  it('blocks saving when per 100 g no longer matches a scanned serving\'s own carbs (1 serving and 35 g would log differently)', async () => {
+    services = makeServices();
+    const bar = synced(foodData({ id: 'bar', name: 'Bar', source: 'off', carbs_per_100g: 68.57 }));
+    const serving = synced(portionData({ id: 'srv', food_id: 'bar', label: 'serving', kind: 'serving', quantity: 1, grams: 35, carbs_g: 24 }));
+    await services.db.food.put(bar);
+    await services.db.portion.put(serving);
+    const user = userEvent.setup();
+    const done = renderEditor({ existing: { food: bar, portions: [serving] } });
+    await user.clear(screen.getByLabelText('Carbs per 100 g'));
+    await user.type(screen.getByLabelText('Carbs per 100 g'), '85.71');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('serving (35 g) has 24 g carbs, but 85.71 g per 100 g gives 30 g. Fix one so they match.');
+    expect(done).toEqual([]);
+    expect((await services.db.food.get('bar'))!.carbs_per_100g).toBe(68.57);
+
+    await user.clear(screen.getByLabelText('Portion 1 carbs (g)'));
+    await user.type(screen.getByLabelText('Portion 1 carbs (g)'), '30');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(done).toEqual(['bar']));
+    expect(await services.db.portion.get('srv')).toMatchObject({ carbs_g: 30, grams: 35 });
   });
 });
 

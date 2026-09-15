@@ -2,6 +2,7 @@ import {
   isValidCarbsPer100g,
   isValidCarbsPer100ml,
   isValidPortionCarbs,
+  isValidPortionGrams,
   isVolumeUnit,
   MAX_CARBS_PER_100ML,
   MAX_PORTION_CARBS_G,
@@ -19,6 +20,12 @@ const trim2 = (n: number) => String(Number(n.toFixed(2)));
 export function carbsPer100gFromLabel(servingGrams: number | null, carbsPerServing: number | null): number | null {
   if (servingGrams === null || carbsPerServing === null || !(servingGrams > 0) || !(carbsPerServing >= 0)) return null;
   return Number(((carbsPerServing / servingGrams) * 100).toFixed(2));
+}
+
+/** Carbs per 100 g → carbs in a serving of `grams`, 2 decimals (null when either value is unusable). */
+export function servingCarbs(carbsPer100g: number | null, grams: number | null): number | null {
+  if (!isValidCarbsPer100g(carbsPer100g) || grams === null || !(grams > 0)) return null;
+  return Number(((carbsPer100g * grams) / 100).toFixed(2));
 }
 
 /** Unit offered by the "amount + unit = N g carbs" label entry (any-unit foods addendum). */
@@ -102,10 +109,20 @@ export interface FoodPrefill {
   portions?: { label: string; kind: PortionKind; quantity: number; grams: number }[];
   barcode?: string | null;
   note?: string | null;
+  /** Opens the editor in "From label" mode with these fields (a new food only). */
+  label?: { unit: LabelUnit; amount: string; carbs: string; weight: string; name: string };
 }
 
+/** Portion name used when a scanned draft is entered per serving. */
+export const DRAFT_SERVING_LABEL = 'serving';
+
+/**
+ * A scanned draft with a serving weight opens as "1 serving (N g) contains X g carbs", the number on
+ * the package, rather than carbs per 100 g. Saving creates the serving portion (grams + carbs_g) and
+ * carbs_per_100g from it, so OFF's weight-only serving portion is not carried over separately.
+ */
 export function prefillFromDraft(draft: FoodDraft): FoodPrefill {
-  return {
+  const prefill: FoodPrefill = {
     name: draft.food.name,
     brand: draft.food.brand,
     carbs_per_100g: draft.food.carbs_per_100g,
@@ -118,14 +135,38 @@ export function prefillFromDraft(draft: FoodDraft): FoodPrefill {
       ? `From Open Food Facts. Check against the label: serving size "${draft.serving_size}".`
       : 'From Open Food Facts. Check the values against the label.',
   };
+  const serving = draft.portions.find((p) => p.grams > 0);
+  if (!serving) return prefill;
+  const carbs = servingCarbs(draft.food.carbs_per_100g, serving.grams);
+  return {
+    ...prefill,
+    portions: draft.portions.filter((p) => p !== serving),
+    label: { unit: 'other', name: DRAFT_SERVING_LABEL, amount: '1', carbs: carbs === null ? '' : String(carbs), weight: String(serving.grams) },
+  };
 }
 
 /**
- * The carb basis as the user entered it (any-unit foods addendum): "48 g carbs per cup" rather
- * than always "per 100 g". Null when the food has no valid carb basis at all.
+ * The carb basis per serving where the food has one (any-unit foods addendum): "24 g carbs per bar",
+ * "24 g carbs per label serving (35 g)", "48 g carbs per cup", and only then "per 100 g". Null when
+ * the food has no valid carb basis at all.
  */
 export function foodBasisSummary(food: FoodData, portions: PortionData[]): string | null {
-  if (isValidCarbsPer100g(food.carbs_per_100g)) return `${trim2(food.carbs_per_100g)} g carbs per 100 g`;
+  // Lowest id first, so web and iOS pick the same portion whatever order rows were loaded in.
+  const byId = [...portions].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  const piece = byId.find((p) => p.kind !== 'volume' && isValidPortionCarbs(p.carbs_g));
+  if (piece) {
+    const qty = piece.quantity === 1 ? '' : `${trim2(piece.quantity)} `;
+    return `${trim2(piece.carbs_g!)} g carbs per ${qty}${piece.label}`;
+  }
+  if (isValidCarbsPer100g(food.carbs_per_100g)) {
+    // A row with (invalid) carbs of its own is not logged from per 100 g, so it isn't a derived serving.
+    const serving = byId.find((p) => p.kind !== 'volume' && p.carbs_g == null && isValidPortionGrams(p.grams));
+    if (serving) {
+      const qty = serving.quantity === 1 ? '' : `${trim2(serving.quantity)} `;
+      return `${trim2((food.carbs_per_100g * serving.grams!) / 100)} g carbs per ${qty}${serving.label} (${trim2(serving.grams!)} g)`;
+    }
+    return `${trim2(food.carbs_per_100g)} g carbs per 100 g`;
+  }
   if (isValidCarbsPer100ml(food.carbs_per_100ml)) {
     // Prefer the volume portion the user weighed (its unit and amount are what they typed).
     const vp = portions.find((p) => p.kind === 'volume' && isVolumeUnit(p.label) && p.grams != null);
@@ -136,11 +177,6 @@ export function foodBasisSummary(food: FoodData, portions: PortionData[]): strin
     }
     const perCup = (food.carbs_per_100ml * VOLUME_UNITS.cup) / 100;
     return `${trim2(perCup)} g carbs per cup`;
-  }
-  const piece = portions.find((p) => p.kind !== 'volume' && isValidPortionCarbs(p.carbs_g));
-  if (piece) {
-    const qty = piece.quantity === 1 ? '' : `${trim2(piece.quantity)} `;
-    return `${trim2(piece.carbs_g!)} g carbs per ${qty}${piece.label}`;
   }
   return null;
 }

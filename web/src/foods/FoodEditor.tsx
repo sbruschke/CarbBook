@@ -16,7 +16,7 @@ import { useServices } from '../app/services';
 import type { Change } from '../db/store';
 import { uuidv7 } from '../lib/ids';
 import { parseAmount, parseNonNegative, unitLabel } from '../ui/format';
-import { labelBasisFromEntry, type FoodPrefill, type LabelPortionPatch, type LabelUnit } from './label';
+import { labelBasisFromEntry, servingCarbs, type FoodPrefill, type LabelPortionPatch, type LabelUnit } from './label';
 
 interface PortionDraft {
   key: string;
@@ -40,9 +40,11 @@ const labelUnitName = (unit: LabelUnit) => (unit === 'other' ? 'piece / serving'
 function initialLabelFields(
   food: Synced<FoodData> | undefined,
   portions: Synced<PortionData>[],
+  prefillLabel: FoodPrefill['label'],
 ): { mode: 'per100' | 'label'; unit: LabelUnit; amount: string; carbs: string; weight: string; name: string } {
   const blank = { unit: 'g' as LabelUnit, amount: '', carbs: '', weight: '', name: '' };
-  if (!food || food.carbs_per_100g != null) return { mode: 'per100', ...blank };
+  if (!food) return prefillLabel ? { mode: 'label', ...prefillLabel } : { mode: 'per100', ...blank };
+  if (food.carbs_per_100g != null) return { mode: 'per100', ...blank };
   if (food.carbs_per_100ml != null) {
     return { mode: 'label', unit: 'ml', amount: '100', carbs: String(food.carbs_per_100ml), weight: '', name: '' };
   }
@@ -114,6 +116,31 @@ function resolveVolumeCarbs(rows: PortionDraft[], label: VolumeCarbsEntry | null
   return { value };
 }
 
+const trim2 = (n: number) => String(Number(n.toFixed(2)));
+
+/**
+ * A weighed piece/serving row with its own carbs must agree with carbs per 100 g (within 1%, 0.05 g,
+ * and the 2-decimal per-100 g rounding): core logs that unit from the row's carbs and grams from per 100 g, so a mismatch means
+ * "1 bar" and "35 g" silently give different carbs (e.g. after editing per 100 g only).
+ */
+function servingCarbsConflict(rows: PortionDraft[], carbsPer100g: number | null): string | null {
+  if (carbsPer100g === null || !(carbsPer100g >= 0 && carbsPer100g <= 100)) return null;
+  for (const p of rows) {
+    if (p.kind === 'volume' || p.grams.trim() === '' || p.carbsG.trim() === '') continue;
+    const grams = parseNonNegative(p.grams);
+    const carbs = parseNonNegative(p.carbsG);
+    if (grams === null || !(grams > 0) || carbs === null) continue;
+    const implied = (carbsPer100g * grams) / 100;
+    const diff = Math.abs(implied - carbs);
+    // Label entry stores per 100 g to 2 decimals (±0.005), worth up to grams × 0.00005 g here.
+    const roundingSlack = grams * 0.00005 + 1e-9;
+    if (diff > 0.05 && diff > roundingSlack && diff / Math.max(implied, carbs, 1e-9) > 0.01) {
+      return `${p.label.trim() || 'A portion'} (${trim2(grams)} g) has ${trim2(carbs)} g carbs, but ${trim2(carbsPer100g)} g per 100 g gives ${trim2(implied)} g. Fix one so they match.`;
+    }
+  }
+  return null;
+}
+
 /** Adds a portion, or updates the one that matches (a re-entered label updates its basis rather than duplicating it). */
 function mergePortion(rows: PortionDraft[], patch: LabelPortionPatch): PortionDraft[] {
   const matchIndex = rows.findIndex((p) =>
@@ -144,7 +171,7 @@ export function FoodEditor(props: {
   const base = props.existing?.food;
   const prefill = props.prefill ?? {};
   const isUsda = base?.source === 'usda';
-  const initialLabel = initialLabelFields(base, props.existing?.portions ?? []);
+  const initialLabel = initialLabelFields(base, props.existing?.portions ?? [], prefill.label);
 
   const [name, setName] = useState(base?.name ?? prefill.name ?? '');
   const [brand, setBrand] = useState(base?.brand ?? prefill.brand ?? '');
@@ -218,6 +245,23 @@ export function FoodEditor(props: {
         ? 'This replaces the saved carbs per cup/ml.'
         : null;
 
+  // Per 100 g entry shown per serving: each piece/serving row, with its own carbs when it has them
+  // (core uses those for that unit), else carbs per 100 g × its weight.
+  const typedPer100g = carbsText.trim() === '' ? null : parseNonNegative(carbsText);
+  const per100Shown = carbsMode === 'per100' && typedPer100g !== null && typedPer100g <= 100;
+  const servingCarbsNotes = per100Shown
+    ? portions.flatMap((p) => {
+        if (p.kind === 'volume' || !p.label.trim()) return [];
+        const grams = parseNonNegative(p.grams);
+        const weight = grams !== null && grams > 0 ? ` (${trim2(grams)} g)` : '';
+        const carbs = p.carbsG.trim() === '' ? servingCarbs(typedPer100g, grams) : parseNonNegative(p.carbsG);
+        if (carbs === null) return [];
+        const qty = parseAmount(p.quantity) === 1 ? '' : `${p.quantity.trim()} `;
+        return [`= ${trim2(carbs)} g carbs per ${qty}${p.label.trim()}${weight}`];
+      })
+    : [];
+  const servingConflictNote = per100Shown ? servingCarbsConflict(portions, typedPer100g) : null;
+
   const updatePortion = (key: string, patch: Partial<PortionDraft>) =>
     setPortions((rows) => rows.map((row) => (row.key === key ? { ...row, ...patch } : row)));
 
@@ -257,6 +301,8 @@ export function FoodEditor(props: {
 
     if (!editsG) carbsPer100g = keptG;
     if (!editsMl) carbsPer100ml = keptMl;
+    const servingConflict = servingCarbsConflict(rows, carbsPer100g);
+    if (servingConflict) problems.push(servingConflict);
 
     // A volume portion row with carbs entered fixes carbs_per_100ml from the label, and must agree
     // with the "From label" volume entry and every other such row — taking precedence over any
@@ -398,6 +444,16 @@ export function FoodEditor(props: {
                 Carbs missing: enter them from the label
               </p>
             )}
+            {servingCarbsNotes.map((note, i) => (
+              <p className="note" data-testid="serving-carbs" key={i}>
+                {note}
+              </p>
+            ))}
+            {servingConflictNote && (
+              <p className="flag" data-testid="serving-carbs-conflict">
+                {servingConflictNote}
+              </p>
+            )}
           </>
         ) : (
           <>
@@ -426,6 +482,11 @@ export function FoodEditor(props: {
               Carbs (g)
               <input inputMode="decimal" value={labelCarbsText} onChange={(e) => setLabelCarbsText(e.target.value)} />
             </label>
+            {labelCarbsText.trim() === '' && labelAmountText.trim() !== '' && (
+              <p className="flag" data-testid="carbs-missing">
+                Carbs missing: enter them from the label
+              </p>
+            )}
             {labelUnit !== 'g' && (
               <label>
                 Weighs (g)

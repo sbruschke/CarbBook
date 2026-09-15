@@ -69,6 +69,29 @@ final class FoodLabelTests: XCTestCase {
         XCTAssertNil(FoodLabel.basisSummary(FoodData(id: "f", name: "x", carbsPer100g: 250), []), "invalid basis is not shown as valid")
     }
 
+    func testBasisSummaryPrefersServings() {
+        // Nature Valley bar: 68.57 g/100 g with a 35 g label serving.
+        let bar = FoodData(id: "f", name: "Bar", carbsPer100g: 68.57)
+        let serving = PortionData(id: "s", foodId: "f", label: "label serving", kind: "serving", quantity: 1, grams: 35)
+        XCTAssertEqual(FoodLabel.basisSummary(bar, [serving]), "24 g carbs per label serving (35 g)")
+        let piece = PortionData(id: "p", foodId: "f", label: "bar", kind: "count", quantity: 1, grams: 35, carbsG: 24)
+        XCTAssertEqual(FoodLabel.basisSummary(bar, [serving, piece]), "24 g carbs per bar")
+        let cup = PortionData(id: "c", foodId: "f", label: "cup", kind: "volume", quantity: 1, grams: 158)
+        XCTAssertEqual(FoodLabel.basisSummary(FoodData(id: "f", name: "x", carbsPer100g: 28), [cup]), "28 g carbs per 100 g")
+        let slice = PortionData(id: "s", foodId: "f", label: "slice", kind: "count", quantity: 1, grams: 30)
+        XCTAssertNil(FoodLabel.basisSummary(FoodData(id: "f", name: "x", carbsPer100g: 250), [slice]))
+        let badPiece = PortionData(id: "p", foodId: "f", label: "bar", kind: "count", quantity: 1, grams: 35, carbsG: 600)
+        XCTAssertEqual(FoodLabel.basisSummary(bar, [badPiece]), "68.57 g carbs per 100 g")
+        let rollB = PortionData(id: "b", foodId: "f", label: "roll", kind: "count", quantity: 1, grams: 60)
+        let sliceA = PortionData(id: "a", foodId: "f", label: "slice", kind: "count", quantity: 1, grams: 30)
+        let bread = FoodData(id: "f", name: "Bread", carbsPer100g: 50)
+        XCTAssertEqual(FoodLabel.basisSummary(bread, [rollB, sliceA]), "15 g carbs per slice (30 g)")
+        XCTAssertEqual(FoodLabel.basisSummary(bread, [sliceA, rollB]), "15 g carbs per slice (30 g)")
+        XCTAssertEqual(FoodLabel.servingCarbs(carbsPer100g: 68.5714285714286, grams: 35), 24)
+        XCTAssertNil(FoodLabel.servingCarbs(carbsPer100g: nil, grams: 35))
+        XCTAssertNil(FoodLabel.servingCarbs(carbsPer100g: 50, grams: 0))
+    }
+
     func testUnitDisplayAndPickerOptions() {
         let slice = PortionData(id: "s", foodId: "f", label: "slice", kind: "count", quantity: 2, grams: 60)
         let bar = PortionData(id: "b", foodId: "f", label: "bar", kind: "count", quantity: 1, grams: nil, carbsG: 22)

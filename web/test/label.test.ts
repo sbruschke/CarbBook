@@ -93,6 +93,39 @@ describe('foodBasisSummary', () => {
     expect(foodBasisSummary(food, [bar])).toBe('22 g carbs per bar');
   });
 
+  it('shows a per 100 g food per serving when it has a weighed serving (Nature Valley bar: 68.57 g/100 g, 35 g serving)', () => {
+    const food = foodData({ carbs_per_100g: 68.57 });
+    const serving = portionData({ label: 'label serving', kind: 'serving', quantity: 1, grams: 35 });
+    expect(foodBasisSummary(food, [serving])).toBe('24 g carbs per label serving (35 g)');
+  });
+
+  it('prefers a piece with its own carbs over a derived serving', () => {
+    const food = foodData({ carbs_per_100g: 68.57 });
+    const serving = portionData({ label: 'label serving', kind: 'serving', quantity: 1, grams: 35 });
+    const bar = portionData({ label: 'bar', kind: 'count', quantity: 1, grams: 35, carbs_g: 24 });
+    expect(foodBasisSummary(food, [serving, bar])).toBe('24 g carbs per bar');
+  });
+
+  it('does not derive a serving from a volume portion or an invalid per 100 g basis', () => {
+    const cup = portionData({ label: 'cup', kind: 'volume', quantity: 1, grams: 158 });
+    expect(foodBasisSummary(foodData({ carbs_per_100g: 28 }), [cup])).toBe('28 g carbs per 100 g');
+    const slice = portionData({ label: 'slice', kind: 'count', quantity: 1, grams: 30 });
+    expect(foodBasisSummary(foodData({ carbs_per_100g: 250 }), [slice])).toBeNull();
+  });
+
+  it('does not derive a serving from a row whose own carbs are invalid (it is not logged from per 100 g)', () => {
+    const bad = portionData({ label: 'bar', kind: 'count', quantity: 1, grams: 35, carbs_g: 600 });
+    expect(foodBasisSummary(foodData({ carbs_per_100g: 68.57 }), [bad])).toBe('68.57 g carbs per 100 g');
+  });
+
+  it('picks the lowest-id portion regardless of row order', () => {
+    const food = foodData({ carbs_per_100g: 50 });
+    const b = portionData({ id: 'b', label: 'roll', kind: 'count', quantity: 1, grams: 60 });
+    const a = portionData({ id: 'a', label: 'slice', kind: 'count', quantity: 1, grams: 30 });
+    expect(foodBasisSummary(food, [b, a])).toBe('15 g carbs per slice (30 g)');
+    expect(foodBasisSummary(food, [a, b])).toBe('15 g carbs per slice (30 g)');
+  });
+
   it('is null when there is no valid basis at all', () => {
     expect(foodBasisSummary(foodData({ carbs_per_100g: null }), [])).toBeNull();
   });
