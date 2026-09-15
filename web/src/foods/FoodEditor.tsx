@@ -292,7 +292,7 @@ export function FoodEditor(props: {
         </label>
         <label className="inline">
           <input type="radio" name="carbs-mode" checked={carbsMode === 'label'} onChange={() => setCarbsMode('label')} />
-          From label
+          From label (cup, tbsp, piece, g…)
         </label>
         {carbsMode === 'per100' ? (
           <>

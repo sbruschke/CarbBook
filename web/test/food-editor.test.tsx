@@ -55,7 +55,7 @@ describe('FoodEditor', () => {
     const user = userEvent.setup();
     const done = renderEditor();
     await user.type(screen.getByLabelText('Name'), 'Granola bar');
-    await user.click(screen.getByLabelText('From label'));
+    await user.click(screen.getByLabelText(/^From label/));
     await user.type(screen.getByLabelText('Amount'), '40');
     await user.type(screen.getByLabelText('Carbs (g)'), '20');
     expect(screen.getByTestId('label-result')).toHaveTextContent('= 50 g carbs per 100 g');
@@ -142,7 +142,7 @@ describe('FoodEditor', () => {
     await services.db.portion.put(labelPortion);
     const user = userEvent.setup();
     const done = renderEditor({ existing: { food: bar, portions: [labelPortion] } });
-    await user.click(screen.getByLabelText('From label'));
+    await user.click(screen.getByLabelText(/^From label/));
     await user.type(screen.getByLabelText('Amount'), '40');
     await user.type(screen.getByLabelText('Carbs (g)'), '20');
     await user.click(screen.getByRole('button', { name: 'Save' }));
@@ -200,7 +200,7 @@ describe('FoodEditor: any-unit label entry', () => {
     const user = userEvent.setup();
     const done = renderEditor();
     await user.type(screen.getByLabelText('Name'), 'Calrose rice');
-    await user.click(screen.getByLabelText('From label'));
+    await user.click(screen.getByLabelText(/^From label/));
     await user.selectOptions(screen.getByLabelText('Unit'), 'cup');
     await user.type(screen.getByLabelText('Amount'), '1');
     await user.type(screen.getByLabelText('Carbs (g)'), '48');
@@ -221,7 +221,7 @@ describe('FoodEditor: any-unit label entry', () => {
     const user = userEvent.setup();
     const done = renderEditor();
     await user.type(screen.getByLabelText('Name'), 'Syrup');
-    await user.click(screen.getByLabelText('From label'));
+    await user.click(screen.getByLabelText(/^From label/));
     await user.selectOptions(screen.getByLabelText('Unit'), 'tbsp');
     await user.type(screen.getByLabelText('Amount'), '2');
     await user.type(screen.getByLabelText('Carbs (g)'), '7');
@@ -237,7 +237,7 @@ describe('FoodEditor: any-unit label entry', () => {
     const user = userEvent.setup();
     const done = renderEditor();
     await user.type(screen.getByLabelText('Name'), 'Calrose rice');
-    await user.click(screen.getByLabelText('From label'));
+    await user.click(screen.getByLabelText(/^From label/));
     await user.selectOptions(screen.getByLabelText('Unit'), 'cup');
     await user.type(screen.getByLabelText('Amount'), '1');
     await user.type(screen.getByLabelText('Carbs (g)'), '48');
@@ -257,7 +257,7 @@ describe('FoodEditor: any-unit label entry', () => {
     const user = userEvent.setup();
     const done = renderEditor();
     await user.type(screen.getByLabelText('Name'), 'Granola bar');
-    await user.click(screen.getByLabelText('From label'));
+    await user.click(screen.getByLabelText(/^From label/));
     await user.selectOptions(screen.getByLabelText('Unit'), 'piece / serving');
     await user.type(screen.getByLabelText('Portion name'), 'bar');
     await user.type(screen.getByLabelText('Amount'), '1');
@@ -278,7 +278,7 @@ describe('FoodEditor: any-unit label entry', () => {
     const user = userEvent.setup();
     const done = renderEditor();
     await user.type(screen.getByLabelText('Name'), 'Cookie');
-    await user.click(screen.getByLabelText('From label'));
+    await user.click(screen.getByLabelText(/^From label/));
     await user.selectOptions(screen.getByLabelText('Unit'), 'piece / serving');
     await user.type(screen.getByLabelText('Portion name'), 'cookie');
     await user.type(screen.getByLabelText('Amount'), '1');
@@ -300,7 +300,7 @@ describe('FoodEditor: any-unit label entry', () => {
     const user = userEvent.setup();
     renderEditor();
     await user.type(screen.getByLabelText('Name'), 'Broken');
-    await user.click(screen.getByLabelText('From label'));
+    await user.click(screen.getByLabelText(/^From label/));
     await user.type(screen.getByLabelText('Amount'), '0');
     await user.type(screen.getByLabelText('Carbs (g)'), '20');
     await user.click(screen.getByRole('button', { name: 'Save' }));
@@ -382,7 +382,7 @@ describe('FoodEditor: keeps the carb basis the user did not edit', () => {
     await services.db.food.put(syrup);
     const user = userEvent.setup();
     const done = renderEditor({ existing: { food: syrup, portions: [] } });
-    await user.click(screen.getByLabelText('From label'));
+    await user.click(screen.getByLabelText(/^From label/));
     // A gram label edits per-100 g, so nothing is "kept" until a volume unit is chosen.
     expect(screen.queryByTestId('kept-basis-g')).toBeNull();
     await user.selectOptions(screen.getByLabelText('Unit'), 'ml');
