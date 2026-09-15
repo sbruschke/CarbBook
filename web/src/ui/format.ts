@@ -91,7 +91,10 @@ export function parseNonNegative(text: string): number | null {
   const trimmed = text.trim();
   if (trimmed === '') return null;
   const normalized = /^\d+,\d+$/.test(trimmed) ? trimmed.replace(',', '.') : trimmed;
-  return /^\d+(\.\d+)?$/.test(normalized) ? Number(normalized) : null;
+  if (!/^\d+(\.\d+)?$/.test(normalized)) return null;
+  // An absurdly long digit string overflows to Infinity; never hand that to a ratio or dose.
+  const value = Number(normalized);
+  return Number.isFinite(value) ? value : null;
 }
 
 /** A non-negative whole number from a text field (BG mg/dL), or null. No comma/decimal/exponent forms accepted. */
