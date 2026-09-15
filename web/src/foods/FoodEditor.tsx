@@ -1,18 +1,21 @@
 import {
+  isValidCarbsPer100ml,
   isValidPortionCarbs,
   isValidPortionGrams,
+  MAX_CARBS_PER_100ML,
   MAX_PORTION_CARBS_G,
   type FoodData,
   type PortionData,
   type PortionKind,
   type Synced,
   VOLUME_UNITS,
+  type VolumeUnit,
 } from '@carbbook/core';
 import { useState } from 'react';
 import { useServices } from '../app/services';
 import type { Change } from '../db/store';
 import { uuidv7 } from '../lib/ids';
-import { parseNonNegative, unitLabel } from '../ui/format';
+import { parseAmount, parseNonNegative, unitLabel } from '../ui/format';
 import { labelBasisFromEntry, type FoodPrefill, type LabelPortionPatch, type LabelUnit } from './label';
 
 interface PortionDraft {
@@ -55,6 +58,60 @@ function initialLabelFields(
     };
   }
   return { mode: 'per100', ...blank };
+}
+
+/** A single volume-basis reading: a "From label" volume entry, or a Portions-section volume row with carbs. */
+interface VolumeCarbsEntry {
+  /** e.g. "2/3 cup = 30 g", for naming conflicts to the user. */
+  name: string;
+  /** Implied carbs per 100 ml. */
+  value: number;
+}
+
+/** The "From label" entry, when it is a volume unit with a valid amount and carbs. */
+function labelVolumeEntry(params: { unit: LabelUnit; amountText: string; carbsText: string }): VolumeCarbsEntry | null {
+  const { unit, amountText, carbsText } = params;
+  if (!VOLUME_LABELS.includes(unit)) return null;
+  const amount = parseAmount(amountText);
+  const carbs = parseNonNegative(carbsText);
+  if (amount === null || !(amount > 0) || carbs === null) return null;
+  const value = (carbs / (amount * VOLUME_UNITS[unit as VolumeUnit])) * 100;
+  return { name: `${amountText.trim()} ${unit} = ${carbsText.trim()} g`, value };
+}
+
+/**
+ * Every volume-basis reading in play: the "From label" volume entry (if any) plus every
+ * Portions-section volume row with carbs entered (with or without weight) — each implies the
+ * food's carbs_per_100ml, the same math as the "From label" volume entry:
+ * carbs / (quantity * unit ml) * 100. A carbs-only row (no weight) sets this without creating a
+ * portion row. When two readings disagree by more than 1%, saving is blocked rather than
+ * silently picking one — a wrong carbs-per-volume basis is a wrong insulin dose. When they all
+ * agree, the "From label" entry wins if present, else the first Portions-section row.
+ */
+function resolveVolumeCarbs(rows: PortionDraft[], label: VolumeCarbsEntry | null): { value: number } | { error: string } | null {
+  const entries: VolumeCarbsEntry[] = label ? [label] : [];
+  for (const p of rows) {
+    if (p.kind !== 'volume' || p.carbsG.trim() === '') continue;
+    if (!VOLUME_LABELS.includes(p.label)) continue;
+    const unit = p.label as VolumeUnit;
+    const carbs = parseNonNegative(p.carbsG);
+    const quantity = parseAmount(p.quantity);
+    if (carbs === null || quantity === null || !(quantity > 0)) continue;
+    const value = (carbs / (quantity * VOLUME_UNITS[unit])) * 100;
+    entries.push({ name: `${p.quantity.trim()} ${unit} = ${p.carbsG.trim()} g`, value });
+  }
+  if (entries.length === 0) return null;
+  for (let i = 0; i < entries.length; i++) {
+    for (let j = i + 1; j < entries.length; j++) {
+      const a = entries[i]!;
+      const b = entries[j]!;
+      const diff = Math.abs(a.value - b.value) / Math.max(Math.abs(a.value), Math.abs(b.value), 1e-9);
+      if (diff > 0.01) return { error: `${a.name} and ${b.name} give different carbs per volume.` };
+    }
+  }
+  const value = entries[0]!.value;
+  if (!isValidCarbsPer100ml(value)) return { error: `Carbs per 100 ml must be a number from 0 to ${MAX_CARBS_PER_100ML}.` };
+  return { value };
 }
 
 /** Adds a portion, or updates the one that matches (a re-entered label updates its basis rather than duplicating it). */
@@ -119,7 +176,7 @@ export function FoodEditor(props: {
 
   const labelEntry = labelBasisFromEntry({
     unit: labelUnit,
-    amount: parseNonNegative(labelAmountText),
+    amount: parseAmount(labelAmountText),
     carbs: parseNonNegative(labelCarbsText),
     weight: parseNonNegative(labelWeightText),
     label: labelName,
@@ -142,6 +199,24 @@ export function FoodEditor(props: {
   const editsMl = carbsMode === 'label' && labelUnit !== 'g' && labelUnit !== 'other';
   const keptG = !editsG && !removedBases.g ? (base?.carbs_per_100g ?? null) : null;
   const keptMl = !editsMl && !removedBases.ml ? (base?.carbs_per_100ml ?? null) : null;
+
+  // The "From label" entry, when it names a volume unit — folded into the same conflict check as
+  // the Portions-section volume rows (spec: label + rows must agree within 1%, or saving is blocked).
+  const activeLabelVolumeEntry =
+    carbsMode === 'label' ? labelVolumeEntry({ unit: labelUnit, amountText: labelAmountText, carbsText: labelCarbsText }) : null;
+
+  // Inline warning (before save): a conflict between volume readings (surfaced early, in the
+  // same words save() will block with), or — absent a conflict — that a portion row would
+  // replace a different saved carbs_per_100ml.
+  const portionsOverridePreview = resolveVolumeCarbs(portions, activeLabelVolumeEntry);
+  const overrideNote =
+    portionsOverridePreview && 'error' in portionsOverridePreview
+      ? portionsOverridePreview.error
+      : portionsOverridePreview &&
+          base?.carbs_per_100ml != null &&
+          Math.abs(base.carbs_per_100ml - portionsOverridePreview.value) / Math.max(Math.abs(base.carbs_per_100ml), 1e-9) > 0.01
+        ? 'This replaces the saved carbs per cup/ml.'
+        : null;
 
   const updatePortion = (key: string, patch: Partial<PortionDraft>) =>
     setPortions((rows) => rows.map((row) => (row.key === key ? { ...row, ...patch } : row)));
@@ -169,15 +244,28 @@ export function FoodEditor(props: {
         if (labelEntry.portion) rows = mergePortion(rows, labelEntry.portion);
       }
       if (labelUnit === 'g') {
-        const amount = parseNonNegative(labelAmountText);
+        const amount = parseAmount(labelAmountText);
         if (amount !== null && amount > 0) {
           rows = mergePortion(rows, { label: LABEL_SERVING, kind: 'serving', quantity: 1, grams: amount, carbs_g: null });
         }
+      }
+      // A malformed (non-empty, unparseable) "Weighs (g)" entry must not silently drop the portion.
+      if (labelUnit !== 'g' && labelWeightText.trim() !== '' && !(labelWeight !== null && labelWeight > 0)) {
+        problems.push('Weight must be a number greater than 0.');
       }
     }
 
     if (!editsG) carbsPer100g = keptG;
     if (!editsMl) carbsPer100ml = keptMl;
+
+    // A volume portion row with carbs entered fixes carbs_per_100ml from the label, and must agree
+    // with the "From label" volume entry and every other such row — taking precedence over any
+    // previously saved value once they do.
+    const portionsOverride = resolveVolumeCarbs(rows, activeLabelVolumeEntry);
+    if (portionsOverride) {
+      if ('error' in portionsOverride) problems.push(portionsOverride.error);
+      else carbsPer100ml = portionsOverride.value;
+    }
 
     // The server rejects fiber outside 0..100 g per 100 g.
     const fiber = parseNonNegative(fiberText);
@@ -187,22 +275,26 @@ export function FoodEditor(props: {
     if (densityText.trim() !== '' && !(density !== null && density > 0)) problems.push('Density must be greater than 0.');
 
     const parsedRows = rows.map((p, i) => {
-      const quantity = parseNonNegative(p.quantity);
+      const quantity = parseAmount(p.quantity);
       const gramsText = p.grams.trim();
       const grams = gramsText === '' ? null : parseNonNegative(p.grams);
-      // Volume portions never carry carbs_g (server rejects it); their carbs come from the food.
-      const carbsText2 = p.kind === 'volume' ? '' : p.carbsG.trim();
-      const carbsG = carbsText2 === '' ? null : parseNonNegative(p.carbsG);
+      const carbsText2 = p.carbsG.trim();
+      const carbsRaw = carbsText2 === '' ? null : parseNonNegative(p.carbsG);
+      // Volume portions never carry carbs_g (server rejects it): entered carbs there feed
+      // carbs_per_100ml instead (via volumeCarbsOverride), so the portion row itself gets null.
+      const carbsG = p.kind === 'volume' ? null : carbsRaw;
       if (!p.label.trim()) problems.push(`Portion ${i + 1} needs a label.`);
       if (p.kind === 'volume' && !VOLUME_LABELS.includes(p.label)) problems.push(`Portion ${i + 1}: pick a volume unit.`);
       if (!(quantity && quantity > 0)) problems.push(`Portion ${i + 1} needs a quantity above 0.`);
       if (gramsText !== '' && !isValidPortionGrams(grams)) problems.push(`Portion ${i + 1}: grams must be a number above 0.`);
-      if (carbsText2 !== '' && (carbsG === null || !isValidPortionCarbs(carbsG))) {
+      if (carbsText2 !== '' && (carbsRaw === null || !isValidPortionCarbs(carbsRaw))) {
         problems.push(`Portion ${i + 1}: carbs must be a number from 0 to ${MAX_PORTION_CARBS_G}.`);
       }
-      if (p.kind === 'volume' && !isValidPortionGrams(grams)) problems.push(`Portion ${i + 1} needs grams above 0.`);
+      if (p.kind === 'volume' && gramsText === '' && carbsText2 === '') problems.push(`Portion ${i + 1} needs grams or carbs.`);
       if (p.kind !== 'volume' && grams === null && carbsG === null) problems.push(`Portion ${i + 1} needs grams or carbs.`);
-      return { ...p, quantity, grams, carbsG };
+      // A carbs-only volume row (no weight) sets carbs_per_100ml but creates no portion row.
+      const skip = p.kind === 'volume' && grams === null;
+      return { ...p, quantity, grams, carbsG, skip };
     });
 
     const hasBasis =
@@ -233,6 +325,7 @@ export function FoodEditor(props: {
     const kept = new Set<string>();
     const changes: Change[] = [{ table: 'food', data: food }];
     for (const p of parsedRows) {
+      if (p.skip) continue;
       const id = keepId && p.id ? p.id : uuidv7(now());
       kept.add(id);
       changes.push({
@@ -311,7 +404,7 @@ export function FoodEditor(props: {
             <p className="note">Amount [unit] contains N g carbs.</p>
             <label>
               Amount
-              <input inputMode="decimal" value={labelAmountText} onChange={(e) => setLabelAmountText(e.target.value)} />
+              <input inputMode="text" placeholder="e.g. 2/3" value={labelAmountText} onChange={(e) => setLabelAmountText(e.target.value)} />
             </label>
             <label>
               Unit
@@ -378,7 +471,9 @@ export function FoodEditor(props: {
               value={p.kind}
               onChange={(e) => {
                 const kind = e.target.value as PortionKind;
-                updatePortion(p.key, { kind, label: kind === 'volume' ? 'cup' : p.kind === 'volume' ? '' : p.label });
+                // Carbs on the old kind don't carry meaning under the new one: a piece's carbs_g
+                // isn't a volume's carbs-per-100ml input, and vice versa.
+                updatePortion(p.key, { kind, label: kind === 'volume' ? 'cup' : p.kind === 'volume' ? '' : p.label, carbsG: '' });
               }}
             >
               <option value="count">count</option>
@@ -403,31 +498,35 @@ export function FoodEditor(props: {
             )}
             <input
               aria-label={`Portion ${i + 1} quantity`}
-              inputMode="decimal"
+              inputMode="text"
+              placeholder="e.g. 2/3"
               value={p.quantity}
               onChange={(e) => updatePortion(p.key, { quantity: e.target.value })}
             />
             <input
               aria-label={`Portion ${i + 1} grams`}
               inputMode="decimal"
-              placeholder={p.kind === 'volume' ? '' : 'optional'}
+              placeholder="optional"
               value={p.grams}
               onChange={(e) => updatePortion(p.key, { grams: e.target.value })}
             />
-            {p.kind !== 'volume' && (
-              <input
-                aria-label={`Portion ${i + 1} carbs (g)`}
-                inputMode="decimal"
-                placeholder="optional"
-                value={p.carbsG}
-                onChange={(e) => updatePortion(p.key, { carbsG: e.target.value })}
-              />
-            )}
+            <input
+              aria-label={`Portion ${i + 1} carbs (g)`}
+              inputMode="decimal"
+              placeholder="optional"
+              value={p.carbsG}
+              onChange={(e) => updatePortion(p.key, { carbsG: e.target.value })}
+            />
             <button type="button" aria-label={`Remove portion ${i + 1}`} onClick={() => setPortions((rows) => rows.filter((r) => r.key !== p.key))}>
               ✕
             </button>
           </div>
         ))}
+        {overrideNote && (
+          <p className="note" data-testid="portion-carbs-override-note">
+            {overrideNote}
+          </p>
+        )}
         <button
           type="button"
           onClick={() => setPortions((rows) => [...rows, { key: uuidv7(), id: null, label: '', kind: 'count', quantity: '1', grams: '', carbsG: '' }])}
