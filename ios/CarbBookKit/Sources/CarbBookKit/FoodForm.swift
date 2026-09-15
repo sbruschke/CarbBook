@@ -184,6 +184,9 @@ public struct FoodForm: Equatable, Sendable {
         var carbsPer100g: Double?
         var carbsPer100ml: Double?
         var rows = portions
+        /// A fresh (this-edit) source of `carbsPer100ml`, so two that disagree can be reported by name
+        /// instead of one silently overwriting the other.
+        var mlCandidates: [(source: String, value: Double)] = []
 
         switch carbsMode {
         case .per100g:
@@ -200,6 +203,7 @@ public struct FoodForm: Equatable, Sendable {
             case .success(let basis):
                 carbsPer100g = basis.carbsPer100g
                 carbsPer100ml = basis.carbsPer100ml
+                if let ml = basis.carbsPer100ml { mlCandidates.append(("the label entry", ml)) }
                 if let patch = basis.portion { rows = Self.merge(rows, patch, newId: newId) }
                 if labelUnit == "g", let amount = NumberParsing.parseAmount(labelAmount), amount > 0 {
                     rows = Self.merge(rows, FoodLabel.PortionPatch(label: FoodLabel.labelServing, kind: "serving", quantity: 1,
@@ -225,7 +229,6 @@ public struct FoodForm: Equatable, Sendable {
         }
 
         var saved: [PortionData] = []
-        var portionVolumeCarbsPer100ml: Double?
         for (i, row) in rows.enumerated() {
             let n = i + 1
             let label = row.label.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -254,7 +257,7 @@ public struct FoodForm: Equatable, Sendable {
                 mapped = PortionEntry.map(.init(unit: row.label, quantity: quantity, grams: grams.value, carbs: carbs.value))
                 if let candidate = mapped?.carbsPer100ml {
                     if isValidCarbsPer100ml(candidate) {
-                        portionVolumeCarbsPer100ml = candidate
+                        mlCandidates.append(("Portion \(n)", candidate))
                     } else {
                         problems.append("Portion \(n): carbs per 100 ml must be a number from 0 to \(NumberParsing.editText(Units.maxCarbsPer100ml)).")
                     }
@@ -274,7 +277,24 @@ public struct FoodForm: Equatable, Sendable {
                                          grams: grams.value, carbsG: carbs.value))
             }
         }
-        if let portionVolumeCarbsPer100ml { carbsPer100ml = portionVolumeCarbsPer100ml }
+        // Two fresh (this-edit) sources implying different carbsPer100ml (label entry vs. a portion
+        // row, or two portion rows) block save instead of one silently overwriting the other; a
+        // single fresh source is applied normally (a differing already-*saved* value is instead
+        // surfaced non-blockingly via `portionVolumeCarbsNote`).
+        if mlCandidates.count > 1 {
+            let reference = mlCandidates[0].value
+            let disagree = mlCandidates.contains { abs($0.value - reference) > abs(reference) * 0.01 }
+            if disagree {
+                let names = mlCandidates.map(\.source)
+                let joined = names.count == 2 ? names.joined(separator: " and ")
+                    : names.dropLast().joined(separator: ", ") + ", and \(names.last!)"
+                problems.append("\(joined) imply different carbs per 100 ml; enter it in one place only.")
+            } else {
+                carbsPer100ml = mlCandidates.last!.value
+            }
+        } else if let only = mlCandidates.first {
+            carbsPer100ml = only.value
+        }
 
         let hasBasis = isValidCarbsPer100g(carbsPer100g) || isValidCarbsPer100ml(carbsPer100ml)
             || saved.contains { $0.kind != "volume" && isValidPortionCarbs($0.carbsG) }

@@ -85,6 +85,25 @@ final class NumberParsingTests: XCTestCase {
         }
     }
 
+    /// A 2+-digit numerator greater than its denominator ("11/2") is a likely mistyped mixed number
+    /// ("1 1/2") that would otherwise silently read as 5.5 — a 3.7× overdose. A mixed number's own
+    /// fraction part must be < 1 ("1 3/2" makes no sense as a mixed number). Single-digit numerators
+    /// and numerators not greater than the denominator are unaffected.
+    func testParseAmountRejectsAmbiguousFractions() {
+        for text in ["11/2", "13/4", "10/3", "1 3/2", "2 4/4"] {
+            XCTAssertNil(NumberParsing.parseAmount(text), text)
+        }
+        XCTAssertEqual(NumberParsing.parseAmount("4/3"), 4.0 / 3.0)
+        XCTAssertEqual(NumberParsing.parseAmount("3/2"), 1.5)
+        XCTAssertEqual(NumberParsing.parseAmount("12/16"), 12.0 / 16.0)
+    }
+
+    func testParseAmountRejectsNonFiniteResults() {
+        XCTAssertNil(NumberParsing.parseAmount(String(repeating: "1", count: 400)))
+        // Both huge enough to overflow to Double.infinity; infinity/infinity is NaN, not a number.
+        XCTAssertNil(NumberParsing.parseAmount(String(repeating: "9", count: 400) + "/" + String(repeating: "9", count: 401)))
+    }
+
     /// Runs the shared vectors in testdata/ (copied into Resources/ by scripts/sync-testdata.sh):
     /// every `amount.accept`/`amount.reject` case against `parseAmount`, every `bg` case against
     /// `parseWholeNumber`. Kept in sync with web/src/ui/format.ts.

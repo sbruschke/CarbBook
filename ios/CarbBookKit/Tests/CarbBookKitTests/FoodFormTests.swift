@@ -183,14 +183,39 @@ final class FoodFormTests: XCTestCase {
         XCTAssertEqual(itemCarbs(catalog, .food, out.food.id, 1, "tbsp").carbsG, 2.8125, accuracy: 1e-9)
     }
 
+    /// Base food has both bases (per100g mode stays selected, so the label entry isn't a second fresh
+    /// source) and a single portion row supplies the only fresh carbsPer100ml: no conflict, just a note.
     func testVolumePortionReplacesADifferentSavedCarbsPer100mlWithANote() throws {
-        let rice = FoodData(id: "f1", name: "Rice", source: "custom", carbsPer100g: nil, carbsPer100ml: 20.2884136211058)
+        let rice = FoodData(id: "f1", name: "Rice", source: "custom", carbsPer100g: 28.2, carbsPer100ml: 20.2884136211058)
         var form = FoodForm(food: rice, portions: [])
+        XCTAssertEqual(form.carbsMode, .per100g)
         XCTAssertNil(form.portionVolumeCarbsNote)
         form.portions = [FoodForm.Portion(id: "a", label: "cup", kind: "volume", quantity: "1", grams: "", carbsG: "30")]
         XCTAssertEqual(form.portionVolumeCarbsNote, "This replaces saved carbs per volume (20.29 g per 100 ml).")
         let out = try built(form)
         XCTAssertNotEqual(out.food.carbsPer100ml, rice.carbsPer100ml)
+    }
+
+    /// Two fresh sources this edit (the label entry pre-filled from a saved ml basis, and a new
+    /// portion row) disagreeing by more than 1% blocks save, naming both, instead of one winning.
+    func testConflictingLabelEntryAndPortionRowBlocksSave() {
+        let rice = FoodData(id: "f1", name: "Rice", source: "custom", carbsPer100g: nil, carbsPer100ml: 20.2884136211058)
+        var form = FoodForm(food: rice, portions: [])
+        XCTAssertEqual(form.carbsMode, .label)
+        form.portions = [FoodForm.Portion(id: "a", label: "cup", kind: "volume", quantity: "1", grams: "", carbsG: "30")]
+        XCTAssertEqual(errors(form), ["the label entry and Portion 1 imply different carbs per 100 ml; enter it in one place only."])
+    }
+
+    /// Two portion rows disagreeing by more than 1% blocks save, naming both.
+    func testConflictingPortionRowsBlockSave() {
+        var form = FoodForm(food: nil, portions: [])
+        form.name = "Juice"
+        form.carbsText = "0"
+        form.portions = [
+            FoodForm.Portion(id: "a", label: "cup", kind: "volume", quantity: "2/3", grams: "", carbsG: "30"),
+            FoodForm.Portion(id: "b", label: "tbsp", kind: "volume", quantity: "1", grams: "", carbsG: "5"),
+        ]
+        XCTAssertEqual(errors(form), ["Portion 1 and Portion 2 imply different carbs per 100 ml; enter it in one place only."])
     }
 
     func testUsdaEditMakesCustomCopyWithNewPortionIds() throws {
