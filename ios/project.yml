@@ -39,6 +39,8 @@ targets:
         CODE_SIGNING_ALLOWED: NO
         CODE_SIGNING_REQUIRED: NO
         CODE_SIGN_IDENTITY: ""
+        # Temporary icon: the web PWA's icon.svg rendered at 1024 px (Assets.xcassets/AppIcon).
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_CFBundleDisplayName: CarbBook
         INFOPLIST_KEY_LSRequiresIPhoneOS: YES
