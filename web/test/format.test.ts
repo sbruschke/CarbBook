@@ -5,13 +5,16 @@ import {
   dayRange,
   formatAge,
   formatCarbs,
+  formatDayLabel,
   formatUnits,
   fromDateTimeLocal,
   parseNonNegative,
   parseWholeNumber,
   shiftDay,
+  startOfWeek,
   toDateTimeLocal,
   unitLabel,
+  weekDates,
 } from '../src/ui/format';
 
 describe('format helpers', () => {
@@ -88,5 +91,29 @@ describe('format helpers', () => {
     expect(isBarcodeCode('0737628064502')).toBe(true);
     expect(isBarcodeCode('12345')).toBe(false);
     expect(isBarcodeCode('https://example.com')).toBe(false);
+  });
+});
+
+describe('week helpers', () => {
+  it('starts weeks on Monday', () => {
+    expect(startOfWeek('2026-09-16')).toBe('2026-09-14'); // Wednesday → Monday
+    expect(startOfWeek('2026-09-14')).toBe('2026-09-14'); // Monday → itself
+    expect(startOfWeek('2026-09-20')).toBe('2026-09-14'); // Sunday → that Monday
+  });
+
+  it('lists the seven dates of a week in order', () => {
+    expect(weekDates('2026-09-14')).toEqual([
+      '2026-09-14',
+      '2026-09-15',
+      '2026-09-16',
+      '2026-09-17',
+      '2026-09-18',
+      '2026-09-19',
+      '2026-09-20',
+    ]);
+  });
+
+  it('labels a day with its weekday and date', () => {
+    expect(formatDayLabel('2026-09-16')).toBe('Wed 16 Sep');
   });
 });

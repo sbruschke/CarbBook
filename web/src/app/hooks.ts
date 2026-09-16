@@ -1,4 +1,4 @@
-import type { DoseSettingsData, LogEntryData, LogItemData, Synced } from '@carbbook/core';
+import type { DoseSettingsData, LogEntryData, LogItemData, PlanEntryData, PlanItemData, Synced } from '@carbbook/core';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { type BgResult, fetchBg } from '../bg/bg';
@@ -30,6 +30,15 @@ export function useLogData(): { entries: Synced<LogEntryData>[]; items: Synced<L
   const { db } = useServices();
   return useLiveQuery(async () => {
     const [entries, items] = await Promise.all([db.log_entry.filter(isLive).toArray(), db.log_item.filter(isLive).toArray()]);
+    return { entries, items };
+  }, [db]);
+}
+
+/** Live (non-deleted) plan entries and items — the Plan screen and the Calculator suggestion. */
+export function usePlanData(): { entries: Synced<PlanEntryData>[]; items: Synced<PlanItemData>[] } | undefined {
+  const { db } = useServices();
+  return useLiveQuery(async () => {
+    const [entries, items] = await Promise.all([db.plan_entry.filter(isLive).toArray(), db.plan_item.filter(isLive).toArray()]);
     return { entries, items };
   }, [db]);
 }

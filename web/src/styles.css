@@ -328,8 +328,9 @@ fieldset {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
-  margin: 8px 0;
-  padding-bottom: 8px;
+  align-items: center;
+  margin-bottom: 12px;
+  padding-bottom: 12px;
   border-bottom: 1px solid var(--border);
 }
 
@@ -380,8 +381,102 @@ fieldset {
   padding: 32px 16px;
 }
 
+.goal {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  align-items: baseline;
+  padding: 2px 8px;
+  border-left: 4px solid currentcolor;
+  border-radius: 4px;
+}
+
+.goal-word {
+  font-size: 0.85em;
+  opacity: 0.85;
+}
+
+.goal-none {
+  color: var(--text);
+  border-left-color: var(--border);
+}
+.goal-in {
+  color: #0f6b3a;
+  background: #e6f4ec;
+}
+.goal-near {
+  color: #6b5200;
+  background: #fbf3d5;
+}
+.goal-off {
+  color: #8a3f00;
+  background: #fbe9dc;
+}
+.goal-out {
+  color: #8a1418;
+  background: #fbe3e4;
+}
+
 @media (min-width: 600px) {
   .item-controls {
     grid-template-columns: 7rem 1fr auto auto auto auto;
+  }
+}
+
+.plan-week {
+  display: grid;
+  gap: 16px;
+}
+
+.plan-day h2 {
+  margin: 0 0 4px;
+  font-size: 1rem;
+}
+
+.plan-cell {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 4px 8px;
+  padding: 8px 0;
+  border-top: 1px solid var(--border);
+}
+
+.plan-cell h3 {
+  grid-column: 1;
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.plan-cell button {
+  grid-column: 2;
+  grid-row: 1 / span 4;
+  min-width: var(--tap);
+  min-height: var(--tap);
+}
+
+.plan-cell p,
+.plan-cell .goal,
+.plan-cell .tag {
+  grid-column: 1;
+}
+
+/* Tablet and up: the same markup becomes the week grid (days as rows, windows as columns). */
+@media (min-width: 900px) {
+  .plan-day {
+    display: grid;
+    grid-template-columns: 8rem repeat(auto-fit, minmax(9rem, 1fr));
+    align-items: start;
+    gap: 8px;
+  }
+  .plan-day h2 {
+    grid-row: 1;
+  }
+  .plan-cell {
+    display: block;
+    border-top: none;
+  }
+  .plan-cell button {
+    width: 100%;
   }
 }

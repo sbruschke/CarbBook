@@ -6,6 +6,8 @@ import type {
   LogItemData,
   MealData,
   MealItemData,
+  PlanEntryData,
+  PlanItemData,
   PortionData,
   PortionKind,
   Synced,
@@ -23,6 +25,8 @@ export const SYNC_TABLES = [
   'log_entry',
   'log_item',
   'dose_settings',
+  'plan_entry',
+  'plan_item',
 ] as const;
 
 export type SyncTable = (typeof SYNC_TABLES)[number];
@@ -36,6 +40,8 @@ export interface SyncRecords {
   log_entry: Synced<LogEntryData>;
   log_item: Synced<LogItemData>;
   dose_settings: Synced<DoseSettingsData>;
+  plan_entry: Synced<PlanEntryData>;
+  plan_item: Synced<PlanItemData>;
 }
 
 export type AnySyncRecord = SyncRecords[SyncTable];
@@ -128,6 +134,8 @@ export class CarbBookDb extends Dexie {
   declare log_entry: Table<SyncRecords['log_entry'], string>;
   declare log_item: Table<SyncRecords['log_item'], string>;
   declare dose_settings: Table<SyncRecords['dose_settings'], string>;
+  declare plan_entry: Table<SyncRecords['plan_entry'], string>;
+  declare plan_item: Table<SyncRecords['plan_item'], string>;
   declare outbox: Table<OutboxRow, string>;
   declare meta: Table<MetaRow, string>;
   declare sync_error: Table<SyncErrorRow, string>;
@@ -186,6 +194,26 @@ export class CarbBookDb extends Dexie {
             row.ownerUsername = owner?.username ?? null;
           });
       });
+    // v3 adds the two meal-planning tables (spec 2026-09-16 §2). Pure additions: no existing
+    // store definition changes and no data migration is needed.
+    this.version(3).stores({
+      food: 'id, source_ref',
+      portion: 'id, food_id',
+      barcode: 'id, code, food_id',
+      meal: 'id',
+      meal_item: 'id, meal_id, ref_id',
+      log_entry: 'id, eaten_at',
+      log_item: 'id, log_entry_id, ref_id',
+      dose_settings: 'id, effective_from',
+      plan_entry: 'id, date, window_name, log_entry_id',
+      plan_item: 'id, plan_entry_id, ref_id',
+      outbox: 'key',
+      meta: 'key',
+      sync_error: 'key, at',
+      usda_food: 'fdc_id',
+      usda_portion: 'id, fdc_id',
+      pending_barcode: 'code',
+    });
   }
 
   /** Every synced table, for read-write transactions that touch records and the outbox. */

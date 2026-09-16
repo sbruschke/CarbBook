@@ -8,6 +8,9 @@ export type RecordData<T extends SyncTable> = Omit<SyncRecords[T], MetaField>;
 
 export type Change = { [T in SyncTable]: { table: T; data: RecordData<T> } }[SyncTable];
 
+/** A soft delete to apply alongside a batch of changes (see `Store.saveMany`). */
+export type Removal = { table: SyncTable; id: string };
+
 /** A stored record without its sync metadata, ready to edit and save again. */
 export function dataOf<T extends SyncTable>(record: SyncRecords[T]): RecordData<T> {
   const { updated_at: _updatedAt, updated_by: _updatedBy, deleted: _deleted, server_seq: _serverSeq, ...data } =
@@ -19,8 +22,13 @@ export interface Store {
   readonly db: CarbBookDb;
   readonly deviceId: string;
   save<T extends SyncTable>(table: T, data: RecordData<T>): Promise<SyncRecords[T]>;
-  /** Saves several records in one transaction (e.g. a meal and its items). */
-  saveMany(changes: Change[]): Promise<void>;
+  /**
+   * Saves several records and, optionally, soft-deletes others — all in ONE IndexedDB transaction.
+   * Use this (rather than `saveMany` followed by separate `remove` calls) whenever a save and its
+   * removals must be all-or-nothing, e.g. a "replace" copy that both writes new slots and retires
+   * old ones: if any part fails, nothing commits, so a live slot is never left both old and new.
+   */
+  saveMany(changes: Change[], removes?: Removal[]): Promise<void>;
   /** Soft delete (spec §5). Unknown ids are ignored. */
   remove(table: SyncTable, id: string): Promise<void>;
 }
@@ -68,10 +76,13 @@ export function createStore(db: CarbBookDb, deviceId: string, options: StoreOpti
       options.onWrite?.();
       return record as SyncRecords[T];
     },
-    async saveMany(changes: Change[]): Promise<void> {
-      if (changes.length === 0) return;
+    async saveMany(changes: Change[], removes: Removal[] = []): Promise<void> {
+      if (changes.length === 0 && removes.length === 0) return;
       await db.transaction('rw', tables(), async () => {
         for (const change of changes) await stamp(change.table, change.data.id, change.data, 0);
+        for (const { table, id } of removes) {
+          if (await db.table(table).get(id)) await stamp(table, id, {}, 1);
+        }
       });
       options.onWrite?.();
     },
