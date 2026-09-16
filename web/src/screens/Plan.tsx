@@ -3,6 +3,9 @@ import { useState } from 'react';
 import { useCatalogData, useEligibleDoseVersions, usePlanData } from '../app/hooks';
 import { useServices } from '../app/services';
 import { buildCatalog } from '../db/catalog';
+import { uuidv7 } from '../lib/ids';
+import { applyCopy, conflictDates, type CopyMode, copyChanges } from '../plan/copy';
+import { CopyDialog } from '../plan/CopyDialog';
 import { goalView } from '../plan/goal';
 import { SlotEditor } from '../plan/SlotEditor';
 import { buildSlots, dayTotal, type Slot, windowsFor } from '../plan/slots';
@@ -10,7 +13,7 @@ import { dayKey, formatDayLabel, shiftDay, startOfWeek, weekDates } from '../ui/
 import { itemName } from '../ui/ItemEditor';
 
 export function Plan() {
-  const { now } = useServices();
+  const { now, store } = useServices();
   const data = useCatalogData();
   const versions = useEligibleDoseVersions();
   const plan = usePlanData();
@@ -21,6 +24,9 @@ export function Plan() {
   // unchanged Monday (no state change → no re-render → the native input value never resets).
   const [weekInput, setWeekInput] = useState(monday);
   const [editing, setEditing] = useState<{ date: string; windowName: string } | null>(null);
+  const [copyForm, setCopyForm] = useState<{ from: string; to: string } | null>(null);
+  const [pending, setPending] = useState<{ pairs: { from: string; to: string }[]; conflicts: string[] } | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
 
   if (!data || !versions || !plan) return <p>Loading…</p>;
 
@@ -32,6 +38,21 @@ export function Plan() {
       buildSlots({ dates: [date], windows: windowsFor(versions, date), entries: plan.entries, items: plan.items, catalog }),
     ]),
   );
+
+  async function run(pairs: { from: string; to: string }[], mode: CopyMode) {
+    const result = copyChanges({ pairs, entries: plan!.entries, items: plan!.items, mode, newId: () => uuidv7(now()) });
+    await applyCopy(store, result);
+    setPending(null);
+    setCopyForm(null);
+    setMessage(result.changes.length === 0 ? 'Nothing copied.' : `Copied ${pairs.length === 1 ? 'the day' : 'the week'}.`);
+  }
+
+  /** Asks replace/merge/skip only when at least one target day is not empty. */
+  function start(pairs: { from: string; to: string }[]) {
+    const conflicts = conflictDates(plan!.entries, pairs.map((p) => p.to));
+    if (conflicts.length === 0) return void run(pairs, 'skip');
+    setPending({ pairs, conflicts });
+  }
 
   if (editing) {
     const slot = (byDate.get(editing.date) ?? []).find((s) => s.windowName === editing.windowName) ?? null;
@@ -87,10 +108,53 @@ export function Plan() {
           ›
         </button>
       </div>
+      {message && (
+        <p role="status" className="message">
+          {message}
+        </p>
+      )}
+      <div className="button-row">
+        <button type="button" onClick={() => start(dates.map((date) => ({ from: date, to: shiftDay(date, 7) })))}>
+          Copy week to next week
+        </button>
+      </div>
+      {pending && (
+        <CopyDialog conflicts={pending.conflicts} onChoose={(mode) => void run(pending.pairs, mode)} onCancel={() => setPending(null)} />
+      )}
+      {copyForm && (
+        <form
+          className="card"
+          aria-label="Copy day"
+          onSubmit={(e) => {
+            e.preventDefault();
+            start([copyForm]);
+          }}
+        >
+          <label>
+            Copy to
+            <input type="date" value={copyForm.to} onChange={(e) => setCopyForm({ ...copyForm, to: e.target.value })} />
+          </label>
+          <div className="button-row">
+            <button type="submit" className="primary">
+              Copy
+            </button>
+            <button type="button" onClick={() => setCopyForm(null)}>
+              Cancel
+            </button>
+          </div>
+        </form>
+      )}
       <div className="plan-week">
         {dates.map((date) => (
           <section className="plan-day" key={date} aria-label={formatDayLabel(date)}>
             <h2>{formatDayLabel(date)}</h2>
+            <button
+              type="button"
+              aria-label={`Copy ${formatDayLabel(date)} to another day`}
+              onClick={() => setCopyForm({ from: date, to: shiftDay(date, 1) })}
+            >
+              Copy day
+            </button>
             {(byDate.get(date) ?? []).length === 0 && <p className="muted">No time windows apply to this day.</p>}
             {(byDate.get(date) ?? []).map((slot) => (
               <PlanCell

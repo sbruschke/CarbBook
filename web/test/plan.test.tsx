@@ -133,3 +133,67 @@ describe('Plan cells', () => {
     expect(cell).toHaveTextContent('missing data');
   });
 });
+
+describe('copying', () => {
+  it('copies a day straight into an empty target date', async () => {
+    const { user } = await setup();
+    await seedLunch('2026-09-16');
+    renderWith(<Plan />, services);
+    await user.click(await screen.findByRole('button', { name: 'Copy Wed 16 Sep to another day' }));
+    const target = screen.getByLabelText('Copy to');
+    await user.clear(target);
+    await user.type(target, '2026-09-17');
+    await user.click(screen.getByRole('button', { name: 'Copy' }));
+
+    const entries = await services.db.plan_entry.filter((e) => e.date === '2026-09-17' && e.deleted === 0).toArray();
+    expect(entries).toHaveLength(1);
+    expect(entries[0]!.status).toBe('planned');
+  });
+
+  it('asks replace / merge / skip when the target day is not empty and merges on request', async () => {
+    const { user } = await setup();
+    await seedLunch('2026-09-16');
+    await seedLunch('2026-09-17');
+    renderWith(<Plan />, services);
+    await user.click(await screen.findByRole('button', { name: 'Copy Wed 16 Sep to another day' }));
+    const target = screen.getByLabelText('Copy to');
+    await user.clear(target);
+    await user.type(target, '2026-09-17');
+    await user.click(screen.getByRole('button', { name: 'Copy' }));
+
+    expect(await screen.findByRole('dialog', { name: 'Target already has plans' })).toHaveTextContent('2026-09-17');
+    await user.click(screen.getByRole('button', { name: 'Merge' }));
+
+    const items = await services.db.plan_item.filter((i) => i.plan_entry_id === 'p-2026-09-17' && i.deleted === 0).toArray();
+    expect(items.map((i) => i.position).sort()).toEqual([0, 1]);
+  });
+
+  it('replace clears the target day first', async () => {
+    const { user } = await setup();
+    await seedLunch('2026-09-16');
+    await seedLunch('2026-09-17');
+    renderWith(<Plan />, services);
+    await user.click(await screen.findByRole('button', { name: 'Copy Wed 16 Sep to another day' }));
+    const target = screen.getByLabelText('Copy to');
+    await user.clear(target);
+    await user.type(target, '2026-09-17');
+    await user.click(screen.getByRole('button', { name: 'Copy' }));
+    await user.click(await screen.findByRole('button', { name: 'Replace' }));
+
+    expect((await services.db.plan_entry.get('p-2026-09-17'))!.deleted).toBe(1);
+    const live = await services.db.plan_entry.filter((e) => e.date === '2026-09-17' && e.deleted === 0).toArray();
+    expect(live).toHaveLength(1);
+    expect(live[0]!.id).not.toBe('p-2026-09-17');
+  });
+
+  it('copies the whole week to the next week', async () => {
+    const { user } = await setup();
+    await seedLunch('2026-09-16');
+    renderWith(<Plan />, services);
+    await user.click(await screen.findByRole('button', { name: 'Copy week to next week' }));
+
+    const entries = await services.db.plan_entry.filter((e) => e.date === '2026-09-23' && e.deleted === 0).toArray();
+    expect(entries).toHaveLength(1);
+    expect(entries[0]!.window_name).toBe('Lunch');
+  });
+});

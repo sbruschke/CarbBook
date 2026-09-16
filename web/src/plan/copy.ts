@@ -111,8 +111,12 @@ export function copyChanges(args: {
   return { changes, removed };
 }
 
-/** Applies a `copyChanges` result: writes first (one transaction), then the soft deletes. */
+/**
+ * Applies a `copyChanges` result: the new/updated rows in one `saveMany` transaction, and every
+ * soft delete alongside it. Concurrent rather than sequential — each `store.remove` opens its own
+ * IndexedDB transaction, and a `replace` copy can need several; running them together keeps a
+ * "replace" copy from taking visibly longer than a "merge" one for the same day.
+ */
 export async function applyCopy(store: Store, result: CopyResult): Promise<void> {
-  await store.saveMany(result.changes);
-  for (const { table, id } of result.removed) await store.remove(table, id);
+  await Promise.all([store.saveMany(result.changes), ...result.removed.map(({ table, id }) => store.remove(table, id))]);
 }
