@@ -129,14 +129,14 @@ final class PlanModel {
         }
     }
 
-    /// Destination slots that already hold an entry, so the sheet only asks replace/merge/skip when
-    /// there is actually a clash.
+    /// Destination DAYS that already hold a live entry (any status, including `logged`), so the sheet
+    /// only asks replace/merge/skip when Replace would actually clear something on that day
+    /// (`PlanEditing.conflictDates`, matching web `conflictDates`).
     func occupied(_ offsets: [String: String], _ app: AppModel) -> [String] {
-        let sources = sourceEntries(offsets)
-        let targetDates = offsets.values.sorted()
+        let targetDates = Array(Set(offsets.values)).sorted()
         guard let first = targetDates.first, let last = targetDates.last else { return [] }
         let targets = (try? app.store.planEntries(from: first, to: last)) ?? []
-        return PlanEditing.occupiedTargets(sourceEntries: sources, targetEntries: targets, dayOffsets: offsets)
+        return PlanEditing.conflictDates(targetEntries: targets, targetDates: targetDates)
     }
 
     func copy(_ offsets: [String: String], mode: PlanEditing.CopyMode, _ app: AppModel) {

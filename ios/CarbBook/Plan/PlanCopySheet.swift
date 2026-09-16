@@ -12,18 +12,38 @@ struct PlanCopySheet: View {
     let offsets: (String) -> [String: String]
     let onCopy: ([String: String], PlanEditing.CopyMode) -> Void
 
-    @State private var target = Date()
+    @State private var target: Date
     @State private var mode: PlanEditing.CopyMode = .skip
 
-    private var currentOffsets: [String: String] { offsets(PlanDate.string(target)) }
+    init(scope: PlanModel.CopyScope, occupied: @escaping ([String: String]) -> [String],
+         offsets: @escaping (String) -> [String: String], onCopy: @escaping ([String: String], PlanEditing.CopyMode) -> Void) {
+        self.scope = scope
+        self.occupied = occupied
+        self.offsets = offsets
+        self.onCopy = onCopy
+        // Never defaults to the source day itself (spec §4) — a day copy defaults one day later.
+        let initial: String? = { if case .day(let date) = scope { PlanEditing.defaultCopyTarget(source: date) } else { nil } }()
+        _target = State(initialValue: initial.flatMap(PlanDate.date) ?? Date())
+    }
+
+    private var sourceDate: String? { if case .day(let date) = scope { date } else { nil } }
+    private var targetDateString: String { PlanDate.string(target) }
+    private var currentOffsets: [String: String] { offsets(targetDateString) }
     private var clashes: [String] { occupied(currentOffsets) }
+    private var isSelfCopy: Bool { PlanEditing.isSelfCopy(sourceDate: sourceDate, targetDate: targetDateString) }
 
     var body: some View {
         NavigationStack {
             Form {
                 switch scope {
                 case .day:
-                    Section("Copy to") { DatePicker("Date", selection: $target, displayedComponents: .date) }
+                    Section("Copy to") {
+                        DatePicker("Date", selection: $target, displayedComponents: .date)
+                        if isSelfCopy {
+                            Text("Choose a different day — this is the day you're copying from.")
+                                .font(.caption).foregroundStyle(.red)
+                        }
+                    }
                 case .week:
                     Section { Text("Copies this week onto next week, day by day.") }
                 }
@@ -36,8 +56,8 @@ struct PlanCopySheet: View {
                         }
                         .pickerStyle(.segmented)
                     } footer: {
-                        Text("\(clashes.count) destination slot(s) already planned: "
-                             + "Replace overwrites their items, Merge appends, Skip leaves them alone.")
+                        Text("\(clashes.count) destination day(s) already have a plan: "
+                             + "Replace clears everything planned on those days, Merge appends, Skip leaves them alone.")
                     }
                 }
             }
@@ -50,8 +70,12 @@ struct PlanCopySheet: View {
                         onCopy(currentOffsets, mode)
                         dismiss()
                     }
+                    .disabled(isSelfCopy)
                 }
             }
+            // No conflicts at the current target: any previously chosen mode no longer applies to
+            // anything, so Copy always behaves as a plain (conflict-free) copy.
+            .onChange(of: target) { if clashes.isEmpty { mode = .skip } }
         }
     }
 }

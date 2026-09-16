@@ -284,4 +284,45 @@ final class PlanEditingTests: XCTestCase {
             sourceEntries: f.source, targetEntries: target, dayOffsets: ["2026-09-16": "2026-09-17"])
         XCTAssertEqual(occupied, ["2026-09-17|lunch"])
     }
+
+    // MARK: - conflictDates (per-day conflicts for the Copy sheet, spec §4)
+
+    func testConflictDatesCountsAnyLiveEntryOnTheTargetDayEvenAnUnmatchedWindow() {
+        // Target day has a Dinner entry only; the source copies a Lunch. Per-slot matching would see
+        // no clash, but Replace clears the WHOLE day, so this must still count as a conflict.
+        let target = [PlanEntryData(id: "t1", date: "2026-09-17", windowName: "Dinner", status: .planned)]
+        XCTAssertEqual(PlanEditing.conflictDates(targetEntries: target, targetDates: ["2026-09-17", "2026-09-18"]),
+                       ["2026-09-17"])
+    }
+
+    func testConflictDatesCountsLoggedEntriesToo() {
+        // A logged breakfast is still a live entry that Replace would clear.
+        let target = [PlanEntryData(id: "t1", date: "2026-09-17", windowName: "Breakfast", status: .logged)]
+        XCTAssertEqual(PlanEditing.conflictDates(targetEntries: target, targetDates: ["2026-09-17"]), ["2026-09-17"])
+    }
+
+    func testConflictDatesIgnoresDaysWithNoLiveEntries() {
+        XCTAssertTrue(PlanEditing.conflictDates(targetEntries: [], targetDates: ["2026-09-17", "2026-09-18"]).isEmpty)
+    }
+
+    func testConflictDatesDeduplicatesMultipleEntriesOnTheSameDay() {
+        let target = [
+            PlanEntryData(id: "t1", date: "2026-09-17", windowName: "Breakfast", status: .planned),
+            PlanEntryData(id: "t2", date: "2026-09-17", windowName: "Lunch", status: .planned),
+        ]
+        XCTAssertEqual(PlanEditing.conflictDates(targetEntries: target, targetDates: ["2026-09-17"]), ["2026-09-17"])
+    }
+
+    // MARK: - Copy sheet target defaults and same-day guard (spec §4)
+
+    func testDefaultCopyTargetIsNeverTheSourceDay() {
+        XCTAssertEqual(PlanEditing.defaultCopyTarget(source: "2026-09-16"), "2026-09-17")
+        XCTAssertNotEqual(PlanEditing.defaultCopyTarget(source: "2026-09-16"), "2026-09-16")
+    }
+
+    func testIsSelfCopyDetectsATargetEqualToTheSourceDay() {
+        XCTAssertTrue(PlanEditing.isSelfCopy(sourceDate: "2026-09-16", targetDate: "2026-09-16"))
+        XCTAssertFalse(PlanEditing.isSelfCopy(sourceDate: "2026-09-16", targetDate: "2026-09-17"))
+        XCTAssertFalse(PlanEditing.isSelfCopy(sourceDate: nil, targetDate: "2026-09-16"), "a week copy has no single source date")
+    }
 }

@@ -113,6 +113,16 @@ public enum PlanEditing {
         }
     }
 
+    /// The Copy sheet's default destination for a single-day copy: the day after the source, never
+    /// the source day itself — a target defaulting to the source day would need to be changed before
+    /// Copy could ever be pressed (spec §4).
+    public static func defaultCopyTarget(source: String) -> String { PlanDate.shift(source, byDays: 1) }
+
+    /// True when a day copy's target is the same day as its source: Copy must refuse this rather than
+    /// silently copying a day onto itself (only `copyChanges`'s own same-date skip would otherwise
+    /// save the user from a no-op write).
+    public static func isSelfCopy(sourceDate: String?, targetDate: String) -> Bool { sourceDate == targetDate }
+
     /// Destination slot keys ("<date>|<window>", normalized) that already hold a live entry, so the
     /// screen can ask replace / merge / skip only when it actually matters.
     public static func occupiedTargets(sourceEntries: [PlanEntryData], targetEntries: [PlanEntryData],
@@ -123,6 +133,16 @@ public enum PlanEditing {
             return PlanDate.slotKey(date: target, windowName: entry.windowName)
         }
         return wanted.filter { existing.contains($0) }.sorted()
+    }
+
+    /// Destination DAYS (not slots) that already hold at least one live entry — any status, including
+    /// `logged` — so the Copy sheet only asks replace/merge/skip when Replace would actually clear
+    /// something. Matches the deployed web app's `conflictDates` (`web/src/plan/copy.ts`): `replace`
+    /// clears every live slot on a target day, so a day with an unrelated logged breakfast still
+    /// counts as a conflict even though no source window matches it.
+    public static func conflictDates(targetEntries: [PlanEntryData], targetDates: [String]) -> [String] {
+        let present = Set(targetEntries.map(\.date))
+        return targetDates.filter { present.contains($0) }.sorted()
     }
 
     /// Records for copying `sourceEntries` onto the days named by `dayOffsets` (source date → target
