@@ -4,6 +4,7 @@ import { Calculator } from '../screens/Calculator';
 import { Foods } from '../screens/Foods';
 import { Log } from '../screens/Log';
 import { Meals } from '../screens/Meals';
+import { Plan } from '../screens/Plan';
 import { Settings } from '../screens/Settings';
 import type { SyncPhase } from '../sync/engine';
 import { useServices } from './services';
@@ -16,6 +17,7 @@ interface Route {
 
 export const ROUTES: Route[] = [
   { path: '/', label: 'Calculator', render: () => <Calculator /> },
+  { path: '/plan', label: 'Plan', render: () => <Plan /> },
   { path: '/foods', label: 'Foods', render: () => <Foods /> },
   { path: '/meals', label: 'Meals', render: () => <Meals /> },
   { path: '/log', label: 'Log', render: () => <Log /> },

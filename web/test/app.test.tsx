@@ -2,6 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it } from 'vitest';
 import { App } from '../src/App';
+import { ROUTES, routeFor } from '../src/app/Shell';
 import type { CarbBookDb } from '../src/db/db';
 import { setMeta } from '../src/db/meta';
 import { createStore } from '../src/db/store';
@@ -149,5 +150,13 @@ describe('App', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     await waitFor(() => expect(pushedTables).toEqual(['food']));
     await waitFor(async () => expect(await db.outbox.count()).toBe(0));
+  });
+});
+
+
+describe('Plan route', () => {
+  it('routes /plan to the Plan screen and lists it in the nav', () => {
+    expect(routeFor('/plan').label).toBe('Plan');
+    expect(ROUTES.map((r) => r.path)).toEqual(['/', '/plan', '/foods', '/meals', '/log', '/settings']);
   });
 });
