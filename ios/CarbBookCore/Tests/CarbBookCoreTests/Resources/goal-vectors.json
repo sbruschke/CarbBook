@@ -26,7 +26,7 @@
     { "name": "incomplete carbs outside the goal", "carbs": 5, "complete": false, "goal": { "min": 50, "max": 80 }, "expect": "none" },
     { "name": "invalid goal min above max", "carbs": 65, "goal": { "min": 80, "max": 50 }, "expect": "none" },
     { "name": "invalid goal negative min", "carbs": 65, "goal": { "min": -1, "max": 80 }, "expect": "none" },
-    { "name": "invalid goal max above limit", "carbs": 65, "goal": { "min": 0, "max": 2001 }, "expect": "none" }
+    { "name": "goal max above the storage ceiling is still a usable range", "carbs": 65, "goal": { "min": 0, "max": 2001 }, "expect": "in" }
   ],
   "day_cases": [
     {
@@ -74,14 +74,27 @@
       ],
       "expect": null
     },
-    { "name": "no windows at all", "windows": [], "expect": null }
+    { "name": "no windows at all", "windows": [], "expect": null },
+    {
+      "name": "six windows summing above the storage ceiling",
+      "windows": [
+        { "name": "W1", "start": "05:00", "ratio_g_per_unit": 8, "carb_goal": { "min": 150, "max": 400 } },
+        { "name": "W2", "start": "07:00", "ratio_g_per_unit": 8, "carb_goal": { "min": 150, "max": 400 } },
+        { "name": "W3", "start": "09:00", "ratio_g_per_unit": 8, "carb_goal": { "min": 150, "max": 400 } },
+        { "name": "W4", "start": "11:00", "ratio_g_per_unit": 8, "carb_goal": { "min": 150, "max": 400 } },
+        { "name": "W5", "start": "13:00", "ratio_g_per_unit": 8, "carb_goal": { "min": 150, "max": 400 } },
+        { "name": "W6", "start": "15:00", "ratio_g_per_unit": 8, "carb_goal": { "min": 150, "max": 400 } }
+      ],
+      "expect": { "min": 900, "max": 2400 }
+    }
   ],
   "day_status_cases": [
     { "name": "day total in the summed goal", "carbs": 200, "day_goal": { "min": 160, "max": 300 }, "expect": "in" },
     { "name": "day total 5 under the summed goal", "carbs": 155, "day_goal": { "min": 160, "max": 300 }, "expect": "near" },
     { "name": "day total 10 over the summed goal", "carbs": 310, "day_goal": { "min": 160, "max": 300 }, "expect": "off" },
     { "name": "day total far under", "carbs": 100, "day_goal": { "min": 160, "max": 300 }, "expect": "out" },
-    { "name": "day with no goal", "carbs": 200, "day_goal": null, "expect": "none" }
+    { "name": "day with no goal", "carbs": 200, "day_goal": null, "expect": "none" },
+    { "name": "day total above the storage ceiling", "carbs": 2300, "day_goal": { "min": 900, "max": 2400 }, "expect": "in" }
   ],
   "valid_cases": [
     { "name": "ordinary goal", "goal": { "min": 30, "max": 50 }, "expect": true },
