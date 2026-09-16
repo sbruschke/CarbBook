@@ -121,4 +121,110 @@ final class PlanEditingTests: XCTestCase {
         let changes = try PlanEditing.saveChanges(draft: draft, existing: nil, existingItems: [], newId: idFactory())
         XCTAssertEqual(changes[0].record["window_name"], .string("Lunch"))
     }
+
+    private func item(_ id: String, _ entry: String, _ refId: String, _ position: Int) -> PlanItemData {
+        PlanItemData(id: id, planEntryId: entry, refType: .food, refId: refId, amount: 1, unit: "g", position: position)
+    }
+
+    /// Source: Lunch on the 16th with one item. Target: Lunch on the 17th already has an item.
+    private func copyFixture() -> (source: [PlanEntryData], target: [PlanEntryData], items: [Id: [PlanItemData]]) {
+        let source = [PlanEntryData(id: "s1", date: "2026-09-16", windowName: "Lunch", status: .logged,
+                                    note: "src", logEntryId: "l1")]
+        let target = [PlanEntryData(id: "t1", date: "2026-09-17", windowName: "Lunch", status: .planned)]
+        let items: [Id: [PlanItemData]] = ["s1": [item("si1", "s1", "rice", 0)], "t1": [item("ti1", "t1", "bread", 0)]]
+        return (source, target, items)
+    }
+
+    func testCopySkipLeavesAnOccupiedSlotAlone() throws {
+        let f = copyFixture()
+        let changes = try PlanEditing.copyChanges(
+            sourceEntries: f.source, targetEntries: f.target, itemsByEntry: f.items,
+            dayOffsets: ["2026-09-16": "2026-09-17"], mode: .skip, newId: idFactory())
+        XCTAssertTrue(changes.isEmpty)
+    }
+
+    func testCopyMergeAppendsItemsAfterTheExistingOnes() throws {
+        let f = copyFixture()
+        let changes = try PlanEditing.copyChanges(
+            sourceEntries: f.source, targetEntries: f.target, itemsByEntry: f.items,
+            dayOffsets: ["2026-09-16": "2026-09-17"], mode: .merge, newId: idFactory())
+        XCTAssertEqual(changes.map(\.table), ["plan_item"])
+        XCTAssertEqual(changes[0].record["plan_entry_id"], .string("t1"))
+        XCTAssertEqual(changes[0].record["ref_id"], .string("rice"))
+        XCTAssertEqual(changes[0].record["position"], .number(1), "appended after the existing item")
+        XCTAssertEqual(changes[0].record["id"], .string("new1"), "a copied item is always a new row")
+    }
+
+    func testCopyReplaceDeletesTheTargetItemsAndCopiesTheSourceOnes() throws {
+        let f = copyFixture()
+        let changes = try PlanEditing.copyChanges(
+            sourceEntries: f.source, targetEntries: f.target, itemsByEntry: f.items,
+            dayOffsets: ["2026-09-16": "2026-09-17"], mode: .replace, newId: idFactory())
+        XCTAssertEqual(changes.map(\.table), ["plan_item", "plan_entry", "plan_item"])
+        XCTAssertEqual(changes[0].record["id"], .string("ti1"))
+        XCTAssertEqual(changes[0].record["deleted"], .number(1))
+        XCTAssertEqual(changes[1].record["id"], .string("t1"))
+        XCTAssertEqual(changes[1].record["status"], .string("planned"), "a replaced slot starts planned again")
+        XCTAssertEqual(changes[1].record["log_entry_id"], .null)
+        XCTAssertEqual(changes[2].record["ref_id"], .string("rice"))
+        XCTAssertEqual(changes[2].record["position"], .number(0))
+    }
+
+    func testCopyIntoAnEmptySlotAlwaysCreatesAPlannedSlot() throws {
+        let f = copyFixture()
+        let changes = try PlanEditing.copyChanges(
+            sourceEntries: f.source, targetEntries: [], itemsByEntry: f.items,
+            dayOffsets: ["2026-09-16": "2026-09-18"], mode: .skip, newId: idFactory())
+        XCTAssertEqual(changes.map(\.table), ["plan_entry", "plan_item"])
+        XCTAssertEqual(changes[0].record["date"], .string("2026-09-18"))
+        XCTAssertEqual(changes[0].record["window_name"], .string("Lunch"))
+        XCTAssertEqual(changes[0].record["status"], .string("planned"))
+        XCTAssertEqual(changes[0].record["note"], .string("src"), "the note travels with the slot")
+        XCTAssertEqual(changes[0].record["log_entry_id"], .null, "a copy is never linked to the source's log entry")
+    }
+
+    func testCopyAWholeWeekMapsEveryDay() throws {
+        let source = [
+            PlanEntryData(id: "s1", date: "2026-09-14", windowName: "Lunch", status: .planned),
+            PlanEntryData(id: "s2", date: "2026-09-16", windowName: "Dinner", status: .planned),
+        ]
+        let offsets = Dictionary(uniqueKeysWithValues: PlanDate.week(containing: "2026-09-16")
+            .map { ($0, PlanDate.shift($0, byDays: 7)) })
+        let changes = try PlanEditing.copyChanges(
+            sourceEntries: source, targetEntries: [], itemsByEntry: [:], dayOffsets: offsets,
+            mode: .skip, newId: idFactory())
+        XCTAssertEqual(changes.count, 2)
+        XCTAssertEqual(changes[0].record["date"], .string("2026-09-21"))
+        XCTAssertEqual(changes[1].record["date"], .string("2026-09-23"))
+    }
+
+    func testOccupiedTargetsAreReported() {
+        let f = copyFixture()
+        let occupied = PlanEditing.occupiedTargets(
+            sourceEntries: f.source, targetEntries: f.target, dayOffsets: ["2026-09-16": "2026-09-17"])
+        // slotKey normalizes the window name (Task 8), so the reported key is lowercased.
+        XCTAssertEqual(occupied, ["2026-09-17|lunch"])
+        XCTAssertTrue(PlanEditing.occupiedTargets(sourceEntries: f.source, targetEntries: [],
+                                                  dayOffsets: ["2026-09-16": "2026-09-17"]).isEmpty)
+    }
+
+    func testCopySkipsSameDatePairs() throws {
+        // Copying a day onto itself (e.g. an all-zero week offset) must not duplicate the slot.
+        let f = copyFixture()
+        let changes = try PlanEditing.copyChanges(
+            sourceEntries: f.source, targetEntries: f.target, itemsByEntry: f.items,
+            dayOffsets: ["2026-09-16": "2026-09-16"], mode: .replace, newId: idFactory())
+        XCTAssertTrue(changes.isEmpty)
+    }
+
+    func testCopyTreatsDestinationWindowNamesCaseInsensitively() throws {
+        // Target slot's window is "LUNCH" (different case from source's "Lunch"); it is still the
+        // same slot identity, so occupiedTargets/copyChanges must not treat it as free.
+        let f = copyFixture()
+        var target = f.target
+        target[0].windowName = "LUNCH"
+        let occupied = PlanEditing.occupiedTargets(
+            sourceEntries: f.source, targetEntries: target, dayOffsets: ["2026-09-16": "2026-09-17"])
+        XCTAssertEqual(occupied, ["2026-09-17|lunch"])
+    }
 }

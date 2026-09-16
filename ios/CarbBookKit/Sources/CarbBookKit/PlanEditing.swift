@@ -94,4 +94,89 @@ public enum PlanEditing {
         return (try? SyncChange.encode("plan_entry", updated))
             ?? SyncChange(table: "plan_entry", record: ["id": .string(entry.id)])
     }
+
+    /// What to do when the destination slot already has a live entry (spec §4).
+    public enum CopyMode: String, Equatable, Sendable, CaseIterable {
+        /// Clear the destination's items and use the source's.
+        case replace
+        /// Append the source's items after the destination's.
+        case merge
+        /// Leave the destination untouched.
+        case skip
+
+        public var label: String {
+            switch self {
+            case .replace: "Replace"
+            case .merge: "Merge"
+            case .skip: "Skip"
+            }
+        }
+    }
+
+    /// Destination slot keys ("<date>|<window>", normalized) that already hold a live entry, so the
+    /// screen can ask replace / merge / skip only when it actually matters.
+    public static func occupiedTargets(sourceEntries: [PlanEntryData], targetEntries: [PlanEntryData],
+                                       dayOffsets: [String: String]) -> [String] {
+        let existing = Set(targetEntries.map { PlanDate.slotKey(date: $0.date, windowName: $0.windowName) })
+        let wanted = sourceEntries.compactMap { entry -> String? in
+            guard let target = dayOffsets[entry.date], target != entry.date else { return nil }
+            return PlanDate.slotKey(date: target, windowName: entry.windowName)
+        }
+        return wanted.filter { existing.contains($0) }.sorted()
+    }
+
+    /// Records for copying `sourceEntries` onto the days named by `dayOffsets` (source date → target
+    /// date; one pair for a day copy, seven for a week). A source date that maps to itself is
+    /// skipped (copying a day onto itself must never duplicate its own items). A copy is never
+    /// linked to the source's log entry and always lands as `planned`: it is a plan, not a record of
+    /// something eaten. The whole result is meant to be applied through `LocalStore.save` in one
+    /// call, so every soft delete and every save for a replace/merge/skip commits atomically — a
+    /// failure part-way through must never leave a duplicated live slot.
+    public static func copyChanges(sourceEntries: [PlanEntryData], targetEntries: [PlanEntryData],
+                                   itemsByEntry: [Id: [PlanItemData]], dayOffsets: [String: String],
+                                   mode: CopyMode, newId: () -> Id) throws -> [SyncChange] {
+        var targetsByKey: [String: PlanEntryData] = [:]
+        for entry in targetEntries { targetsByKey[PlanDate.slotKey(date: entry.date, windowName: entry.windowName)] = entry }
+        var changes: [SyncChange] = []
+        for source in sourceEntries.sorted(by: { ($0.date, $0.windowName) < ($1.date, $1.windowName) }) {
+            guard let targetDate = dayOffsets[source.date], targetDate != source.date else { continue }
+            let sourceItems = itemsByEntry[source.id] ?? []
+            let key = PlanDate.slotKey(date: targetDate, windowName: source.windowName)
+            let existing = targetsByKey[key]
+            if existing != nil && mode == .skip { continue }
+
+            var startPosition = 0
+            let entryId: Id
+            if let existing {
+                entryId = existing.id
+                let existingItems = itemsByEntry[existing.id] ?? []
+                if mode == .replace {
+                    for item in existingItems {
+                        var deletedItem = item
+                        deletedItem.deleted = 1
+                        changes.append(try SyncChange.encode("plan_item", deletedItem))
+                    }
+                    // A replaced slot goes back to planned and loses any link to a logged entry.
+                    var reset = existing
+                    reset.status = .planned
+                    reset.logEntryId = nil
+                    reset.note = source.note
+                    changes.append(try SyncChange.encode("plan_entry", reset))
+                } else {
+                    startPosition = (existingItems.map(\.position).max() ?? -1) + 1
+                }
+            } else {
+                entryId = newId()
+                changes.append(try SyncChange.encode("plan_entry", PlanEntryData(
+                    id: entryId, date: targetDate, windowName: source.windowName, status: .planned,
+                    note: source.note, logEntryId: nil)))
+            }
+            for (offset, item) in sourceItems.enumerated() {
+                changes.append(try SyncChange.encode("plan_item", PlanItemData(
+                    id: newId(), planEntryId: entryId, refType: item.refType, refId: item.refId,
+                    amount: item.amount, unit: item.unit, position: startPosition + offset)))
+            }
+        }
+        return changes
+    }
 }
