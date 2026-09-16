@@ -421,3 +421,61 @@ fieldset {
     grid-template-columns: 7rem 1fr auto auto auto auto;
   }
 }
+
+.plan-week {
+  display: grid;
+  gap: 16px;
+}
+
+.plan-day h2 {
+  margin: 0 0 4px;
+  font-size: 1rem;
+}
+
+.plan-cell {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 4px 8px;
+  padding: 8px 0;
+  border-top: 1px solid var(--border);
+}
+
+.plan-cell h3 {
+  grid-column: 1;
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.plan-cell button {
+  grid-column: 2;
+  grid-row: 1 / span 4;
+  min-width: var(--tap);
+  min-height: var(--tap);
+}
+
+.plan-cell p,
+.plan-cell .goal,
+.plan-cell .tag {
+  grid-column: 1;
+}
+
+/* Tablet and up: the same markup becomes the week grid (days as rows, windows as columns). */
+@media (min-width: 900px) {
+  .plan-day {
+    display: grid;
+    grid-template-columns: 8rem repeat(auto-fit, minmax(9rem, 1fr));
+    align-items: start;
+    gap: 8px;
+  }
+  .plan-day h2 {
+    grid-row: 1;
+  }
+  .plan-cell {
+    display: block;
+    border-top: none;
+  }
+  .plan-cell button {
+    width: 100%;
+  }
+}

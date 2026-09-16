@@ -1,10 +1,13 @@
+import type { Catalog } from '@carbbook/core';
 import { useState } from 'react';
 import { useCatalogData, useEligibleDoseVersions, usePlanData } from '../app/hooks';
 import { useServices } from '../app/services';
 import { buildCatalog } from '../db/catalog';
+import { goalView } from '../plan/goal';
 import { SlotEditor } from '../plan/SlotEditor';
-import { buildSlots, type Slot, windowsFor } from '../plan/slots';
+import { buildSlots, dayTotal, type Slot, windowsFor } from '../plan/slots';
 import { dayKey, formatDayLabel, shiftDay, startOfWeek, weekDates } from '../ui/format';
+import { itemName } from '../ui/ItemEditor';
 
 export function Plan() {
   const { now } = useServices();
@@ -90,8 +93,19 @@ export function Plan() {
             <h2>{formatDayLabel(date)}</h2>
             {(byDate.get(date) ?? []).length === 0 && <p className="muted">No time windows apply to this day.</p>}
             {(byDate.get(date) ?? []).map((slot) => (
-              <PlanCell key={slot.key} slot={slot} onEdit={() => setEditing({ date: slot.date, windowName: slot.windowName })} />
+              <PlanCell
+                key={slot.key}
+                slot={slot}
+                catalog={catalog}
+                onEdit={() => setEditing({ date: slot.date, windowName: slot.windowName })}
+              />
             ))}
+            <p className="total">
+              <GoalReadout
+                view={goalView(dayTotal(byDate.get(date) ?? []).carbs, dayTotal(byDate.get(date) ?? []).goal)}
+                testId={`plan-day-total-${date}`}
+              />
+            </p>
           </section>
         ))}
       </div>
@@ -99,14 +113,43 @@ export function Plan() {
   );
 }
 
-function PlanCell(props: { slot: Slot; onEdit: () => void }) {
-  const { slot } = props;
+const STATUS_WORDS = { planned: 'planned', logged: 'logged', skipped: 'skipped' } as const;
+
+function GoalReadout(props: { view: ReturnType<typeof goalView>; testId: string }) {
+  const { view } = props;
   return (
-    <div className="plan-cell" data-testid="plan-cell">
+    <span className={view.className} aria-label={view.ariaLabel} data-testid={props.testId}>
+      <span aria-hidden="true">{view.text}</span>
+      {view.word && (
+        <span className="goal-word" aria-hidden="true">
+          {view.word}
+        </span>
+      )}
+    </span>
+  );
+}
+
+function PlanCell(props: { slot: Slot; catalog: Catalog; onEdit: () => void }) {
+  const { slot, catalog } = props;
+  const view = goalView(slot.carbs, slot.goal);
+  const names = slot.items.map((i) => itemName(catalog, i.ref_type, i.ref_id)).join(', ');
+  return (
+    <div className="plan-cell" data-testid={`plan-cell-${slot.date}-${slot.windowName}`}>
       <h3>{slot.windowName}</h3>
-      <button type="button" onClick={props.onEdit}>
-        {slot.entry ? 'Edit' : '+'}
-      </button>
+      {slot.entry ? (
+        <>
+          <p className="muted">{names || 'No items'}</p>
+          <GoalReadout view={view} testId={`plan-carbs-${slot.date}-${slot.windowName}`} />
+          <span className="tag">{STATUS_WORDS[slot.entry.status]}</span>
+          <button type="button" aria-label={`Edit ${slot.windowName} on ${formatDayLabel(slot.date)}`} onClick={props.onEdit}>
+            Edit
+          </button>
+        </>
+      ) : (
+        <button type="button" aria-label={`Add to ${slot.windowName} on ${formatDayLabel(slot.date)}`} onClick={props.onEdit}>
+          +
+        </button>
+      )}
     </div>
   );
 }

@@ -82,3 +82,54 @@ describe('Plan screen', () => {
     expect(input).toHaveValue('2026-09-14');
   });
 });
+
+import { within } from '@testing-library/react';
+import { synced as sync } from './helpers';
+
+async function seedLunch(date = '2026-09-16', grams = 150) {
+  await services.db.plan_entry.put(
+    sync({ id: `p-${date}`, date, window_name: 'Lunch', status: 'planned', note: null, log_entry_id: null }),
+  );
+  await services.db.plan_item.put(
+    sync({ id: `i-${date}`, plan_entry_id: `p-${date}`, ref_type: 'food', ref_id: 'tortilla', amount: grams, unit: 'g', position: 0 }),
+  );
+}
+
+describe('Plan cells', () => {
+  it('shows the items, the carbs with the goal and an accessible label, and the status', async () => {
+    await setup();
+    await seedLunch(); // 150 g tortilla = 72 g carbs, Lunch goal 50-80 → in
+    renderWith(<Plan />, services);
+    const cell = await screen.findByTestId('plan-cell-2026-09-16-Lunch');
+    expect(cell).toHaveTextContent('Tortilla');
+    expect(cell).toHaveTextContent('72 g · goal 50–80');
+    expect(cell).toHaveTextContent('on target');
+    expect(cell).toHaveTextContent('planned');
+    expect(within(cell).getByLabelText('72 g, goal 50 to 80, on target')).toHaveClass('goal-in');
+  });
+
+  it('colours a slot that is far outside its goal red, still with the numbers in text', async () => {
+    await setup();
+    await seedLunch('2026-09-16', 300); // 144 g carbs vs 50-80 → out
+    renderWith(<Plan />, services);
+    const cell = await screen.findByTestId('plan-cell-2026-09-16-Lunch');
+    expect(within(cell).getByLabelText('144 g, goal 50 to 80, far outside')).toHaveClass('goal-out');
+  });
+
+  it('shows a day total against the summed day goal', async () => {
+    await setup();
+    await seedLunch();
+    renderWith(<Plan />, services);
+    const total = await screen.findByTestId('plan-day-total-2026-09-16');
+    expect(total).toHaveTextContent('72 g · goal');
+  });
+
+  it('shows "missing data" and no number when an item does not resolve', async () => {
+    await setup();
+    await seedLunch();
+    await services.db.plan_item.update('i-2026-09-16', { ref_id: 'not-synced-yet' });
+    renderWith(<Plan />, services);
+    const cell = await screen.findByTestId('plan-cell-2026-09-16-Lunch');
+    expect(cell).toHaveTextContent('missing data');
+  });
+});
