@@ -73,7 +73,7 @@ public func goalText(_ carbs: CarbResult, _ goal: CarbGoal?) -> String {
 }
 
 /// Locale-independent carb formatting for goal text: at most one decimal, no trailing ".0".
-func formatCarbs(_ value: Double) -> String {
+public func formatCarbs(_ value: Double) -> String {
     guard value.isFinite else { return "—" }
     var text = String(format: "%.1f", value)
     if text.hasSuffix(".0") { text.removeLast(2) }
