@@ -15,8 +15,9 @@ struct PlanSlotEditorView: View {
     @State private var showAdd = false
     @State private var error: String?
     @State private var loaded = false
-
-    private var catalog: InMemoryCatalog { (try? app.store.catalog()) ?? InMemoryCatalog() }
+    /// Loaded once (`loadCatalog`, off the main thread) rather than re-read from the DB on every
+    /// access; refreshed only after a food or meal is actually added.
+    @State private var catalog = InMemoryCatalog()
 
     var body: some View {
         NavigationStack {
@@ -50,7 +51,15 @@ struct PlanSlotEditorView: View {
                 ToolbarItem(placement: .confirmationAction) { Button("Save") { save() } }
             }
             .onAppear(perform: load)
+            .task { await loadCatalog() }
         }
+    }
+
+    /// Reads the whole catalog off the main thread; `LocalStore`'s underlying `DatabaseQueue` is
+    /// safe to read from any thread.
+    private func loadCatalog() async {
+        let store = app.store
+        catalog = await Task.detached(priority: .userInitiated) { (try? store.catalog()) ?? InMemoryCatalog() }.value
     }
 
     private var total: CarbResult {
@@ -93,6 +102,10 @@ struct PlanSlotEditorView: View {
                 guard let fdcId = hit.usdaFdcId, let usda = app.usda else { return }
                 let id = try app.store.adoptUsdaFood(fdcId: fdcId, library: usda)
                 app.revision += 1
+                // Refresh synchronously here (not the cached `catalog`'s usual off-thread reload):
+                // the adopted food must be visible immediately so `appendFood` below picks its real
+                // default portion/unit instead of falling back to 100 g.
+                catalog = (try? app.store.catalog()) ?? catalog
                 appendFood(id: id)
             }
         } catch {
