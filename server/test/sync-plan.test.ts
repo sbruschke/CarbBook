@@ -214,3 +214,68 @@ describe('deleting a log entry returns its plan slot to planned', () => {
     });
   });
 });
+
+describe('plan push/pull round trip', () => {
+  it('returns a pushed plan entry and its items in server_seq order', () => {
+    const db = initDatabase(':memory:');
+    const since = currentServerSeq(db);
+    const results = applyPush(db, 'owner', [
+      { table: 'plan_entry', record: planEntry({ id: 'p1', note: 'prep the night before' }) },
+      { table: 'plan_item', record: planItem('p1', { id: 'i1', ref_id: 'rice', unit: 'g', amount: 150, position: 0 }) },
+      { table: 'plan_item', record: planItem('p1', { id: 'i2', ref_type: 'meal', ref_id: 'm1', unit: 'serving', amount: 1, position: 1 }) },
+    ]);
+    expect(results.map((r) => r.status)).toEqual(['accepted', 'accepted', 'accepted']);
+
+    const page = pullChanges(db, since, 50);
+    expect(page.changes.map((c) => [c.table, c.record.id])).toEqual([
+      ['plan_entry', 'p1'],
+      ['plan_item', 'i1'],
+      ['plan_item', 'i2'],
+    ]);
+    expect(page.changes[0]!.record).toMatchObject({
+      date: '2026-09-17',
+      window_name: 'Lunch',
+      status: 'planned',
+      note: 'prep the night before',
+      log_entry_id: null,
+      deleted: 0,
+    });
+    expect(page.changes[2]!.record).toMatchObject({
+      plan_entry_id: 'p1',
+      ref_type: 'meal',
+      ref_id: 'm1',
+      amount: 1,
+      unit: 'serving',
+      position: 1,
+    });
+    expect(page.has_more).toBe(false);
+  });
+
+  it('propagates a skip and a soft-deleted item', () => {
+    const db = initDatabase(':memory:');
+    applyPush(db, 'owner', [
+      { table: 'plan_entry', record: planEntry({ id: 'p1' }) },
+      { table: 'plan_item', record: planItem('p1', { id: 'i1' }) },
+    ]);
+    const since = currentServerSeq(db);
+    applyPush(db, 'owner', [
+      { table: 'plan_entry', record: planEntry({ id: 'p1', status: 'skipped', updated_at: 2000 }) },
+      { table: 'plan_item', record: planItem('p1', { id: 'i1', deleted: 1, updated_at: 2000 }) },
+    ]);
+    const page = pullChanges(db, since, 50);
+    expect(page.changes.map((c) => [c.table, c.record.id, c.record.status ?? c.record.deleted])).toEqual([
+      ['plan_entry', 'p1', 'skipped'],
+      ['plan_item', 'i1', 1],
+    ]);
+  });
+
+  it('ignores a stale plan push under last-write-wins', () => {
+    const db = initDatabase(':memory:');
+    applyPush(db, 'owner', [{ table: 'plan_entry', record: planEntry({ id: 'p1', status: 'skipped', updated_at: 5000 }) }]);
+    const stale = applyPush(db, 'owner', [
+      { table: 'plan_entry', record: planEntry({ id: 'p1', status: 'planned', updated_at: 4000 }) },
+    ]);
+    expect(stale[0]!.status).toBe('ignored');
+    expect(db.prepare('SELECT status FROM plan_entry WHERE id = ?').pluck().get('p1')).toBe('skipped');
+  });
+});
