@@ -5,6 +5,7 @@ import { usePlanData } from '../src/app/hooks';
 import { ServicesProvider } from '../src/app/services';
 import { SYNC_TABLES } from '../src/db/db';
 import { createStore } from '../src/db/store';
+import { removeSlot, saveSlot } from '../src/plan/saveSlot';
 import { pushOutbox } from '../src/sync/push';
 import { FakeApi, openTestDb } from './helpers';
 import { makeServices } from './render';
@@ -85,5 +86,36 @@ describe('usePlanData', () => {
     await waitFor(() => expect(result.current).toBeDefined());
     expect(result.current!.entries.map((e) => e.id)).toEqual(['plan-1']);
     expect(result.current!.items.map((i) => i.id)).toEqual(['plan-item-1']);
+  });
+});
+
+describe('saveSlot', () => {
+  it('writes the entry and its items with positions, and removes dropped items', async () => {
+    const services = makeServices();
+    db = services.db;
+    await saveSlot(services.store, entry, [
+      { key: 'a', ref_type: 'food', ref_id: 'tortilla', amount: '1 1/2', unit: 'g' },
+      { key: 'b', ref_type: 'food', ref_id: 'tortilla', amount: '2', unit: 'g' },
+    ]);
+    const saved = (await db.plan_item.toArray()).sort((x, y) => x.position - y.position);
+    expect(saved.map((i) => [i.id, i.amount, i.position])).toEqual([
+      ['a', 1.5, 0],
+      ['b', 2, 1],
+    ]);
+
+    await saveSlot(services.store, entry, [{ key: 'b', ref_type: 'food', ref_id: 'tortilla', amount: '2', unit: 'g' }], ['a']);
+    expect((await db.plan_item.get('a'))!.deleted).toBe(1);
+    expect((await db.plan_item.get('b'))!.position).toBe(0);
+  });
+});
+
+describe('removeSlot', () => {
+  it('soft-deletes the entry and every one of its items', async () => {
+    const services = makeServices();
+    db = services.db;
+    await saveSlot(services.store, entry, [{ key: 'a', ref_type: 'food', ref_id: 'tortilla', amount: '1', unit: 'g' }]);
+    await removeSlot(services.store, 'plan-1', ['a']);
+    expect((await db.plan_entry.get('plan-1'))!.deleted).toBe(1);
+    expect((await db.plan_item.get('a'))!.deleted).toBe(1);
   });
 });
