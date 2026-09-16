@@ -35,12 +35,15 @@ export async function saveSlot(
       }),
     ),
   ];
-  await store.saveMany(changes);
-  for (const id of removedItemIds) await store.remove('plan_item', id);
+  // One transaction for the save and the dropped items' soft deletes: if a remove failed after a
+  // separate save had already committed, the dropped item would resurface as a live duplicate.
+  await store.saveMany(changes, removedItemIds.map((id) => ({ table: 'plan_item' as const, id })));
 }
 
-/** Soft-deletes a slot: its items first, then the entry. */
+/** Soft-deletes a slot: its items and the entry, atomically (one transaction). */
 export async function removeSlot(store: Store, entryId: string, itemIds: string[]): Promise<void> {
-  for (const id of itemIds) await store.remove('plan_item', id);
-  await store.remove('plan_entry', entryId);
+  await store.saveMany(
+    [],
+    [...itemIds.map((id) => ({ table: 'plan_item' as const, id })), { table: 'plan_entry' as const, id: entryId }],
+  );
 }

@@ -1,10 +1,11 @@
 import type { PlanEntryData, PlanItemData } from '@carbbook/core';
 import { renderHook, waitFor } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { usePlanData } from '../src/app/hooks';
 import { ServicesProvider } from '../src/app/services';
 import { SYNC_TABLES } from '../src/db/db';
 import { createStore } from '../src/db/store';
+import { applyCopy } from '../src/plan/copy';
 import { removeSlot, saveSlot } from '../src/plan/saveSlot';
 import { pushOutbox } from '../src/sync/push';
 import { FakeApi, openTestDb } from './helpers';
@@ -117,5 +118,42 @@ describe('removeSlot', () => {
     await removeSlot(services.store, 'plan-1', ['a']);
     expect((await db.plan_entry.get('plan-1'))!.deleted).toBe(1);
     expect((await db.plan_item.get('a'))!.deleted).toBe(1);
+  });
+});
+
+describe('applyCopy atomicity', () => {
+  it('leaves the week unchanged when a soft-delete fails mid-operation, instead of leaving both old and new slots live', async () => {
+    const services = makeServices();
+    db = services.db;
+    await saveSlot(services.store, entry, [{ key: 'a', ref_type: 'food', ref_id: 'tortilla', amount: '1', unit: 'g' }]);
+
+    // Simulate a `replace` copy: create a new entry/item for the target day and remove the old
+    // ones, but make the removal of the old entry fail partway through.
+    const planEntryTable = db.table('plan_entry');
+    const origPut = planEntryTable.put.bind(planEntryTable);
+    const putSpy = vi.spyOn(planEntryTable, 'put').mockImplementation((async (record: PlanEntryData) => {
+      if (record.id === 'plan-1') throw new Error('forced failure');
+      return origPut(record);
+    }) as typeof planEntryTable.put);
+
+    await expect(
+      applyCopy(services.store, {
+        changes: [
+          { table: 'plan_entry', data: { ...entry, id: 'plan-new' } },
+          { table: 'plan_item', data: { ...item, id: 'item-new', plan_entry_id: 'plan-new' } },
+        ],
+        removed: [
+          { table: 'plan_item', id: 'a' },
+          { table: 'plan_entry', id: 'plan-1' },
+        ],
+      }),
+    ).rejects.toThrow();
+    putSpy.mockRestore();
+
+    // Nothing committed: no new live slot, and the old one is still live (not doubled, not lost).
+    expect(await db.plan_entry.get('plan-new')).toBeUndefined();
+    expect(await db.plan_item.get('item-new')).toBeUndefined();
+    expect((await db.plan_entry.get('plan-1'))!.deleted).toBe(0);
+    expect((await db.plan_item.get('a'))!.deleted).toBe(0);
   });
 });

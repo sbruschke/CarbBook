@@ -43,6 +43,7 @@ export function copyChanges(args: {
   const removed: CopyResult['removed'] = [];
 
   for (const { from, to } of args.pairs) {
+    if (from === to) continue; // copying a day onto itself must never duplicate its own items
     const sources = liveEntries.filter((e) => e.date === from);
     if (sources.length === 0) continue;
     let targets = liveEntries.filter((e) => e.date === to);
@@ -112,11 +113,10 @@ export function copyChanges(args: {
 }
 
 /**
- * Applies a `copyChanges` result: the new/updated rows in one `saveMany` transaction, and every
- * soft delete alongside it. Concurrent rather than sequential — each `store.remove` opens its own
- * IndexedDB transaction, and a `replace` copy can need several; running them together keeps a
- * "replace" copy from taking visibly longer than a "merge" one for the same day.
+ * Applies a `copyChanges` result: the new/updated rows and every soft delete in ONE IndexedDB
+ * transaction, so a "replace" copy can never leave both the old and the new slot live — either
+ * everything commits or nothing does.
  */
 export async function applyCopy(store: Store, result: CopyResult): Promise<void> {
-  await Promise.all([store.saveMany(result.changes), ...result.removed.map(({ table, id }) => store.remove(table, id))]);
+  await store.saveMany(result.changes, result.removed);
 }

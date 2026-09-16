@@ -186,6 +186,34 @@ describe('copying', () => {
     expect(live[0]!.id).not.toBe('p-2026-09-17');
   });
 
+  it('blocks copying to an empty target date and shows an inline error', async () => {
+    const { user } = await setup();
+    await seedLunch('2026-09-16');
+    renderWith(<Plan />, services);
+    await user.click(await screen.findByRole('button', { name: 'Copy Wed 16 Sep to another day' }));
+    const target = screen.getByLabelText('Copy to');
+    await user.clear(target);
+    await user.click(screen.getByRole('button', { name: 'Copy' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Enter a valid date to copy to.');
+    expect(await services.db.plan_entry.count()).toBe(1); // only the seeded source day
+  });
+
+  it('refuses to copy a day onto itself instead of doubling its planned carbs', async () => {
+    const { user } = await setup();
+    await seedLunch('2026-09-16');
+    renderWith(<Plan />, services);
+    await user.click(await screen.findByRole('button', { name: 'Copy Wed 16 Sep to another day' }));
+    const target = screen.getByLabelText('Copy to');
+    await user.clear(target);
+    await user.type(target, '2026-09-16');
+    await user.click(screen.getByRole('button', { name: 'Copy' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Choose a different date to copy to.');
+    const items = await services.db.plan_item.filter((i) => i.plan_entry_id === 'p-2026-09-16' && i.deleted === 0).toArray();
+    expect(items).toHaveLength(1); // not duplicated into itself
+  });
+
   it('copies the whole week to the next week', async () => {
     const { user } = await setup();
     await seedLunch('2026-09-16');

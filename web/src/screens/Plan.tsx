@@ -27,6 +27,7 @@ export function Plan() {
   const [copyForm, setCopyForm] = useState<{ from: string; to: string } | null>(null);
   const [pending, setPending] = useState<{ pairs: { from: string; to: string }[]; conflicts: string[] } | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [copyError, setCopyError] = useState<string | null>(null);
 
   if (!data || !versions || !plan) return <p>Loading…</p>;
 
@@ -127,18 +128,38 @@ export function Plan() {
           aria-label="Copy day"
           onSubmit={(e) => {
             e.preventDefault();
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(copyForm.to)) {
+              setCopyError('Enter a valid date to copy to.');
+              return;
+            }
+            if (copyForm.to === copyForm.from) {
+              setCopyError('Choose a different date to copy to.');
+              return;
+            }
+            setCopyError(null);
             start([copyForm]);
           }}
         >
           <label>
             Copy to
-            <input type="date" value={copyForm.to} onChange={(e) => setCopyForm({ ...copyForm, to: e.target.value })} />
+            <input
+              type="date"
+              value={copyForm.to}
+              onChange={(e) => setCopyForm({ ...copyForm, to: e.target.value })}
+            />
           </label>
+          {copyError && <p role="alert">{copyError}</p>}
           <div className="button-row">
             <button type="submit" className="primary">
               Copy
             </button>
-            <button type="button" onClick={() => setCopyForm(null)}>
+            <button
+              type="button"
+              onClick={() => {
+                setCopyForm(null);
+                setCopyError(null);
+              }}
+            >
               Cancel
             </button>
           </div>
@@ -151,7 +172,10 @@ export function Plan() {
             <button
               type="button"
               aria-label={`Copy ${formatDayLabel(date)} to another day`}
-              onClick={() => setCopyForm({ from: date, to: shiftDay(date, 1) })}
+              onClick={() => {
+                setCopyForm({ from: date, to: shiftDay(date, 1) });
+                setCopyError(null);
+              }}
             >
               Copy day
             </button>

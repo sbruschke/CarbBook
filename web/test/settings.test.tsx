@@ -232,4 +232,25 @@ describe('carb goals in the dose settings editor', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Window 3 carb goal minimum must not be above its maximum.');
   });
+
+  it('saves carb_goal: null on a new version when an existing goal is cleared', async () => {
+    services = makeServices();
+    await seedSettings(services.db);
+    const user = userEvent.setup();
+    const current = (await services.db.dose_settings.toArray())[0]!;
+    renderWith(<Settings />, services);
+    await user.click(await screen.findByRole('button', { name: 'Edit dose settings' }));
+
+    // Window 3 (Lunch) starts with a real goal (50-80) from SEED_SETTINGS — clear both fields.
+    const min = screen.getByLabelText('Window 3 carb goal minimum (g)');
+    const max = screen.getByLabelText('Window 3 carb goal maximum (g)');
+    expect(min).toHaveValue('50');
+    await user.clear(min);
+    await user.clear(max);
+    await user.click(screen.getByRole('button', { name: 'Save as new version' }));
+
+    const versions = await services.db.dose_settings.toArray();
+    const saved = versions.find((v) => v.id !== current.id)!;
+    expect(saved.windows.find((w) => w.name === 'Lunch')!.carb_goal).toBeNull();
+  });
 });
