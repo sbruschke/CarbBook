@@ -1,7 +1,7 @@
 import type { DoseWindow, PlanEntryData, PlanItemData, Synced } from '@carbbook/core';
 import { describe, expect, it } from 'vitest';
 import { buildCatalog } from '../src/db/catalog';
-import { buildSlots, slotKey, windowsFor } from '../src/plan/slots';
+import { buildSlots, dayTotal, slotKey, windowsFor } from '../src/plan/slots';
 import { foodData, synced } from './helpers';
 import { SEED_SETTINGS } from './render';
 
@@ -82,5 +82,35 @@ describe('windowsFor', () => {
   it('returns no windows when no version is effective yet', () => {
     const future = synced({ ...SEED_SETTINGS, id: 'later', effective_from: new Date(2030, 0, 1).getTime() });
     expect(windowsFor([future], '2026-09-16')).toEqual([]);
+  });
+});
+
+describe('dayTotal', () => {
+  it('sums the slots carbs and the window goals', () => {
+    const slots = buildSlots({
+      dates: ['2026-09-16'],
+      windows: WINDOWS,
+      entries: [entry({})],
+      items: [item({})],
+      catalog,
+    });
+    expect(dayTotal(slots)).toEqual({ carbs: { carbs_g: 48, complete: true }, goal: { min: 80, max: 130 } });
+  });
+
+  it('has no day goal when no window in the day has one', () => {
+    const noGoals = WINDOWS.map((w) => ({ ...w, carb_goal: null }));
+    const slots = buildSlots({ dates: ['2026-09-16'], windows: noGoals, entries: [], items: [], catalog });
+    expect(dayTotal(slots).goal).toBeNull();
+  });
+
+  it('is incomplete when any slot in the day is incomplete', () => {
+    const slots = buildSlots({
+      dates: ['2026-09-16'],
+      windows: WINDOWS,
+      entries: [entry({})],
+      items: [item({ ref_id: 'not-here-yet' })],
+      catalog,
+    });
+    expect(dayTotal(slots).carbs.complete).toBe(false);
   });
 });

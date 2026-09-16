@@ -3,6 +3,7 @@ import {
   type CarbGoal,
   type CarbResult,
   type Catalog,
+  dayGoal,
   type DoseSettingsData,
   type DoseWindow,
   itemCarbs,
@@ -74,4 +75,20 @@ export function buildSlots(args: {
       };
     }),
   );
+}
+
+/**
+ * A day's planned carbs against the sum of that day's window goals (spec §3). Windows with no goal
+ * contribute nothing to either side; with no goals at all the total has none, which `goalView`
+ * renders as a plain number with no colour.
+ *
+ * Core's `dayGoal` takes `DoseWindow[]` and reads `carb_goal` off each — not the
+ * `(CarbGoal | null)[]` this plan originally assumed, so each slot's goal is wrapped back into a
+ * window-shaped stub before summing.
+ */
+export function dayTotal(slots: Slot[]): { carbs: CarbResult; goal: CarbGoal | null } {
+  return {
+    carbs: sumCarbs(slots.map((s) => s.carbs)),
+    goal: dayGoal(slots.map((s) => ({ carb_goal: s.goal }) as DoseWindow)),
+  };
 }
