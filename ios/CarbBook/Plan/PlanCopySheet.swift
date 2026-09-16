@@ -23,7 +23,7 @@ struct PlanCopySheet: View {
         self.onCopy = onCopy
         // Never defaults to the source day itself (spec §4) — a day copy defaults one day later.
         let initial: String? = { if case .day(let date) = scope { PlanEditing.defaultCopyTarget(source: date) } else { nil } }()
-        _target = State(initialValue: initial.flatMap(PlanDate.date) ?? Date())
+        _target = State(initialValue: initial.flatMap { PlanDate.date($0) } ?? Date())
     }
 
     private var sourceDate: String? { if case .day(let date) = scope { date } else { nil } }
