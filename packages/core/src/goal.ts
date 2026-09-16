@@ -1,3 +1,4 @@
+import type { CarbResult } from './carbs';
 import { DOSE_LIMITS } from './dose';
 import type { CarbGoal } from './types';
 
@@ -11,4 +12,37 @@ export function isValidCarbGoal(value: unknown): value is CarbGoal {
   if (typeof min !== 'number' || !Number.isFinite(min)) return false;
   if (typeof max !== 'number' || !Number.isFinite(max)) return false;
   return min >= 0 && min <= max && max <= DOSE_LIMITS.maxCarbsG;
+}
+
+export type GoalStatus = 'none' | 'in' | 'near' | 'off' | 'out';
+
+/** Distance bands from spec §3: within 5 g is yellow, within 10 g is orange, beyond is red. */
+export const GOAL_NEAR_G = 5;
+export const GOAL_OFF_G = 10;
+
+/**
+ * Float slack so a boundary written as 5.0 or 10.0 lands in the band the spec names, rather than
+ * one band out because of binary rounding. Same constant and intent as EPS in dose.ts.
+ */
+const EPS = 1e-9;
+
+/** Short labels for screen readers; the UI shows numbers too — colour is never the only signal. */
+export const GOAL_STATUS_LABELS: Readonly<Record<GoalStatus, string>> = Object.freeze({
+  none: 'no goal',
+  in: 'in goal',
+  near: 'near goal',
+  off: 'off goal',
+  out: 'outside goal',
+});
+
+/** Colour band for a carb total against one window's goal (spec §3). */
+export function goalStatus(carbs: CarbResult, goal: CarbGoal | null | undefined): GoalStatus {
+  if (!isValidCarbGoal(goal)) return 'none';
+  if (!carbs.complete || !Number.isFinite(carbs.carbs_g)) return 'none';
+  const value = carbs.carbs_g;
+  if (value >= goal.min && value <= goal.max) return 'in';
+  const distance = Math.min(Math.abs(value - goal.min), Math.abs(value - goal.max));
+  if (distance <= GOAL_NEAR_G + EPS) return 'near';
+  if (distance <= GOAL_OFF_G + EPS) return 'off';
+  return 'out';
 }
