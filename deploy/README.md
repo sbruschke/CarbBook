@@ -21,6 +21,10 @@
     deploy/smoke.sh <username>                         # public smoke (prompts for password)
     python3 deploy/cloudflare-route.py show
 
+## Migrations
+
+- `server/migrations/NNN_*.sql` run automatically via `initDatabase` on container start; `004_meal_plan.sql` (plan tables + case-insensitive slot index) deployed 2026-09-16, rehearsed against a live backup copy first — safe to re-run (idempotent) and guards against re-applying onto an already-migrated schema.
+
 ## Backups
 
 - Pi: `carbbook-backup.timer` 03:15 → `/opt/carbbook/backups/carbbook-YYYYmmdd-HHMMSS.db.gz`, integrity-checked, newest 14.
