@@ -66,7 +66,9 @@ current window, and each Log entry against its entry's window.
 - A cell shows its items, total carbs with goal colour, and status; empty cells show "+".
 - Editing a cell uses the existing item picker (search foods/meals, amount + unit, fractions).
 - **Copy day → date**, **copy week → next week**. When the target has entries, ask: replace,
-  merge (append items) or skip.
+  merge (append items) or skip. **Replace** clears every live slot on the target day, then
+  copies the source day's slots. Copying a day onto itself is not allowed, and a copy applies
+  all-or-nothing (one local transaction).
 - Week navigation; past weeks readable as history.
 - Owner and viewers can both edit plans (same rule as meals and logs).
 
