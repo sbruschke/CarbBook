@@ -6,13 +6,13 @@ import { bgPrefill } from '../bg/bg';
 import { resolveBarcode } from '../barcode/resolve';
 import { buildCatalog } from '../db/catalog';
 import { isLive } from '../db/db';
-import type { Change } from '../db/store';
+import { type Change, dataOf } from '../db/store';
 import { estimateFor } from '../dose/dose';
 import { FoodEditor } from '../foods/FoodEditor';
 import { type FoodPrefill, prefillFromDraft } from '../foods/label';
 import { parseUsdaFoodId, uuidv7 } from '../lib/ids';
 import { saveMeal } from '../meals/saveMeal';
-import { loadDismissed } from '../plan/dismissed';
+import { dismissSlot, loadDismissed } from '../plan/dismissed';
 import { suggestionFor } from '../plan/suggestion';
 import type { SearchResult } from '../search/search';
 import { BgField, resolveBg } from '../ui/BgField';
@@ -129,6 +129,18 @@ export function Calculator() {
     setLoadedSlot(suggestion.entry);
   }
 
+  /** Spec §5: Skip is a real status change and syncs. */
+  async function skipSuggestion() {
+    if (!suggestion) return;
+    await store.save('plan_entry', { ...dataOf<'plan_entry'>(suggestion.entry), status: 'skipped' });
+  }
+
+  /** Spec §5: Dismiss is local to this device and never synced. */
+  function dismissSuggestion() {
+    if (!suggestion) return;
+    setDismissed(dismissSlot(suggestion.key));
+  }
+
   function reset() {
     setItems([]);
     setLoadedSlot(null);
@@ -230,6 +242,12 @@ export function Calculator() {
           <div className="button-row">
             <button type="button" className="primary" onClick={loadSuggestion}>
               Load
+            </button>
+            <button type="button" onClick={() => void skipSuggestion()}>
+              Skip
+            </button>
+            <button type="button" onClick={dismissSuggestion}>
+              Dismiss
             </button>
           </div>
         </section>

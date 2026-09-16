@@ -1,4 +1,4 @@
-import { screen } from '@testing-library/react';
+import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { Calculator } from '../src/screens/Calculator';
@@ -54,5 +54,34 @@ describe('Calculator plan suggestion', () => {
     await user.clear(amount);
     await user.type(amount, '1/2');
     expect(screen.getByLabelText('Carbs in Tortilla')).toHaveTextContent('0.2 g');
+  });
+});
+
+import { DISMISSED_KEY } from '../src/plan/dismissed';
+
+describe('Skip and Dismiss', () => {
+  it('Skip sets the slot to skipped and queues it for sync', async () => {
+    const user = await setup();
+    renderWith(<Calculator />, services);
+    await user.click(await screen.findByRole('button', { name: 'Skip' }));
+
+    expect((await services.db.plan_entry.get('p1'))!.status).toBe('skipped');
+    expect(await services.db.outbox.get('plan_entry:p1')).toBeDefined();
+    // usePlanData's live query re-renders one tick after Dexie's own commit notification, so the
+    // suggestion line's disappearance is awaited rather than checked synchronously after click().
+    await waitFor(() => expect(screen.queryByTestId('plan-suggestion')).not.toBeInTheDocument());
+  });
+
+  it('Dismiss hides it on this device only and never touches the record', async () => {
+    const user = await setup();
+    renderWith(<Calculator />, services);
+    await user.click(await screen.findByRole('button', { name: 'Dismiss' }));
+
+    expect(screen.queryByTestId('plan-suggestion')).not.toBeInTheDocument();
+    expect((await services.db.plan_entry.get('p1'))!.status).toBe('planned');
+    expect(await services.db.outbox.count()).toBe(0);
+    // slotKey normalizes (trim + lowercase) to match the server's case-insensitive window_name
+    // comparison — see plan/slots.ts — so the stored dismissal key is lowercased too.
+    expect(JSON.parse(localStorage.getItem(DISMISSED_KEY)!)).toEqual(['2026-09-14|lunch']);
   });
 });
