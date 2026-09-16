@@ -1,9 +1,13 @@
 import type { PlanEntryData, PlanItemData } from '@carbbook/core';
+import { renderHook, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
+import { usePlanData } from '../src/app/hooks';
+import { ServicesProvider } from '../src/app/services';
 import { SYNC_TABLES } from '../src/db/db';
 import { createStore } from '../src/db/store';
 import { pushOutbox } from '../src/sync/push';
 import { FakeApi, openTestDb } from './helpers';
+import { makeServices } from './render';
 
 let db = openTestDb();
 afterEach(async () => {
@@ -62,5 +66,24 @@ describe('plan tables', () => {
     const store = createStore(db, 'device-test', { now: () => 1000 });
     await store.save('plan_entry', { ...entry, status: 'logged', log_entry_id: 'log-9' });
     expect(await db.plan_entry.where('log_entry_id').equals('log-9').count()).toBe(1);
+  });
+});
+
+describe('usePlanData', () => {
+  it('returns only live plan entries and items', async () => {
+    const services = makeServices();
+    db = services.db;
+    await db.plan_entry.bulkPut([
+      { ...entry, updated_at: 1, updated_by: 'x', deleted: 0 },
+      { ...entry, id: 'plan-2', updated_at: 1, updated_by: 'x', deleted: 1 },
+    ]);
+    await db.plan_item.put({ ...item, updated_at: 1, updated_by: 'x', deleted: 0 });
+
+    const { result } = renderHook(() => usePlanData(), {
+      wrapper: ({ children }) => <ServicesProvider services={services}>{children}</ServicesProvider>,
+    });
+    await waitFor(() => expect(result.current).toBeDefined());
+    expect(result.current!.entries.map((e) => e.id)).toEqual(['plan-1']);
+    expect(result.current!.items.map((i) => i.id)).toEqual(['plan-item-1']);
   });
 });
