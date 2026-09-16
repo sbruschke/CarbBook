@@ -35,8 +35,10 @@ CREATE TABLE plan_entry (
 CREATE INDEX plan_entry_server_seq ON plan_entry (server_seq);
 CREATE INDEX plan_entry_date ON plan_entry (date);
 CREATE INDEX plan_entry_log_entry ON plan_entry (log_entry_id);
--- At most one non-deleted entry per (date, window_name); soft-deleted rows free the slot again.
-CREATE UNIQUE INDEX plan_entry_slot ON plan_entry (date, window_name) WHERE deleted = 0;
+-- At most one non-deleted entry per (date, window_name), case-insensitively -- "Lunch" and "lunch"
+-- are the same slot (push.ts's duplicateSlot enforces the same rule per-record; this index is the
+-- backstop for any write that bypasses it). Soft-deleted rows free the slot again.
+CREATE UNIQUE INDEX plan_entry_slot ON plan_entry (date, window_name COLLATE NOCASE) WHERE deleted = 0;
 
 CREATE TABLE plan_item (
   id TEXT PRIMARY KEY,

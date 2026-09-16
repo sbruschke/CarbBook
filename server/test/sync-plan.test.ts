@@ -70,6 +70,56 @@ describe('applyPush plan_entry slot uniqueness', () => {
     ]);
     expect(results.map((r) => r.status)).toEqual(['accepted', 'accepted']);
   });
+
+  it('rejects a near-duplicate window name that differs only in case', () => {
+    const db = initDatabase(':memory:');
+    const first = applyPush(db, 'owner', [
+      { table: 'plan_entry', record: planEntry({ id: 'p1', window_name: 'Lunch' }) },
+    ]);
+    expect(first[0]!.status).toBe('accepted');
+
+    const second = applyPush(db, 'owner', [
+      { table: 'plan_entry', record: planEntry({ id: 'p2', window_name: 'lunch' }) },
+    ]);
+    expect(second).toEqual([
+      {
+        table: 'plan_entry',
+        id: 'p2',
+        status: 'rejected',
+        reason: 'duplicate_slot',
+        message: 'Another plan entry already exists for 2026-09-17 lunch',
+      },
+    ]);
+    expect(db.prepare('SELECT count(*) FROM plan_entry').pluck().get()).toBe(1);
+  });
+
+  it('stores window_name trimmed of surrounding whitespace', () => {
+    const db = initDatabase(':memory:');
+    applyPush(db, 'owner', [{ table: 'plan_entry', record: planEntry({ id: 'p1', window_name: 'Lunch ' }) }]);
+    expect(db.prepare('SELECT window_name FROM plan_entry WHERE id = ?').pluck().get('p1')).toBe('Lunch');
+  });
+
+  it('rejects same-batch window-name-case variants for the same slot', () => {
+    const db = initDatabase(':memory:');
+    const results = applyPush(db, 'owner', [
+      { table: 'plan_entry', record: planEntry({ id: 'p1', window_name: 'Lunch' }) },
+      { table: 'plan_entry', record: planEntry({ id: 'p2', window_name: 'LUNCH' }) },
+    ]);
+    expect(results.map((r) => r.status)).toEqual(['accepted', 'rejected']);
+  });
+
+  it('still rejects undeleting into a slot already taken by a differently-cased window name', () => {
+    const db = initDatabase(':memory:');
+    applyPush(db, 'owner', [{ table: 'plan_entry', record: planEntry({ id: 'p1', window_name: 'Lunch' }) }]);
+    applyPush(db, 'owner', [
+      { table: 'plan_entry', record: planEntry({ id: 'p2', window_name: 'lunch', deleted: 1, updated_at: 500 }) },
+    ]);
+    const undelete = applyPush(db, 'owner', [
+      { table: 'plan_entry', record: planEntry({ id: 'p2', window_name: 'lunch', deleted: 0, updated_at: 2000 }) },
+    ]);
+    expect(undelete[0]!.status).toBe('rejected');
+    expect((undelete[0] as { reason: string }).reason).toBe('duplicate_slot');
+  });
 });
 
 const logEntry = (id: string, fields: Record<string, unknown> = {}) => ({
@@ -122,15 +172,48 @@ describe('applyPush plan_entry log_entry_id', () => {
     expect(applyPush(db, 'owner', [{ table: 'plan_entry', record: planEntry({ id: 'p1' }) }])[0]!.status).toBe('accepted');
   });
 
-  it('accepts a link to a log entry that is already soft-deleted, then reverts it on the next delete push', () => {
+  it('rejects a link to a log entry that is already soft-deleted', () => {
     const db = initDatabase(':memory:');
     applyPush(db, 'owner', [{ table: 'log_entry', record: logEntry('l1', { deleted: 1 }) }]);
-    // The row exists, so the reference resolves; the revert rule (Task 13) handles the state.
-    expect(
-      applyPush(db, 'owner', [
-        { table: 'plan_entry', record: planEntry({ id: 'p1', status: 'logged', log_entry_id: 'l1' }) },
-      ])[0]!.status,
-    ).toBe('accepted');
+    // The row exists but is soft-deleted; a re-pushed delete is never seen by the Task 13 revert
+    // rule (LWW ignores it), so the reference check itself must exclude deleted rows.
+    const results = applyPush(db, 'owner', [
+      { table: 'plan_entry', record: planEntry({ id: 'p1', status: 'logged', log_entry_id: 'l1' }) },
+    ]);
+    expect(results).toEqual([
+      {
+        table: 'plan_entry',
+        id: 'p1',
+        status: 'rejected',
+        reason: 'invalid',
+        message: 'log_entry_id "l1" does not reference a known log entry',
+      },
+    ]);
+    expect(db.prepare('SELECT count(*) FROM plan_entry').pluck().get()).toBe(0);
+  });
+
+  it('rejects an offline device pushing a logged slot after another device deleted the log entry', () => {
+    const db = initDatabase(':memory:');
+    // Device A creates log l1 (and, in reality, a plan entry referencing it) before going offline.
+    applyPush(db, 'owner', [{ table: 'log_entry', record: logEntry('l1', { updated_by: 'phone' }) }]);
+    // Device B deletes l1 while device A is offline.
+    applyPush(db, 'owner', [
+      { table: 'log_entry', record: logEntry('l1', { deleted: 1, updated_at: 2000, updated_by: 'laptop' }) },
+    ]);
+    // Device A comes back online and pushes p1, still claiming the now-deleted log entry.
+    const results = applyPush(db, 'owner', [
+      { table: 'plan_entry', record: planEntry({ id: 'p1', status: 'logged', log_entry_id: 'l1', updated_by: 'phone' }) },
+    ]);
+    expect(results).toEqual([
+      {
+        table: 'plan_entry',
+        id: 'p1',
+        status: 'rejected',
+        reason: 'invalid',
+        message: 'log_entry_id "l1" does not reference a known log entry',
+      },
+    ]);
+    expect(db.prepare('SELECT count(*) FROM plan_entry').pluck().get()).toBe(0);
   });
 });
 

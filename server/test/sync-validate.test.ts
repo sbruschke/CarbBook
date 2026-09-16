@@ -265,6 +265,7 @@ describe('plan_entry validation', () => {
     [{ date: '2026-13-01' }, 'date must be a real calendar date in YYYY-MM-DD form'],
     [{ date: '' }, 'date must not be empty'],
     [{ window_name: '' }, 'window_name must not be empty'],
+    [{ window_name: '   ' }, 'window_name must not be empty'],
     [{ window_name: 'x'.repeat(65) }, 'window_name is longer than 64 characters'],
     [{ status: 'eaten' }, 'status must be one of planned, logged, skipped'],
     [{ log_entry_id: 'x'.repeat(65) }, 'log_entry_id is longer than 64 characters'],
@@ -274,6 +275,16 @@ describe('plan_entry validation', () => {
 
   it('accepts a leap day', () => {
     expect(validateRecord(TABLE_SPECS.plan_entry, planEntry({ date: '2028-02-29' })).ok).toBe(true);
+  });
+
+  it('trims window_name whitespace but keeps the original casing', () => {
+    const result = validateRecord(TABLE_SPECS.plan_entry, planEntry({ window_name: '  Lunch  ' }));
+    expect(result.ok && result.row.window_name).toBe('Lunch');
+  });
+
+  it('measures the 64-char max against the trimmed length', () => {
+    const result = validateRecord(TABLE_SPECS.plan_entry, planEntry({ window_name: `  ${'x'.repeat(64)}  ` }));
+    expect(result.ok).toBe(true);
   });
 });
 

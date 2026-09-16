@@ -24,7 +24,7 @@ export const SYNC_TABLES = [
 export type SyncTable = (typeof SYNC_TABLES)[number];
 
 export type FieldSpec =
-  | { type: 'text'; nullable?: boolean; max?: number }
+  | { type: 'text'; nullable?: boolean; max?: number; trim?: boolean }
   | { type: 'number'; nullable?: boolean; min?: number; max?: number; positive?: boolean; integer?: boolean }
   | { type: 'enum'; values: readonly string[] }
   | { type: 'json'; check: (value: unknown) => string | null; canonicalize?: (value: unknown) => unknown };
@@ -244,7 +244,10 @@ export const TABLE_SPECS: Record<SyncTable, TableSpec> = {
     name: 'plan_entry',
     fields: {
       date: text(10),
-      window_name: text(64),
+      // Trimmed so "Lunch", "lunch " etc. reliably collide with the case-insensitive slot-uniqueness
+      // check below (validate.ts trims, push.ts's duplicateSlot and the DB index compare NOCASE);
+      // the original casing is kept as the stored text, only leading/trailing whitespace is dropped.
+      window_name: { type: 'text', max: 64, trim: true },
       status: { type: 'enum', values: ['planned', 'logged', 'skipped'] },
       note: optionalText(4000),
       // Checked against the log_entry table in push.ts, where the DB is available.
