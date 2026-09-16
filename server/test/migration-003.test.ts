@@ -14,6 +14,15 @@ function dbAtVersion2() {
   return db;
 }
 
+/** A migrations directory containing only 001-003, so migrate() stops at version 3. */
+function dirThrough003() {
+  const dir = mkdtempSync(join(tmpdir(), 'carbbook-mig3-through-'));
+  for (const file of ['001_init.sql', '002_usda_search.sql', '003_any_unit_foods.sql']) {
+    copyFileSync(join(MIGRATIONS_DIR, file), join(dir, file));
+  }
+  return dir;
+}
+
 describe('migration 003 (any-unit foods)', () => {
   it('adds food.carbs_per_100ml and rebuilds portion with nullable grams + carbs_g, preserving existing rows', () => {
     const db = dbAtVersion2();
@@ -26,7 +35,7 @@ describe('migration 003 (any-unit foods)', () => {
       "INSERT INTO portion (id, food_id, label, kind, quantity, grams, updated_at, updated_by, deleted, server_seq) VALUES ('p1', 'f1', 'cup', 'volume', 1, 158, 2, 'd', 0, 2)",
     ).run();
 
-    expect(migrate(db)).toBe(3);
+    expect(migrate(db, dirThrough003())).toBe(3);
     expect(db.pragma('user_version', { simple: true })).toBe(3);
 
     const food = db.prepare('SELECT * FROM food WHERE id = ?').get('f1') as Record<string, unknown>;
@@ -137,7 +146,7 @@ describe('migration 003 (any-unit foods)', () => {
 
   it('migrates a fresh database straight to version 3', () => {
     const db = openDb(':memory:');
-    expect(migrate(db)).toBe(3);
+    expect(migrate(db, dirThrough003())).toBe(3);
     expect(db.pragma('user_version', { simple: true })).toBe(3);
   });
 });

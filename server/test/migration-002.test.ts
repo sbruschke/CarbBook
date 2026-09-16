@@ -19,7 +19,9 @@ describe('migration 002 (USDA + search)', () => {
     db.prepare("INSERT INTO meal (id, name, updated_at, updated_by, deleted, server_seq) VALUES ('m1', 'Tacos', 1, 'd', 0, 3)").run();
 
     expect(readdirSync(MIGRATIONS_DIR)).toContain('002_usda_search.sql');
-    expect(migrate(db)).toBe(3);
+    copyFileSync(join(MIGRATIONS_DIR, '002_usda_search.sql'), join(onlyFirst, '002_usda_search.sql'));
+    copyFileSync(join(MIGRATIONS_DIR, '003_any_unit_foods.sql'), join(onlyFirst, '003_any_unit_foods.sql'));
+    expect(migrate(db, onlyFirst)).toBe(3);
     expect(catalog(db)).toEqual([
       { kind: 'food', ref_id: 'f1', name: 'Tortilla' },
       { kind: 'meal', ref_id: 'm1', name: 'Tacos' },
