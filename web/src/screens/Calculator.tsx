@@ -1,6 +1,6 @@
-import { activeSettings, sumCarbs } from '@carbbook/core';
+import { activeSettings, type PlanEntryData, type Synced, sumCarbs } from '@carbbook/core';
 import { useState } from 'react';
-import { lastDoseAt, useBgStatus, useCatalogData, useEligibleDoseVersions, useLogData, useNow, useUsdaPicks } from '../app/hooks';
+import { lastDoseAt, useBgStatus, useCatalogData, useEligibleDoseVersions, useLogData, useNow, usePlanData, useUsdaPicks } from '../app/hooks';
 import { useServices } from '../app/services';
 import { bgPrefill } from '../bg/bg';
 import { resolveBarcode } from '../barcode/resolve';
@@ -12,10 +12,12 @@ import { FoodEditor } from '../foods/FoodEditor';
 import { type FoodPrefill, prefillFromDraft } from '../foods/label';
 import { parseUsdaFoodId, uuidv7 } from '../lib/ids';
 import { saveMeal } from '../meals/saveMeal';
+import { loadDismissed } from '../plan/dismissed';
+import { suggestionFor } from '../plan/suggestion';
 import type { SearchResult } from '../search/search';
 import { BgField, resolveBg } from '../ui/BgField';
 import { DoseCard } from '../ui/DoseCard';
-import { formatCarbs, formatTime, fromDateTimeLocal, parseAmount, parseNonNegative, toDateTimeLocal } from '../ui/format';
+import { dayKey, formatCarbs, formatTime, fromDateTimeLocal, parseAmount, parseNonNegative, toDateTimeLocal } from '../ui/format';
 import { type DraftItem, draftItemCarbs, ItemEditor, itemName, newDraftItem } from '../ui/ItemEditor';
 import { ScannerDialog } from '../ui/ScannerDialog';
 import { SearchPanel } from '../ui/SearchPanel';
@@ -35,6 +37,10 @@ export function Calculator() {
   const usda = useUsdaPicks();
   const bgStatus = useBgStatus();
   const clock = useNow();
+  const plan = usePlanData();
+  const [dismissed, setDismissed] = useState<Set<string>>(() => loadDismissed());
+  /** The slot whose items are currently loaded, so logging can mark it (session-only, not stored). */
+  const [loadedSlot, setLoadedSlot] = useState<Synced<PlanEntryData> | null>(null);
   const [items, setItems] = useState<DraftItem[]>([]);
   const [eatenText, setEatenText] = useState(() => toDateTimeLocal(now()));
   const [windowName, setWindowName] = useState<string | null>(null);
@@ -47,7 +53,7 @@ export function Calculator() {
   const [mealForm, setMealForm] = useState<MealForm | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
-  if (!data || !versions || !log) return <p>Loading…</p>;
+  if (!data || !versions || !log || !plan) return <p>Loading…</p>;
 
   const catalog = buildCatalog(data, usda.entries);
   const results = items.map((item) => draftItemCarbs(catalog, item));
@@ -61,6 +67,19 @@ export function Calculator() {
   const takenValue = takenEdited ? takenText : suggested === null ? '' : String(suggested);
   const autoWindow = windowName === null ? (estimate?.window?.name ?? null) : null;
   const badAmounts = items.some((item) => parseAmount(item.amount) === null);
+
+  const currentWindow = estimate?.window?.name ?? windowName;
+  const suggestion =
+    loadedSlot === null
+      ? suggestionFor({
+          date: dayKey(Number.isFinite(eatenAt) ? eatenAt : now()),
+          windowName: currentWindow,
+          entries: plan.entries,
+          items: plan.items,
+          catalog,
+          dismissed,
+        })
+      : null;
 
   function addFood(refType: 'food' | 'meal', refId: string, extra = catalog) {
     setItems((current) => [...current, newDraftItem(extra, refType, refId, uuidv7(now()))]);
@@ -93,8 +112,26 @@ export function Calculator() {
     }
   }
 
+  function loadSuggestion() {
+    if (!suggestion) return;
+    // Plain draft rows: amount is text, so the loaded items are editable and removable like any
+    // other row. Fresh keys — a plan_item id must never become a log_item id.
+    setItems((current) => [
+      ...current,
+      ...suggestion.items.map((item) => ({
+        key: uuidv7(now()),
+        ref_type: item.ref_type,
+        ref_id: item.ref_id,
+        amount: String(item.amount),
+        unit: item.unit,
+      })),
+    ]);
+    setLoadedSlot(suggestion.entry);
+  }
+
   function reset() {
     setItems([]);
+    setLoadedSlot(null);
     setTakenEdited(false);
     setTakenText('');
     setWindowName(null);
@@ -184,6 +221,19 @@ export function Calculator() {
       )}
       <SearchPanel onPick={(result) => void pick(result)} onScan={() => setScanning(true)} />
       {scanning && <ScannerDialog onCode={(code) => void lookUp(code)} onClose={() => setScanning(false)} />}
+      {suggestion && (
+        <section className="card plan-suggestion" data-testid="plan-suggestion">
+          <p>
+            Planned: {suggestion.names.join(', ')} ·{' '}
+            {suggestion.carbs.complete ? formatCarbs(suggestion.carbs.carbs_g) : 'missing data'}
+          </p>
+          <div className="button-row">
+            <button type="button" className="primary" onClick={loadSuggestion}>
+              Load
+            </button>
+          </div>
+        </section>
+      )}
       <ItemEditor items={items} catalog={catalog} onChange={setItems} />
       {items.length > 0 && (
         <p className="total" data-testid="total-carbs">
