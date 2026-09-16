@@ -71,6 +71,18 @@ final class PlanSuggestionTests: XCTestCase {
         XCTAssertEqual(PlanDismissals.load(from: defaults), ["2026-09-16|lunch"])
     }
 
+    func testShownHidesTheSuggestionOnceASlotIsLoaded() {
+        let computed = PlanSuggestion.make(entry: slot(.planned), items: items, catalog: catalog, dismissed: [])
+        XCTAssertNotNil(computed)
+        XCTAssertEqual(PlanSuggestion.shown(computed: computed, loadedSlotId: nil), computed,
+                       "no slot loaded yet: the computed suggestion is shown as-is")
+        XCTAssertNil(PlanSuggestion.shown(computed: computed, loadedSlotId: "p1"),
+                    "a slot is loaded: never re-show a suggestion, even a freshly computed one")
+        XCTAssertNil(PlanSuggestion.shown(computed: computed, loadedSlotId: "some-other-slot"),
+                    "any loaded slot suppresses suggestions, not only the matching one")
+        XCTAssertNil(PlanSuggestion.shown(computed: nil, loadedSlotId: nil))
+    }
+
     func testCorruptDismissalStorageIsTreatedAsEmpty() throws {
         let name = "plan-suggestion-tests-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: name))

@@ -48,6 +48,17 @@ public struct PlanSuggestion: Equatable, Sendable {
         case .meal: catalog.meal(item.refId)?.name ?? "Unknown item"
         }
     }
+
+    /// Whether the Calculator should show a freshly computed suggestion: never once a slot has been
+    /// loaded this session, matching web `Calculator.tsx:75` (`loadedSlot === null ? suggestionFor(...)
+    /// : null`). Loading clears the visible suggestion, but the slot itself is still `planned` in
+    /// storage, so recomputing (a clock tick, a window change) would otherwise compute and re-show it
+    /// — offering "Load" again would append the same items a second time. Both `refreshSuggestion` and
+    /// `loadSuggestion`'s idempotency rely on this: once `loadedSlotId != nil`, this always returns
+    /// nil, so a second Load call sees no suggestion to act on.
+    public static func shown(computed: PlanSuggestion?, loadedSlotId: Id?) -> PlanSuggestion? {
+        loadedSlotId == nil ? computed : nil
+    }
 }
 
 /// Suggestions the user dismissed on *this device only* — never synced (spec §5). Same key format

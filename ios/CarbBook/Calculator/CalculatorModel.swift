@@ -181,7 +181,10 @@ final class CalculatorModel {
     /// Re-reads the planned slot for the current date + window. Called from `reload` and after every
     /// recompute, because changing the time or the window changes which slot applies.
     func refreshSuggestion(_ app: AppModel) {
-        guard let windowName = suggestedWindowName else {
+        // Once a slot is loaded this session, no suggestion is ever shown again — the slot is still
+        // `planned` in storage, so recomputing (a clock tick, a window change) must never re-offer it
+        // (`PlanSuggestion.shown`, matching web `Calculator.tsx:75`).
+        guard loadedSlotId == nil, let windowName = suggestedWindowName else {
             if suggestion != nil { suggestion = nil }
             return
         }
@@ -190,8 +193,9 @@ final class CalculatorModel {
             let entry = try app.store.planEntry(date: date, windowName: windowName)
             var items: [PlanItemData] = []
             if let entry { items = try app.store.planItems(entryIds: [entry.id])[entry.id] ?? [] }
-            let next = PlanSuggestion.make(entry: entry, items: items, catalog: catalog,
-                                           dismissed: PlanDismissals.load())
+            let computed = PlanSuggestion.make(entry: entry, items: items, catalog: catalog,
+                                               dismissed: PlanDismissals.load())
+            let next = PlanSuggestion.shown(computed: computed, loadedSlotId: loadedSlotId)
             // Assigning an unchanged value would re-trigger the view update that called this.
             if next != suggestion { suggestion = next }
         } catch {
@@ -199,7 +203,9 @@ final class CalculatorModel {
         }
     }
 
-    /// Load: appends the slot's items as ordinary editable rows and remembers the slot.
+    /// Load: appends the slot's items as ordinary editable rows and remembers the slot. A second Load
+    /// call for the same slot is a no-op: `refreshSuggestion` never re-shows a suggestion once
+    /// `loadedSlotId` is set, so `suggestion` is nil by the time any second call could reach here.
     func loadSuggestion(_ app: AppModel) {
         guard let suggestion else { return }
         do {
