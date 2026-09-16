@@ -3,7 +3,7 @@ import { initDatabase } from '../src/init';
 import { applyPush } from '../src/sync/push';
 import { doseSettings, food, meal, portion } from './sync-helpers';
 
-const SEEDED_SEQ = 1; // one seed dose_settings row
+const SEEDED_SEQ = 2; // two seed dose_settings rows
 
 describe('applyPush last-write-wins', () => {
   it('accepts new records and assigns increasing server_seq', () => {
@@ -14,7 +14,7 @@ describe('applyPush last-write-wins', () => {
       { table: 'food', id: 'f1', status: 'accepted', server_seq: SEEDED_SEQ + 1 },
       { table: 'meal', id: 'm1', status: 'accepted', server_seq: SEEDED_SEQ + 2 },
     ]);
-    expect(db.prepare('SELECT name, server_seq FROM food WHERE id = ?').get('f1')).toEqual({ name: 'Tortilla', server_seq: 2 });
+    expect(db.prepare('SELECT name, server_seq FROM food WHERE id = ?').get('f1')).toEqual({ name: 'Tortilla', server_seq: 3 });
   });
 
   it('overwrites only with a newer updated_at, and breaks ties by higher updated_by', () => {
@@ -22,13 +22,13 @@ describe('applyPush last-write-wins', () => {
     applyPush(db, 'owner', [{ table: 'food', record: food({ id: 'f1', name: 'v1', updated_at: 2000, updated_by: 'laptop' }) }]);
 
     const older = applyPush(db, 'owner', [{ table: 'food', record: food({ id: 'f1', name: 'old', updated_at: 1999, updated_by: 'zz' }) }]);
-    expect(older).toEqual([{ table: 'food', id: 'f1', status: 'ignored', server_seq: 2 }]);
+    expect(older).toEqual([{ table: 'food', id: 'f1', status: 'ignored', server_seq: 3 }]);
 
     const tieLower = applyPush(db, 'owner', [{ table: 'food', record: food({ id: 'f1', name: 'tie-low', updated_at: 2000, updated_by: 'ipad' }) }]);
     expect(tieLower[0]!.status).toBe('ignored');
 
     const tieHigher = applyPush(db, 'owner', [{ table: 'food', record: food({ id: 'f1', name: 'tie-high', updated_at: 2000, updated_by: 'phone' }) }]);
-    expect(tieHigher).toEqual([{ table: 'food', id: 'f1', status: 'accepted', server_seq: 3 }]);
+    expect(tieHigher).toEqual([{ table: 'food', id: 'f1', status: 'accepted', server_seq: 4 }]);
 
     const newer = applyPush(db, 'owner', [{ table: 'food', record: food({ id: 'f1', name: 'v2', updated_at: 2001, updated_by: 'aaa' }) }]);
     expect(newer[0]!.status).toBe('accepted');
@@ -52,7 +52,7 @@ describe('applyPush last-write-wins', () => {
     expect(results).toEqual([
       { table: 'user', id: 'u1', status: 'rejected', reason: 'unknown_table', message: 'Unknown table "user"' },
       { table: 'food', id: 'bad', status: 'rejected', reason: 'invalid', message: 'source must be one of usda, off, custom' },
-      { table: 'food', id: 'good', status: 'accepted', server_seq: 2 },
+      { table: 'food', id: 'good', status: 'accepted', server_seq: 3 },
     ]);
   });
 });
@@ -132,11 +132,11 @@ describe('applyPush: missing keys keep stored values (old clients)', () => {
     const db = initDatabase(':memory:');
     applyPush(db, 'owner', [{ table: 'food', record: { ...food({ id: 'f1', name: 'v2', updated_at: 2000 }), carbs_per_100ml: 30 } }]);
     const stale = food({ id: 'f1', name: 'old', updated_at: 1000 });
-    expect(applyPush(db, 'owner', [{ table: 'food', record: stale }])[0]).toEqual({ table: 'food', id: 'f1', status: 'ignored', server_seq: 2 });
+    expect(applyPush(db, 'owner', [{ table: 'food', record: stale }])[0]).toEqual({ table: 'food', id: 'f1', status: 'ignored', server_seq: 3 });
     const newer = food({ id: 'f1', name: 'v3', updated_at: 3000 });
     expect(applyPush(db, 'owner', [{ table: 'food', record: newer }])[0]!.status).toBe('accepted');
-    expect(applyPush(db, 'owner', [{ table: 'food', record: newer }])[0]).toEqual({ table: 'food', id: 'f1', status: 'ignored', server_seq: 3 });
-    expect(foodRow(db, 'f1')).toMatchObject({ name: 'v3', carbs_per_100ml: 30, server_seq: 3 });
+    expect(applyPush(db, 'owner', [{ table: 'food', record: newer }])[0]).toEqual({ table: 'food', id: 'f1', status: 'ignored', server_seq: 4 });
+    expect(foodRow(db, 'f1')).toMatchObject({ name: 'v3', carbs_per_100ml: 30, server_seq: 4 });
   });
 
   it('keeps dose_settings append-only with merged records', () => {
