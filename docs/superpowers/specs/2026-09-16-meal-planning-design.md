@@ -1,7 +1,7 @@
 # Meal planning and carb goals — design spec
 
 Date: 2026-09-16
-Status: approved in brainstorming, pending written-spec review
+Status: approved; delivery step 1 (core goalStatus + vectors, server migration/validation, seeded goals) implemented
 Amends `2026-09-13-carbbook-design.md` (adds §12 planning) and `2026-09-14-any-unit-foods.md` (unchanged).
 
 ## 1. Purpose

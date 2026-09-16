@@ -16,11 +16,11 @@ describe('sync routes', () => {
       payload: { changes: [{ table: 'food', record: food({ id: 'f1' }) }] },
     });
     expect(push.statusCode).toBe(200);
-    expect(push.json()).toEqual({ results: [{ table: 'food', id: 'f1', status: 'accepted', server_seq: 2 }], server_seq: 2 });
+    expect(push.json()).toEqual({ results: [{ table: 'food', id: 'f1', status: 'accepted', server_seq: 3 }], server_seq: 3 });
 
-    const pull = await app.inject({ url: '/api/sync/pull?since=1&limit=10', headers: { authorization } });
+    const pull = await app.inject({ url: '/api/sync/pull?since=2&limit=10', headers: { authorization } });
     expect(pull.statusCode).toBe(200);
-    expect(pull.json()).toMatchObject({ next_since: 2, has_more: false, changes: [{ table: 'food', record: { id: 'f1', server_seq: 2 } }] });
+    expect(pull.json()).toMatchObject({ next_since: 3, has_more: false, changes: [{ table: 'food', record: { id: 'f1', server_seq: 3 } }] });
   });
 
   it('reports viewer dose_settings pushes as rejected records (HTTP 200)', async () => {

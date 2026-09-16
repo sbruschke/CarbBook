@@ -64,3 +64,26 @@ export const doseSettings = (fields: Partial<DoseSettingsData> & Meta = {}) => (
   ...fields,
   ...meta(fields),
 });
+
+export const planEntry = (fields: Partial<Record<string, unknown>> & Meta = {}) => ({
+  id: uid('plan'),
+  date: '2026-09-17',
+  window_name: 'Lunch',
+  status: 'planned',
+  note: null,
+  log_entry_id: null,
+  ...fields,
+  ...meta(fields),
+});
+
+export const planItem = (planEntryId: string, fields: Partial<Record<string, unknown>> & Meta = {}) => ({
+  id: uid('planitem'),
+  plan_entry_id: planEntryId,
+  ref_type: 'food',
+  ref_id: 'f1',
+  amount: 1,
+  unit: 'g',
+  position: 0,
+  ...fields,
+  ...meta(fields),
+});

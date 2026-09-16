@@ -5,6 +5,9 @@ import type { CorrectionRule, DoseSettingsData, FoodData, MealData, MealItemData
 import { createCatalog, itemCarbs, wouldCreateCycle } from '../src/carbs';
 import { estimateDose, formatBreakdown, parseHHMM } from '../src/dose';
 import { foodAmountToGrams, foodUnits, mealUnits } from '../src/units';
+import goalVectors from '../../../testdata/goal-vectors.json';
+import type { CarbGoal, DoseWindow } from '../src/types';
+import { dayGoal, goalStatus, isValidCarbGoal, type GoalStatus } from '../src/goal';
 
 const u = unitsVectors as unknown as {
   tolerance: number;
@@ -100,6 +103,49 @@ describe('dose vectors', () => {
       }
       expect(r.rounded_down).toBe(e.rounded_down);
       if (typeof e.breakdown === 'string') expect(formatBreakdown(r)).toBe(e.breakdown);
+    });
+  }
+});
+
+const g = goalVectors as unknown as {
+  tolerance: number;
+  status_cases: { name: string; carbs: number; complete?: boolean; goal: CarbGoal | null; expect: GoalStatus }[];
+  day_cases: { name: string; windows: DoseWindow[]; expect: CarbGoal | null }[];
+  day_status_cases: { name: string; carbs: number; day_goal: CarbGoal | null; expect: GoalStatus }[];
+  valid_cases: { name: string; goal: CarbGoal; expect: boolean }[];
+};
+
+describe('goal vectors', () => {
+  it('has cases to run', () => {
+    expect(g.status_cases.length).toBeGreaterThan(0);
+    expect(g.day_cases.length).toBeGreaterThan(0);
+    expect(g.day_status_cases.length).toBeGreaterThan(0);
+    expect(g.valid_cases.length).toBeGreaterThan(0);
+  });
+  for (const c of g.status_cases) {
+    it(`status: ${c.name}`, () => {
+      expect(goalStatus({ carbs_g: c.carbs, complete: c.complete ?? true }, c.goal)).toBe(c.expect);
+    });
+  }
+  for (const c of g.day_cases) {
+    it(`day goal: ${c.name}`, () => {
+      const result = dayGoal(c.windows);
+      if (c.expect === null) {
+        expect(result).toBeNull();
+        return;
+      }
+      expect(Math.abs(result!.min - c.expect.min)).toBeLessThan(g.tolerance);
+      expect(Math.abs(result!.max - c.expect.max)).toBeLessThan(g.tolerance);
+    });
+  }
+  for (const c of g.day_status_cases) {
+    it(`day status: ${c.name}`, () => {
+      expect(goalStatus({ carbs_g: c.carbs, complete: true }, c.day_goal)).toBe(c.expect);
+    });
+  }
+  for (const c of g.valid_cases) {
+    it(`validity: ${c.name}`, () => {
+      expect(isValidCarbGoal(c.goal)).toBe(c.expect);
     });
   }
 });

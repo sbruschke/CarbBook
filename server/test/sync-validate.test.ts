@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { TABLE_SPECS } from '../src/sync/tables';
 import { decodeRow, validateRecord } from '../src/sync/validate';
-import { doseSettings, food, mealItem } from './sync-helpers';
+import { doseSettings, food, mealItem, planEntry, planItem } from './sync-helpers';
 
 describe('validateRecord', () => {
   it('accepts a complete food and drops unknown fields', () => {
@@ -197,5 +197,125 @@ describe('validateRecord', () => {
     [{ rounding: { increment: 0, round_down_below_bg: null } }, 'rounding.increment must be > 0'],
   ])('rejects invalid dose_settings %#', (fields, message) => {
     expect(validateRecord(TABLE_SPECS.dose_settings, doseSettings(fields as never))).toEqual({ ok: false, message });
+  });
+});
+
+describe('dose_settings carb_goal', () => {
+  const withGoal = (carb_goal: unknown) =>
+    doseSettings({
+      windows: [{ name: 'Breakfast', start: '05:00', ratio_g_per_unit: 8, carb_goal }] as never,
+    });
+
+  it('accepts a window with a valid carb_goal and round-trips it', () => {
+    const result = validateRecord(TABLE_SPECS.dose_settings, withGoal({ min: 30, max: 50 }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(decodeRow(TABLE_SPECS.dose_settings, result.row)).toMatchObject({
+      windows: [{ name: 'Breakfast', start: '05:00', ratio_g_per_unit: 8, carb_goal: { min: 30, max: 50 } }],
+    });
+  });
+
+  it('accepts a window with carb_goal null or absent', () => {
+    expect(validateRecord(TABLE_SPECS.dose_settings, withGoal(null)).ok).toBe(true);
+    expect(validateRecord(TABLE_SPECS.dose_settings, doseSettings()).ok).toBe(true);
+  });
+
+  it.each([
+    [{ min: 80, max: 50 }],
+    [{ min: -1, max: 50 }],
+    [{ min: 0, max: 2001 }],
+    [{ min: 30 }],
+    ['30-50'],
+  ])('rejects carb_goal %j', (goal) => {
+    expect(validateRecord(TABLE_SPECS.dose_settings, withGoal(goal))).toEqual({
+      ok: false,
+      message: 'window "Breakfast" has an invalid carb_goal (need 0 <= min <= max <= 2000)',
+    });
+  });
+
+  it('serializes carb_goal in a fixed key order so an identical republish is byte-identical', () => {
+    const a = validateRecord(TABLE_SPECS.dose_settings, withGoal({ min: 30, max: 50 }));
+    const b = validateRecord(TABLE_SPECS.dose_settings, withGoal({ max: 50, min: 30 }));
+    expect(a.ok && b.ok && a.row.windows).toBe(b.ok ? b.row.windows : undefined);
+  });
+});
+
+describe('plan_entry validation', () => {
+  it('accepts a complete plan entry', () => {
+    const result = validateRecord(TABLE_SPECS.plan_entry, planEntry({ id: 'p1', note: 'leftovers' }));
+    expect(result).toEqual({
+      ok: true,
+      row: {
+        id: 'p1',
+        updated_at: 1000,
+        updated_by: 'phone',
+        deleted: 0,
+        date: '2026-09-17',
+        window_name: 'Lunch',
+        status: 'planned',
+        note: 'leftovers',
+        log_entry_id: null,
+      },
+    });
+  });
+
+  it.each([
+    [{ date: '17-09-2026' }, 'date must be a real calendar date in YYYY-MM-DD form'],
+    [{ date: '2026-02-30' }, 'date must be a real calendar date in YYYY-MM-DD form'],
+    [{ date: '2026-13-01' }, 'date must be a real calendar date in YYYY-MM-DD form'],
+    [{ date: '' }, 'date must not be empty'],
+    [{ window_name: '' }, 'window_name must not be empty'],
+    [{ window_name: '   ' }, 'window_name must not be empty'],
+    [{ window_name: 'x'.repeat(65) }, 'window_name is longer than 64 characters'],
+    [{ status: 'eaten' }, 'status must be one of planned, logged, skipped'],
+    [{ log_entry_id: 'x'.repeat(65) }, 'log_entry_id is longer than 64 characters'],
+  ])('rejects plan_entry %j', (fields, message) => {
+    expect(validateRecord(TABLE_SPECS.plan_entry, planEntry(fields))).toEqual({ ok: false, message });
+  });
+
+  it('accepts a leap day', () => {
+    expect(validateRecord(TABLE_SPECS.plan_entry, planEntry({ date: '2028-02-29' })).ok).toBe(true);
+  });
+
+  it('trims window_name whitespace but keeps the original casing', () => {
+    const result = validateRecord(TABLE_SPECS.plan_entry, planEntry({ window_name: '  Lunch  ' }));
+    expect(result.ok && result.row.window_name).toBe('Lunch');
+  });
+
+  it('measures the 64-char max against the trimmed length', () => {
+    const result = validateRecord(TABLE_SPECS.plan_entry, planEntry({ window_name: `  ${'x'.repeat(64)}  ` }));
+    expect(result.ok).toBe(true);
+  });
+});
+
+describe('plan_item validation', () => {
+  it('accepts a complete plan item', () => {
+    const result = validateRecord(TABLE_SPECS.plan_item, planItem('p1', { id: 'i1' }));
+    expect(result).toEqual({
+      ok: true,
+      row: {
+        id: 'i1',
+        updated_at: 1000,
+        updated_by: 'phone',
+        deleted: 0,
+        plan_entry_id: 'p1',
+        ref_type: 'food',
+        ref_id: 'f1',
+        amount: 1,
+        unit: 'g',
+        position: 0,
+      },
+    });
+  });
+
+  it.each([
+    [{ ref_type: 'snack' }, 'ref_type must be one of food, meal'],
+    [{ amount: -1 }, 'amount must be >= 0'],
+    [{ amount: 'lots' }, 'amount must be a finite number'],
+    [{ unit: '' }, 'unit must not be empty'],
+    [{ position: 1.5 }, 'position must be an integer'],
+    [{ position: -1 }, 'position must be >= 0'],
+  ])('rejects plan_item %j', (fields, message) => {
+    expect(validateRecord(TABLE_SPECS.plan_item, planItem('p1', fields))).toEqual({ ok: false, message });
   });
 });

@@ -1,4 +1,12 @@
-import { isVolumeUnit, MAX_CARBS_PER_100ML, MAX_PORTION_CARBS_G, parseHHMM, VOLUME_UNITS } from '@carbbook/core';
+import {
+  DOSE_LIMITS,
+  isValidCarbGoal,
+  isVolumeUnit,
+  MAX_CARBS_PER_100ML,
+  MAX_PORTION_CARBS_G,
+  parseHHMM,
+  VOLUME_UNITS,
+} from '@carbbook/core';
 
 export const SYNC_TABLES = [
   'food',
@@ -9,12 +17,14 @@ export const SYNC_TABLES = [
   'log_entry',
   'log_item',
   'dose_settings',
+  'plan_entry',
+  'plan_item',
 ] as const;
 
 export type SyncTable = (typeof SYNC_TABLES)[number];
 
 export type FieldSpec =
-  | { type: 'text'; nullable?: boolean; max?: number }
+  | { type: 'text'; nullable?: boolean; max?: number; trim?: boolean }
   | { type: 'number'; nullable?: boolean; min?: number; max?: number; positive?: boolean; integer?: boolean }
   | { type: 'enum'; values: readonly string[] }
   | { type: 'json'; check: (value: unknown) => string | null; canonicalize?: (value: unknown) => unknown };
@@ -55,6 +65,10 @@ export function checkWindows(value: unknown): string | null {
     if (!isFiniteNumber(window.ratio_g_per_unit) || window.ratio_g_per_unit <= 0) {
       return `window "${window.name}" needs ratio_g_per_unit > 0`;
     }
+    // carb_goal is optional (meal-planning spec §2): absent or null means "no goal".
+    if (window.carb_goal != null && !isValidCarbGoal(window.carb_goal)) {
+      return `window "${window.name}" has an invalid carb_goal (need 0 <= min <= max <= ${DOSE_LIMITS.maxCarbsG})`;
+    }
   }
   return null;
 }
@@ -92,8 +106,16 @@ function reorderKeys(value: unknown, keys: readonly string[]): unknown {
  * Canonicalizers for dose_settings JSON fields: fixed key order so two pushes with the same
  * content but different key ordering serialize identically (see push.ts's append-only check).
  */
+const canonicalizeCarbGoal = (value: unknown): unknown => (value == null ? value : reorderKeys(value, ['min', 'max']));
+
 export const canonicalizeWindows = (value: unknown): unknown =>
-  Array.isArray(value) ? value.map((w) => reorderKeys(w, ['name', 'start', 'ratio_g_per_unit'])) : value;
+  Array.isArray(value)
+    ? value.map((w) => {
+        const out = reorderKeys(w, ['name', 'start', 'ratio_g_per_unit', 'carb_goal']) as Record<string, unknown>;
+        if ('carb_goal' in out) out.carb_goal = canonicalizeCarbGoal(out.carb_goal);
+        return out;
+      })
+    : value;
 export const canonicalizeCorrection = (value: unknown): unknown =>
   reorderKeys(value, ['threshold', 'step', 'units_per_step', 'mode']);
 export const canonicalizeRounding = (value: unknown): unknown =>
@@ -109,6 +131,16 @@ const optionalText = (max = 200): FieldSpec => ({ type: 'text', nullable: true, 
  * once the parent arrives on a later push, the reference resolves normally.
  */
 const REF_TYPES = ['food', 'meal'] as const;
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** True for a real calendar day written as YYYY-MM-DD (so "2026-02-30" is rejected). */
+export function isValidPlanDate(value: unknown): boolean {
+  if (typeof value !== 'string' || !ISO_DATE.test(value)) return false;
+  const [year, month, day] = value.split('-').map(Number) as [number, number, number];
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+}
 
 export const TABLE_SPECS: Record<SyncTable, TableSpec> = {
   food: {
@@ -206,6 +238,32 @@ export const TABLE_SPECS: Record<SyncTable, TableSpec> = {
       windows: { type: 'json', check: checkWindows, canonicalize: canonicalizeWindows },
       correction: { type: 'json', check: checkCorrection, canonicalize: canonicalizeCorrection },
       rounding: { type: 'json', check: checkRounding, canonicalize: canonicalizeRounding },
+    },
+  },
+  plan_entry: {
+    name: 'plan_entry',
+    fields: {
+      date: text(10),
+      // Trimmed so "Lunch", "lunch " etc. reliably collide with the case-insensitive slot-uniqueness
+      // check below (validate.ts trims, push.ts's duplicateSlot and the DB index compare NOCASE);
+      // the original casing is kept as the stored text, only leading/trailing whitespace is dropped.
+      window_name: { type: 'text', max: 64, trim: true },
+      status: { type: 'enum', values: ['planned', 'logged', 'skipped'] },
+      note: optionalText(4000),
+      // Checked against the log_entry table in push.ts, where the DB is available.
+      log_entry_id: optionalText(64),
+    },
+    check: (r) => (isValidPlanDate(r.date) ? null : 'date must be a real calendar date in YYYY-MM-DD form'),
+  },
+  plan_item: {
+    name: 'plan_item',
+    fields: {
+      plan_entry_id: text(64),
+      ref_type: { type: 'enum', values: REF_TYPES },
+      ref_id: text(64),
+      amount: { type: 'number', min: 0 },
+      unit: text(64),
+      position: { type: 'number', integer: true, min: 0 },
     },
   },
 };

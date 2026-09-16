@@ -9,7 +9,7 @@ export interface PushChange {
   record: unknown;
 }
 
-export type RejectReason = 'unknown_table' | 'invalid' | 'forbidden' | 'cycle' | 'append_only';
+export type RejectReason = 'unknown_table' | 'invalid' | 'forbidden' | 'cycle' | 'append_only' | 'duplicate_slot';
 
 export type PushResult =
   | { table: string; id: string; status: 'accepted'; server_seq: number }
@@ -99,6 +99,61 @@ function dosSettingsAppendOnlyViolation(db: Db, row: SqlRow): 'delete' | 'edit' 
   return null;
 }
 
+/**
+ * Spec §2: at most one non-deleted plan_entry per (date, window_name), case-insensitively ("Lunch"
+ * and "lunch" are the same slot). Checked here rather than relying solely on the partial unique
+ * index so the offending record gets a per-record rejection instead of the whole push batch
+ * failing. Rows accepted earlier in the same batch are already written inside this transaction, so
+ * they are visible to this query. window_name is already trimmed by validateRecord before this
+ * runs, so only casing needs handling here (mirrored by the migration's COLLATE NOCASE index as a
+ * backstop).
+ */
+function duplicateSlot(db: Db, row: SqlRow): boolean {
+  if (row.deleted === 1) return false;
+  const clash = db
+    .prepare('SELECT 1 FROM plan_entry WHERE date = ? AND window_name = ? COLLATE NOCASE AND deleted = 0 AND id <> ?')
+    .get(row.date, row.window_name, row.id);
+  return clash !== undefined;
+}
+
+/**
+ * Spec §6: when a plan entry claims a log entry, that row must already exist on the server AND
+ * still be live. Unlike ref_id on items (which may legitimately race ahead of its food),
+ * log_entry_id is only ever set by the same client in the same breath as the log entry itself, so
+ * a dangling or deleted link means a bug or a stale client, not an out-of-order sync. A soft-deleted
+ * log entry must be treated the same as a missing one: the Task 13 revert rule only fires when the
+ * delete itself is accepted by this push, so an offline device's later push of a plan entry that
+ * still claims an already-deleted log entry is never touched by that rule and must be rejected here
+ * instead of silently blessed forever.
+ */
+function unknownLogEntry(db: Db, row: SqlRow): boolean {
+  if (row.log_entry_id == null) return false;
+  return db.prepare('SELECT 1 FROM log_entry WHERE id = ? AND deleted = 0').get(row.log_entry_id) === undefined;
+}
+
+/**
+ * Spec §5: deleting a log entry returns any slot that points at it to `planned` and clears the
+ * link. Done server-side, not on the client: the deleting device may never have held the plan row,
+ * and doing it here means the repair happens exactly once and reaches every device on the next
+ * pull. Each reverted row gets a fresh server_seq, and an updated_at at least one millisecond past
+ * its own previous value so a client's stale copy cannot win the next last-write-wins comparison.
+ */
+function revertPlanEntriesForDeletedLog(db: Db, row: SqlRow): void {
+  const affected = db
+    .prepare('SELECT id, updated_at FROM plan_entry WHERE log_entry_id = ? AND deleted = 0')
+    .all(row.id) as { id: string; updated_at: number }[];
+  if (affected.length === 0) return;
+  const update = db.prepare(
+    `UPDATE plan_entry
+        SET status = 'planned', log_entry_id = NULL, updated_at = ?, updated_by = ?, server_seq = ?
+      WHERE id = ?`,
+  );
+  for (const entry of affected) {
+    const updatedAt = Math.max(row.updated_at as number, entry.updated_at + 1);
+    update.run(updatedAt, row.updated_by, nextServerSeq(db), entry.id);
+  }
+}
+
 function applyOne(db: Db, role: Role, change: PushChange, mealItems: MealItemData[]): PushResult {
   const id = recordId(change.record);
   const table = String(change.table);
@@ -137,6 +192,21 @@ function applyOne(db: Db, role: Role, change: PushChange, mealItems: MealItemDat
     }
   }
 
+  if (spec.name === 'plan_entry') {
+    if (unknownLogEntry(db, row)) {
+      return {
+        table, id: rowId, status: 'rejected', reason: 'invalid',
+        message: `log_entry_id "${String(row.log_entry_id)}" does not reference a known log entry`,
+      };
+    }
+    if (duplicateSlot(db, row)) {
+      return {
+        table, id: rowId, status: 'rejected', reason: 'duplicate_slot',
+        message: `Another plan entry already exists for ${String(row.date)} ${String(row.window_name)}`,
+      };
+    }
+  }
+
   const stored = storedRow as { updated_at: number; updated_by: string; server_seq: number } | undefined;
   const incoming = { updated_at: row.updated_at as number, updated_by: row.updated_by as string };
   if (stored && !isNewer(incoming, stored)) {
@@ -150,6 +220,7 @@ function applyOne(db: Db, role: Role, change: PushChange, mealItems: MealItemDat
   const serverSeq = nextServerSeq(db);
   upsert(db, spec, { ...row, server_seq: serverSeq });
   if (spec.name === 'meal_item') updateMealItemsSnapshot(mealItems, row);
+  if (spec.name === 'log_entry' && row.deleted === 1) revertPlanEntriesForDeletedLog(db, row);
   return { table, id: rowId, status: 'accepted', server_seq: serverSeq };
 }
 

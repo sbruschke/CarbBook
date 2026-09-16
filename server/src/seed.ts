@@ -13,6 +13,20 @@ export const SEED_WINDOWS: DoseWindow[] = [
   { name: 'HS Snack', start: '19:30', ratio_g_per_unit: 12 },
 ];
 
+/**
+ * Same windows and ratios as SEED_WINDOWS, plus the owner's per-window carb goals
+ * (meal-planning spec §1). A separate array on purpose: SEED_WINDOWS is referenced by the older
+ * version below and must not gain goals retroactively.
+ */
+export const SEED_GOAL_WINDOWS: DoseWindow[] = [
+  { name: 'Breakfast', start: '05:00', ratio_g_per_unit: 8, carb_goal: { min: 30, max: 50 } },
+  { name: 'AM Snack', start: '09:00', ratio_g_per_unit: 10, carb_goal: { min: 10, max: 30 } },
+  { name: 'Lunch', start: '11:00', ratio_g_per_unit: 8, carb_goal: { min: 50, max: 80 } },
+  { name: 'PM Snack', start: '14:00', ratio_g_per_unit: 10, carb_goal: { min: 10, max: 30 } },
+  { name: 'Dinner', start: '16:30', ratio_g_per_unit: 8, carb_goal: { min: 50, max: 80 } },
+  { name: 'HS Snack', start: '19:30', ratio_g_per_unit: 12, carb_goal: { min: 10, max: 30 } },
+];
+
 const SEED_ROUNDING: RoundingRule = { increment: 1, round_down_below_bg: 130 };
 
 /** Local midnight in America/Chicago (CDT, UTC-5) on each effective date. */
@@ -30,6 +44,14 @@ export const SEED_DOSE_SETTINGS: DoseSettingsData[] = [
     id: '019ff457-7480-7000-8000-000000000003',
     effective_from: at('2026-08-12'),
     windows: SEED_WINDOWS,
+    correction: { threshold: 200, step: 50, units_per_step: 1, mode: 'started' },
+    rounding: SEED_ROUNDING,
+  },
+  {
+    // Carb goals arrive as a new append-only version (meal-planning spec §2); dosing is unchanged.
+    id: '019ff457-7480-7000-8000-000000000004',
+    effective_from: at('2026-09-16'),
+    windows: SEED_GOAL_WINDOWS,
     correction: { threshold: 200, step: 50, units_per_step: 1, mode: 'started' },
     rounding: SEED_ROUNDING,
   },

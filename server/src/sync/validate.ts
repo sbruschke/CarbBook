@@ -20,11 +20,13 @@ function checkField(name: string, spec: FieldSpec, value: unknown): { value: str
     return { error: `${name} is required` };
   }
   switch (spec.type) {
-    case 'text':
+    case 'text': {
       if (typeof value !== 'string') return { error: `${name} must be a string` };
-      if (!spec.nullable && value.trim() === '') return { error: `${name} must not be empty` };
-      if (value.length > (spec.max ?? 200)) return { error: `${name} is longer than ${spec.max ?? 200} characters` };
-      return { value };
+      const trimmed = spec.trim ? value.trim() : value;
+      if (!spec.nullable && trimmed.trim() === '') return { error: `${name} must not be empty` };
+      if (trimmed.length > (spec.max ?? 200)) return { error: `${name} is longer than ${spec.max ?? 200} characters` };
+      return { value: trimmed };
+    }
     case 'number':
       if (typeof value !== 'number' || !Number.isFinite(value)) return { error: `${name} must be a finite number` };
       if (spec.integer && !Number.isSafeInteger(value)) return { error: `${name} must be an integer` };

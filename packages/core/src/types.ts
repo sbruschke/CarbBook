@@ -95,10 +95,21 @@ export interface LogItemData {
   carbs_g: number;
 }
 
+/** Per-window carb target (meal-planning spec §2). Both bounds finite, 0 <= min <= max <= 2000. */
+export interface CarbGoal {
+  min: number;
+  max: number;
+}
+
 export interface DoseWindow {
   name: string;
   start: string; // "HH:MM", 24-hour local time
   ratio_g_per_unit: number;
+  /**
+   * Per-window carb target for the Plan screen's colour feedback (meal-planning spec §2).
+   * Dose math never reads this: estimateDose only uses name/start/ratio_g_per_unit.
+   */
+  carb_goal?: CarbGoal | null;
 }
 
 export type CorrectionMode = 'started' | 'full' | 'proportional';
@@ -121,4 +132,30 @@ export interface DoseSettingsData {
   windows: DoseWindow[];
   correction: CorrectionRule;
   rounding: RoundingRule;
+}
+
+export type PlanStatus = 'planned' | 'logged' | 'skipped';
+
+/** One planned meal slot (meal-planning spec §2). At most one non-deleted row per date+window. */
+export interface PlanEntryData {
+  id: Id;
+  /** Local calendar day, "YYYY-MM-DD". */
+  date: string;
+  /** Matches a dose-settings window name. */
+  window_name: string;
+  status: PlanStatus;
+  note?: string | null;
+  /** Set when this slot was logged from the Calculator; cleared if that log entry is deleted. */
+  log_entry_id?: Id | null;
+}
+
+/** A row inside a planned slot: same shape as log_item minus the snapshot fields. */
+export interface PlanItemData {
+  id: Id;
+  plan_entry_id: Id;
+  ref_type: RefType;
+  ref_id: Id;
+  amount: number;
+  unit: string;
+  position: number;
 }

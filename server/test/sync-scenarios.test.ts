@@ -122,8 +122,8 @@ describe('two clients syncing through the server', () => {
     await phone.sync();
     expect(phone.get('food', 'kim-food')?.name).toBe('Kim snack');
     expect(phone.get('dose_settings', 'kim-dose')).toBeUndefined();
-    // The viewer's local copy still holds its rejected row plus the one seeded version from the server.
-    expect([...viewer.rows.keys()].filter((k) => k.startsWith('dose_settings/'))).toHaveLength(2);
+    // The viewer's local copy still holds its rejected row plus the two seeded versions from the server.
+    expect([...viewer.rows.keys()].filter((k) => k.startsWith('dose_settings/'))).toHaveLength(3);
   });
 
   it('round-trips a volume-basis food and a carbs_g-only portion between two clients', async () => {

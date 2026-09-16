@@ -246,3 +246,47 @@ describe('estimateDose sanity limits', () => {
     expect(at(zero, 1000, null)).toEqual(refused('invalid_ratio', zero.windows[0]));
   });
 });
+
+describe('carb_goal does not affect dose math', () => {
+  it('produces an identical estimate with and without carb_goal on the window', () => {
+    const base: DoseSettingsData = {
+      id: 'settings-goal-check',
+      effective_from: 0,
+      windows: [
+        { name: 'Breakfast', start: '05:00', ratio_g_per_unit: 8 },
+        { name: 'Lunch', start: '11:00', ratio_g_per_unit: 8 },
+      ],
+      correction: { threshold: 200, step: 50, units_per_step: 1, mode: 'started' },
+      rounding: { increment: 1, round_down_below_bg: 130 },
+    };
+    const withGoals: DoseSettingsData = {
+      ...base,
+      windows: [
+        { name: 'Breakfast', start: '05:00', ratio_g_per_unit: 8, carb_goal: { min: 30, max: 50 } },
+        { name: 'Lunch', start: '11:00', ratio_g_per_unit: 8, carb_goal: null },
+      ],
+    };
+    const input = { minutes: 12 * 60, carbs: { carbs_g: 72, complete: true }, bg: 263 };
+    const plain = estimateDose({ settings: base, ...input });
+    const goals = estimateDose({ settings: withGoals, ...input });
+    expect(plain.ok).toBe(true);
+    if (!plain.ok || !goals.ok) throw new Error('expected both estimates to succeed');
+    expect(goals.units).toBe(plain.units);
+    expect(goals.meal_units).toBe(plain.meal_units);
+    expect(goals.correction_units).toBe(plain.correction_units);
+    expect(goals.raw_units).toBe(plain.raw_units);
+    expect(formatBreakdown(goals)).toBe(formatBreakdown(plain));
+  });
+
+  it('still rejects a nonsense carb_goal without changing the dose', () => {
+    const settings: DoseSettingsData = {
+      id: 'settings-bad-goal',
+      effective_from: 0,
+      windows: [{ name: 'All day', start: '00:00', ratio_g_per_unit: 10, carb_goal: { min: 90, max: 10 } }],
+      correction: { threshold: 200, step: 50, units_per_step: 1, mode: 'started' },
+      rounding: { increment: 1, round_down_below_bg: null },
+    };
+    const estimate = estimateDose({ settings, minutes: 600, carbs: { carbs_g: 50, complete: true }, bg: null });
+    expect(estimate).toMatchObject({ ok: true, units: 5 });
+  });
+});

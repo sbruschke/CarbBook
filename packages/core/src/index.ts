@@ -3,4 +3,5 @@ export type * from './types';
 export * from './units';
 export * from './carbs';
 export * from './dose';
+export * from './goal';
 export * from './sync';
