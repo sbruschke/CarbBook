@@ -113,6 +113,17 @@ function duplicateSlot(db: Db, row: SqlRow): boolean {
   return clash !== undefined;
 }
 
+/**
+ * Spec §6: when a plan entry claims a log entry, that row must already exist on the server. Unlike
+ * ref_id on items (which may legitimately race ahead of its food), log_entry_id is only ever set by
+ * the same client in the same breath as the log entry itself, so a dangling link means a bug or a
+ * stale client, not an out-of-order sync.
+ */
+function unknownLogEntry(db: Db, row: SqlRow): boolean {
+  if (row.log_entry_id == null) return false;
+  return db.prepare('SELECT 1 FROM log_entry WHERE id = ?').get(row.log_entry_id) === undefined;
+}
+
 function applyOne(db: Db, role: Role, change: PushChange, mealItems: MealItemData[]): PushResult {
   const id = recordId(change.record);
   const table = String(change.table);
@@ -151,11 +162,19 @@ function applyOne(db: Db, role: Role, change: PushChange, mealItems: MealItemDat
     }
   }
 
-  if (spec.name === 'plan_entry' && duplicateSlot(db, row)) {
-    return {
-      table, id: rowId, status: 'rejected', reason: 'duplicate_slot',
-      message: `Another plan entry already exists for ${String(row.date)} ${String(row.window_name)}`,
-    };
+  if (spec.name === 'plan_entry') {
+    if (unknownLogEntry(db, row)) {
+      return {
+        table, id: rowId, status: 'rejected', reason: 'invalid',
+        message: `log_entry_id "${String(row.log_entry_id)}" does not reference a known log entry`,
+      };
+    }
+    if (duplicateSlot(db, row)) {
+      return {
+        table, id: rowId, status: 'rejected', reason: 'duplicate_slot',
+        message: `Another plan entry already exists for ${String(row.date)} ${String(row.window_name)}`,
+      };
+    }
   }
 
   const stored = storedRow as { updated_at: number; updated_by: string; server_seq: number } | undefined;

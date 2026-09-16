@@ -69,3 +69,65 @@ describe('applyPush plan_entry slot uniqueness', () => {
     expect(results.map((r) => r.status)).toEqual(['accepted', 'accepted']);
   });
 });
+
+const logEntry = (id: string, fields: Record<string, unknown> = {}) => ({
+  id,
+  eaten_at: Date.parse('2026-09-17T17:00:00Z'),
+  window_name: 'Lunch',
+  bg_mgdl: null,
+  bg_source: 'none',
+  bg_trend: null,
+  total_carbs_g: 60,
+  suggested_units: null,
+  taken_units: null,
+  settings_version_id: null,
+  notes: null,
+  updated_at: 1000,
+  updated_by: 'phone',
+  deleted: 0,
+  ...fields,
+});
+
+describe('applyPush plan_entry log_entry_id', () => {
+  it('accepts a slot whose log_entry_id points at a known log entry', () => {
+    const db = initDatabase(':memory:');
+    const results = applyPush(db, 'owner', [
+      { table: 'log_entry', record: logEntry('l1') },
+      { table: 'plan_entry', record: planEntry({ id: 'p1', status: 'logged', log_entry_id: 'l1' }) },
+    ]);
+    expect(results.map((r) => r.status)).toEqual(['accepted', 'accepted']);
+  });
+
+  it('rejects a slot whose log_entry_id is unknown', () => {
+    const db = initDatabase(':memory:');
+    const results = applyPush(db, 'owner', [
+      { table: 'plan_entry', record: planEntry({ id: 'p1', status: 'logged', log_entry_id: 'nope' }) },
+    ]);
+    expect(results).toEqual([
+      {
+        table: 'plan_entry',
+        id: 'p1',
+        status: 'rejected',
+        reason: 'invalid',
+        message: 'log_entry_id "nope" does not reference a known log entry',
+      },
+    ]);
+    expect(db.prepare('SELECT count(*) FROM plan_entry').pluck().get()).toBe(0);
+  });
+
+  it('accepts a null log_entry_id', () => {
+    const db = initDatabase(':memory:');
+    expect(applyPush(db, 'owner', [{ table: 'plan_entry', record: planEntry({ id: 'p1' }) }])[0]!.status).toBe('accepted');
+  });
+
+  it('accepts a link to a log entry that is already soft-deleted, then reverts it on the next delete push', () => {
+    const db = initDatabase(':memory:');
+    applyPush(db, 'owner', [{ table: 'log_entry', record: logEntry('l1', { deleted: 1 }) }]);
+    // The row exists, so the reference resolves; the revert rule (Task 13) handles the state.
+    expect(
+      applyPush(db, 'owner', [
+        { table: 'plan_entry', record: planEntry({ id: 'p1', status: 'logged', log_entry_id: 'l1' }) },
+      ])[0]!.status,
+    ).toBe('accepted');
+  });
+});
