@@ -129,6 +129,21 @@ final class AppModel {
         revision += 1
     }
 
+    /// A slot save, a clear or a copy: every change is applied in one transaction
+    /// (`LocalStore.applyPlanChanges`), so a partial failure never leaves some slots written and
+    /// others not.
+    func savePlan(_ changes: [SyncChange]) throws {
+        try store.applyPlanChanges(changes)
+        revision += 1
+    }
+
+    /// Soft-deletes a log entry, its items, and unlinks any plan slot pointing at it — all in one
+    /// transaction (`LocalStore.deleteLogEntry`).
+    func deleteLogEntry(_ id: Id) throws {
+        try store.deleteLogEntry(id)
+        revision += 1
+    }
+
     func delete(_ table: String, id: Id) throws {
         try store.softDelete(table, id: id)
         revision += 1

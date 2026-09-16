@@ -4,13 +4,22 @@ import Foundation
 import XCTest
 
 final class PlanLogLinkTests: XCTestCase {
+    private func logEntry(id: Id) -> LogEntryData {
+        LogEntryData(id: id, eatenAt: 0, windowName: "Lunch", bgMgdl: nil, bgSource: "none", bgTrend: nil,
+                     totalCarbsG: 40, suggestedUnits: nil, takenUnits: nil, settingsVersionId: nil, notes: nil)
+    }
+
     func testLoggingFromALoadedSlotMarksItLoggedAndStoresTheLink() throws {
         let entry = PlanEntryData(id: "p1", date: "2026-09-16", windowName: "Lunch", status: .planned, note: "x")
-        let change = try XCTUnwrap(PlanLogLink.loggedChange(entry, logEntryId: "l1"))
+        let change = try XCTUnwrap(PlanLogLink.loggedChange(entry, loggedTo: logEntry(id: "l1")))
         XCTAssertEqual(change.table, "plan_entry")
         XCTAssertEqual(change.record["status"], .string("logged"))
         XCTAssertEqual(change.record["log_entry_id"], .string("l1"))
         XCTAssertEqual(change.record["note"], .string("x"))
+    }
+
+    func testLoggedChangeIsNilWithNoEntry() {
+        XCTAssertNil(PlanLogLink.loggedChange(nil, loggedTo: logEntry(id: "l1")))
     }
 
     func testDeletingALogEntryReturnsItsSlotsToPlannedAndClearsTheLink() throws {

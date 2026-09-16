@@ -51,7 +51,10 @@ public func goalStatus(_ carbs: CarbResult, _ goal: CarbGoal?) -> GoalStatus {
     guard let goal, goal.isUsable, carbs.complete, carbs.carbsG.isFinite else { return .none }
     let value = carbs.carbsG
     if value >= goal.min && value <= goal.max { return .inGoal }
-    let d = Swift.min(abs(value - goal.min), abs(value - goal.max))
+    // Rounded to 6 decimals to kill binary-rounding noise (e.g. 44.999999999999), matching the TS
+    // core's `Number(x.toFixed(6))` so both edges of a band land the same way on both platforms.
+    let raw = Swift.min(abs(value - goal.min), abs(value - goal.max))
+    let d = (raw * 1_000_000).rounded() / 1_000_000
     if d <= 5 { return .near }
     if d <= 10 { return .off }
     return .out

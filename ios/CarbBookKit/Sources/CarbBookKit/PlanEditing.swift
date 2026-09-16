@@ -126,20 +126,53 @@ public enum PlanEditing {
     }
 
     /// Records for copying `sourceEntries` onto the days named by `dayOffsets` (source date → target
-    /// date; one pair for a day copy, seven for a week). A source date that maps to itself is
-    /// skipped (copying a day onto itself must never duplicate its own items). A copy is never
-    /// linked to the source's log entry and always lands as `planned`: it is a plan, not a record of
-    /// something eaten. The whole result is meant to be applied through `LocalStore.save` in one
-    /// call, so every soft delete and every save for a replace/merge/skip commits atomically — a
-    /// failure part-way through must never leave a duplicated live slot.
+    /// date; one pair for a day copy, seven for a week). A source date that maps to itself, or to
+    /// text `PlanDate` cannot parse, is skipped (copying a day onto itself must never duplicate its
+    /// own items). A copy is never linked to the source's log entry and always lands as `planned`:
+    /// it is a plan, not a record of something eaten. The whole result is meant to be applied
+    /// through `LocalStore.applyPlanChanges` in one call, so every soft delete and every save for a
+    /// replace/merge/skip commits atomically — a failure part-way through must never leave a
+    /// duplicated live slot.
+    ///
+    /// `replace` matches the deployed web app (`web/src/plan/copy.ts`): it clears the WHOLE target
+    /// day first — every live slot on that date, matched or not — then writes the source day's
+    /// slots fresh. A target day with Breakfast + Lunch and a source with only Breakfast ends with
+    /// only the copied Breakfast; a stray unmatched Lunch is never left behind.
     public static func copyChanges(sourceEntries: [PlanEntryData], targetEntries: [PlanEntryData],
                                    itemsByEntry: [Id: [PlanItemData]], dayOffsets: [String: String],
                                    mode: CopyMode, newId: () -> Id) throws -> [SyncChange] {
+        // Target dates a source actually lands on: not a self-copy, and parseable as a local date.
+        let validTargetDates = Set(sourceEntries.compactMap { source -> String? in
+            guard let target = dayOffsets[source.date], target != source.date, PlanDate.date(target) != nil else { return nil }
+            return target
+        })
+
         var targetsByKey: [String: PlanEntryData] = [:]
         for entry in targetEntries { targetsByKey[PlanDate.slotKey(date: entry.date, windowName: entry.windowName)] = entry }
+        // Kept up to date as items are appended below, so a second source landing on the same key
+        // (merge, or the same-key defence in `replace`) computes its start position after the first
+        // source's items, not from the stale snapshot passed in.
+        var itemsByEntry = itemsByEntry
+
         var changes: [SyncChange] = []
+        if mode == .replace {
+            for targetDate in validTargetDates.sorted() {
+                for target in targetEntries.sorted(by: { $0.windowName < $1.windowName }) where target.date == targetDate {
+                    for item in itemsByEntry[target.id] ?? [] {
+                        var deletedItem = item
+                        deletedItem.deleted = 1
+                        changes.append(try SyncChange.encode("plan_item", deletedItem))
+                    }
+                    var deletedEntry = target
+                    deletedEntry.deleted = 1
+                    changes.append(try SyncChange.encode("plan_entry", deletedEntry))
+                    targetsByKey.removeValue(forKey: PlanDate.slotKey(date: target.date, windowName: target.windowName))
+                }
+            }
+        }
+
         for source in sourceEntries.sorted(by: { ($0.date, $0.windowName) < ($1.date, $1.windowName) }) {
-            guard let targetDate = dayOffsets[source.date], targetDate != source.date else { continue }
+            guard let targetDate = dayOffsets[source.date], validTargetDates.contains(targetDate) else { continue }
             let sourceItems = itemsByEntry[source.id] ?? []
             let key = PlanDate.slotKey(date: targetDate, windowName: source.windowName)
             let existing = targetsByKey[key]
@@ -147,35 +180,33 @@ public enum PlanEditing {
 
             var startPosition = 0
             let entryId: Id
+            // A live entry at this key merges rather than duplicates, regardless of mode: for
+            // `merge` this is the intended append; for `replace` the day was already cleared above,
+            // so `existing` here can only be a slot this very copy just created for another source
+            // that maps to the same (date, window) — appending, not re-creating, is what keeps that
+            // case to one live slot too.
             if let existing {
                 entryId = existing.id
                 let existingItems = itemsByEntry[existing.id] ?? []
-                if mode == .replace {
-                    for item in existingItems {
-                        var deletedItem = item
-                        deletedItem.deleted = 1
-                        changes.append(try SyncChange.encode("plan_item", deletedItem))
-                    }
-                    // A replaced slot goes back to planned and loses any link to a logged entry.
-                    var reset = existing
-                    reset.status = .planned
-                    reset.logEntryId = nil
-                    reset.note = source.note
-                    changes.append(try SyncChange.encode("plan_entry", reset))
-                } else {
-                    startPosition = (existingItems.map(\.position).max() ?? -1) + 1
-                }
+                startPosition = (existingItems.map(\.position).max() ?? -1) + 1
             } else {
                 entryId = newId()
-                changes.append(try SyncChange.encode("plan_entry", PlanEntryData(
-                    id: entryId, date: targetDate, windowName: source.windowName, status: .planned,
-                    note: source.note, logEntryId: nil)))
+                let newEntry = PlanEntryData(id: entryId, date: targetDate, windowName: source.windowName,
+                                             status: .planned, note: source.note, logEntryId: nil)
+                changes.append(try SyncChange.encode("plan_entry", newEntry))
+                // Recorded so a second source that lands on the same (date, window) — e.g. a
+                // malformed or duplicated source list — merges into this one instead of creating
+                // a second live slot for the same key.
+                targetsByKey[key] = newEntry
             }
+            var written: [PlanItemData] = []
             for (offset, item) in sourceItems.enumerated() {
-                changes.append(try SyncChange.encode("plan_item", PlanItemData(
-                    id: newId(), planEntryId: entryId, refType: item.refType, refId: item.refId,
-                    amount: item.amount, unit: item.unit, position: startPosition + offset)))
+                let copied = PlanItemData(id: newId(), planEntryId: entryId, refType: item.refType, refId: item.refId,
+                                          amount: item.amount, unit: item.unit, position: startPosition + offset)
+                changes.append(try SyncChange.encode("plan_item", copied))
+                written.append(copied)
             }
+            itemsByEntry[entryId, default: []].append(contentsOf: written)
         }
         return changes
     }

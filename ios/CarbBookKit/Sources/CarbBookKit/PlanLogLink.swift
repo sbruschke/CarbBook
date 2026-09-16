@@ -10,11 +10,13 @@ import Foundation
 /// links to a live log entry: this file's two changes are the only writers of that field, and
 /// `unlinkChanges` is exactly what clears it back to `planned` when the entry it points at is gone.
 public enum PlanLogLink {
-    /// The slot a "Log it" came from, moved to `logged` with its `log_entry_id`.
-    public static func loggedChange(_ entry: PlanEntryData?, logEntryId: Id) -> SyncChange? {
+    /// The slot a "Log it" came from, moved to `logged` with its `log_entry_id`. Takes the
+    /// `LogEntryData` itself (not a bare id) so a slot can only ever be linked to a log entry the
+    /// caller actually has in hand — never a dangling or already-deleted id.
+    public static func loggedChange(_ entry: PlanEntryData?, loggedTo logEntry: LogEntryData) -> SyncChange? {
         guard var updated = entry else { return nil }
         updated.status = .logged
-        updated.logEntryId = logEntryId
+        updated.logEntryId = logEntry.id
         return try? SyncChange.encode("plan_entry", updated)
     }
 

@@ -49,6 +49,13 @@ final class GoalsTests: XCTestCase {
         XCTAssertEqual(status(85.1, goal), .off)
     }
 
+    func testBinaryRoundingNoiseAtABandEdgeDoesNotFlipTheStatus() {
+        // 44.9999999 is 5.0000001 g outside the 50-80 goal: only binary floating-point noise, not
+        // a real 6th-decimal distinction, so it must still land as "near" like an exact 45 would.
+        XCTAssertEqual(status(44.9999999, goal), .near)
+        XCTAssertEqual(status(85.0000001, goal), .near)
+    }
+
     func testOffIsWithinTenGramsAndOutIsBeyond() {
         XCTAssertEqual(status(40, goal), .off)
         XCTAssertEqual(status(90, goal), .off)

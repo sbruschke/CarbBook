@@ -62,6 +62,44 @@ public final class LocalStore: @unchecked Sendable {
         try save([SyncChange(table: table, record: record)])
     }
 
+    /// Applies a batch of plan writes (a slot save, a clear, a copy) in one transaction: `save`
+    /// already writes every change inside a single `dbQueue.write`, so a record that fails partway
+    /// through (a missing id, say) rolls the whole batch back rather than leaving some slots written
+    /// and others not. Named separately from the generic `save` so Plan call sites read as what they
+    /// are: a single all-or-nothing plan update.
+    @discardableResult
+    public func applyPlanChanges(_ changes: [SyncChange]) throws -> [SyncChange] {
+        try save(changes)
+    }
+
+    /// Soft-deletes a log entry and its items, and returns any slot pointing at it to `planned` with
+    /// the link cleared — all in one transaction, so the Plan screen is never read mid-update and a
+    /// crash between the two writes can never happen (spec §5, mirrors the server's own rule).
+    public func deleteLogEntry(_ id: Id) throws {
+        let stamp = now()
+        try dbQueue.write { db in
+            guard var entryRecord = try self.change(db, table: "log_entry", id: id)?.record else { return }
+            entryRecord["deleted"] = .number(1)
+            _ = try Self.writeLocal(db, SyncChange(table: "log_entry", record: entryRecord), stamp: stamp, deviceId: self.deviceId)
+
+            let items: [LogItemData] = try self.decodeRows(db, "log_item", "WHERE deleted = 0 AND log_entry_id = ?", [id])
+            for item in items {
+                guard var itemRecord = try self.change(db, table: "log_item", id: item.id)?.record else { continue }
+                itemRecord["deleted"] = .number(1)
+                _ = try Self.writeLocal(db, SyncChange(table: "log_item", record: itemRecord), stamp: stamp, deviceId: self.deviceId)
+            }
+
+            let linked: [PlanEntryData] = try self.decodeRows(db, "plan_entry", "WHERE deleted = 0 AND log_entry_id = ?", [id])
+            for unlink in try PlanLogLink.unlinkChanges(linked, logEntryId: id) {
+                _ = try Self.writeLocal(db, unlink, stamp: stamp, deviceId: self.deviceId)
+            }
+        }
+        lock.lock()
+        let handler = localWriteHandler
+        lock.unlock()
+        handler?()
+    }
+
     /// The current row as a wire record without `server_seq`, or nil when absent.
     func change(_ db: Database, table: String, id: Id) throws -> SyncChange? {
         let columns = try TableCodec.columns(table)

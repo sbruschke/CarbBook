@@ -154,4 +154,65 @@ final class PlanStoreTests: XCTestCase {
         XCTAssertEqual(try store.planEntries(logEntryId: "l1").map(\.id), ["p9"])
         XCTAssertTrue(try store.planEntries(logEntryId: "l2").isEmpty)
     }
+
+    // MARK: - applyPlanChanges atomicity
+
+    func testApplyPlanChangesWritesEveryChangeTogether() throws {
+        let store = try LocalStore(path: nil, now: { 1_000 })
+        try store.applyPlanChanges([
+            try SyncChange.encode("plan_entry", PlanEntryData(id: "p1", date: "2026-09-16", windowName: "Lunch", status: .planned)),
+            try SyncChange.encode("plan_item", PlanItemData(id: "i1", planEntryId: "p1", refType: .food, refId: "f1",
+                                                            amount: 1, unit: "g", position: 0)),
+        ])
+        XCTAssertEqual((try store.records("plan_entry") as [PlanEntryData]).count, 1)
+        XCTAssertEqual((try store.records("plan_item") as [PlanItemData]).count, 1)
+    }
+
+    func testApplyPlanChangesRollsBackWhenALaterRecordIsInvalid() throws {
+        let store = try LocalStore(path: nil, now: { 1_000 })
+        try store.save("plan_entry", PlanEntryData(id: "p1", date: "2026-09-16", windowName: "Lunch", status: .planned))
+        try store.save("plan_item", PlanItemData(id: "i1", planEntryId: "p1", refType: .food, refId: "f1",
+                                                 amount: 1, unit: "g", position: 0))
+        // A soft-delete of the live item, followed by an invalid record (no id): the whole batch
+        // must roll back, so the item is still live afterwards.
+        let softDelete = SyncChange(table: "plan_item", record: ["id": .string("i1"), "deleted": .number(1)])
+        let invalid = SyncChange(table: "plan_item", record: ["deleted": .number(0)])
+        XCTAssertThrowsError(try store.applyPlanChanges([softDelete, invalid]))
+        let items: [PlanItemData] = try store.records("plan_item")
+        XCTAssertEqual(items.count, 1)
+        XCTAssertEqual(items.first?.id, "i1")
+    }
+
+    // MARK: - deleteLogEntry
+
+    func testDeleteLogEntryUnlinksItsSlotInTheSameWrite() throws {
+        let store = try LocalStore(path: nil, now: { 1_000 })
+        try store.save("log_entry", LogEntryData(id: "l1", eatenAt: 0, windowName: "Lunch", bgMgdl: nil,
+                                                  bgSource: "none", bgTrend: nil, totalCarbsG: 40,
+                                                  suggestedUnits: nil, takenUnits: nil, settingsVersionId: nil, notes: nil))
+        try store.save("log_item", LogItemData(id: "li1", logEntryId: "l1", refType: .food, refId: "f1",
+                                               displayName: "Rice", amount: 1, unit: "g", carbsG: 40))
+        try store.save("plan_entry", PlanEntryData(id: "p1", date: "2026-09-16", windowName: "Lunch",
+                                                   status: .logged, note: nil, logEntryId: "l1"))
+        try store.deleteLogEntry("l1")
+        XCTAssertTrue((try store.records("log_entry") as [LogEntryData]).isEmpty)
+        XCTAssertTrue((try store.records("log_item") as [LogItemData]).isEmpty)
+        let entries: [PlanEntryData] = try store.records("plan_entry")
+        XCTAssertEqual(entries.first?.status, .planned)
+        XCTAssertNil(entries.first?.logEntryId)
+    }
+
+    func testDeleteLogEntryWithNoLinkedSlotJustDeletes() throws {
+        let store = try LocalStore(path: nil, now: { 1_000 })
+        try store.save("log_entry", LogEntryData(id: "l1", eatenAt: 0, windowName: nil, bgMgdl: nil,
+                                                  bgSource: "none", bgTrend: nil, totalCarbsG: 40,
+                                                  suggestedUnits: nil, takenUnits: nil, settingsVersionId: nil, notes: nil))
+        try store.deleteLogEntry("l1")
+        XCTAssertTrue((try store.records("log_entry") as [LogEntryData]).isEmpty)
+    }
+
+    func testDeleteLogEntryForAMissingIdDoesNothing() throws {
+        let store = try LocalStore(path: nil, now: { 1_000 })
+        try store.deleteLogEntry("nope")
+    }
 }
