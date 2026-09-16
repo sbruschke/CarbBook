@@ -57,6 +57,30 @@ export function shiftDay(key: string, days: number): string {
   return dayKey(new Date(y, m - 1, d + days).getTime());
 }
 
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** The Monday of the local week containing `key` (spec §4: weeks are Monday-first). */
+export function startOfWeek(key: string): string {
+  const [y, m, d] = key.split('-').map(Number) as [number, number, number];
+  const date = new Date(y, m - 1, d);
+  // getDay(): 0 = Sunday. Monday-first means Sunday is 6 days into the week, not 0.
+  const offset = (date.getDay() + 6) % 7;
+  return shiftDay(key, -offset);
+}
+
+/** The seven local day keys of the week starting at `monday`, in order. */
+export function weekDates(monday: string): string[] {
+  return Array.from({ length: 7 }, (_, i) => shiftDay(monday, i));
+}
+
+/** "Wed 16 Sep" — short enough for a 375 px row header. */
+export function formatDayLabel(key: string): string {
+  const [y, m, d] = key.split('-').map(Number) as [number, number, number];
+  const date = new Date(y, m - 1, d);
+  return `${WEEKDAYS[date.getDay()]} ${d} ${MONTHS[m - 1]}`;
+}
+
 /** Value for `<input type="datetime-local">`. */
 export function toDateTimeLocal(ms: number): string {
   const d = new Date(ms);
