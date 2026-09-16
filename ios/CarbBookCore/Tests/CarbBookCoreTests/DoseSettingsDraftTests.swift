@@ -39,4 +39,29 @@ final class DoseSettingsDraftTests: XCTestCase {
         XCTAssertEqual(version.effectiveFrom, 1_789_000_000_000)
         XCTAssertEqual(version.windows.map(\.name), seedSettings.windows.map(\.name))
     }
+
+    private func settingsWithGoal(_ goal: CarbGoal?) -> DoseSettingsData {
+        DoseSettingsData(
+            id: "s1", effectiveFrom: 0,
+            windows: [DoseWindow(name: "Lunch", start: "11:00", ratioGPerUnit: 8, carbGoal: goal)],
+            correction: CorrectionRule(threshold: 200, step: 50, unitsPerStep: 1, mode: "started"),
+            rounding: RoundingRule(increment: 1, roundDownBelowBg: nil))
+    }
+
+    func testAValidCarbGoalIsAccepted() {
+        XCTAssertNil(validateDoseSettings(settingsWithGoal(CarbGoal(min: 50, max: 80))))
+        XCTAssertNil(validateDoseSettings(settingsWithGoal(nil)))
+        XCTAssertNil(validateDoseSettings(settingsWithGoal(CarbGoal(min: 0, max: 0))))
+    }
+
+    func testCarbGoalBoundsAreChecked() {
+        XCTAssertEqual(validateDoseSettings(settingsWithGoal(CarbGoal(min: 80, max: 50))),
+                       "window \"Lunch\" needs carb_goal 0 <= min <= max <= 2000")
+        XCTAssertEqual(validateDoseSettings(settingsWithGoal(CarbGoal(min: -1, max: 50))),
+                       "window \"Lunch\" needs carb_goal 0 <= min <= max <= 2000")
+        XCTAssertEqual(validateDoseSettings(settingsWithGoal(CarbGoal(min: 0, max: 2001))),
+                       "window \"Lunch\" needs carb_goal 0 <= min <= max <= 2000")
+        XCTAssertEqual(validateDoseSettings(settingsWithGoal(CarbGoal(min: .nan, max: 50))),
+                       "window \"Lunch\" needs carb_goal 0 <= min <= max <= 2000")
+    }
 }
