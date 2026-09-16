@@ -95,6 +95,12 @@ export interface LogItemData {
   carbs_g: number;
 }
 
+/** Per-window carb target (meal-planning spec §2). Both bounds finite, 0 <= min <= max <= 2000. */
+export interface CarbGoal {
+  min: number;
+  max: number;
+}
+
 export interface DoseWindow {
   name: string;
   start: string; // "HH:MM", 24-hour local time
