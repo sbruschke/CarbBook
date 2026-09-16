@@ -380,6 +380,42 @@ fieldset {
   padding: 32px 16px;
 }
 
+.goal {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  align-items: baseline;
+  padding: 2px 8px;
+  border-left: 4px solid currentcolor;
+  border-radius: 4px;
+}
+
+.goal-word {
+  font-size: 0.85em;
+  opacity: 0.85;
+}
+
+.goal-none {
+  color: var(--text);
+  border-left-color: var(--border);
+}
+.goal-in {
+  color: #0f6b3a;
+  background: #e6f4ec;
+}
+.goal-near {
+  color: #6b5200;
+  background: #fbf3d5;
+}
+.goal-off {
+  color: #8a3f00;
+  background: #fbe9dc;
+}
+.goal-out {
+  color: #8a1418;
+  background: #fbe3e4;
+}
+
 @media (min-width: 600px) {
   .item-controls {
     grid-template-columns: 7rem 1fr auto auto auto auto;
