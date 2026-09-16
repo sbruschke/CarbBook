@@ -130,3 +130,30 @@ describe('dayGoal', () => {
     expect(goalStatus({ carbs_g: 134, complete: true }, goal)).toBe('near');
   });
 });
+
+import type { PlanEntryData, PlanItemData, PlanStatus } from '../src/types';
+
+describe('plan row types', () => {
+  it('describes a planned slot and its items', () => {
+    const statuses: PlanStatus[] = ['planned', 'logged', 'skipped'];
+    const entry: PlanEntryData = {
+      id: 'pe1',
+      date: '2026-09-17',
+      window_name: 'Lunch',
+      status: 'planned',
+      note: null,
+      log_entry_id: null,
+    };
+    const item: PlanItemData = {
+      id: 'pi1',
+      plan_entry_id: entry.id,
+      ref_type: 'food',
+      ref_id: 'f1',
+      amount: 1,
+      unit: 'g',
+      position: 0,
+    };
+    expect(statuses).toContain(entry.status);
+    expect(item.plan_entry_id).toBe('pe1');
+  });
+});
