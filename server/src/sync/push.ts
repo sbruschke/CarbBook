@@ -9,7 +9,7 @@ export interface PushChange {
   record: unknown;
 }
 
-export type RejectReason = 'unknown_table' | 'invalid' | 'forbidden' | 'cycle' | 'append_only';
+export type RejectReason = 'unknown_table' | 'invalid' | 'forbidden' | 'cycle' | 'append_only' | 'duplicate_slot';
 
 export type PushResult =
   | { table: string; id: string; status: 'accepted'; server_seq: number }
@@ -99,6 +99,20 @@ function dosSettingsAppendOnlyViolation(db: Db, row: SqlRow): 'delete' | 'edit' 
   return null;
 }
 
+/**
+ * Spec §2: at most one non-deleted plan_entry per (date, window_name). Checked here rather than
+ * relying on the partial unique index so the offending record gets a per-record rejection instead
+ * of the whole push batch failing. Rows accepted earlier in the same batch are already written
+ * inside this transaction, so they are visible to this query.
+ */
+function duplicateSlot(db: Db, row: SqlRow): boolean {
+  if (row.deleted === 1) return false;
+  const clash = db
+    .prepare('SELECT 1 FROM plan_entry WHERE date = ? AND window_name = ? AND deleted = 0 AND id <> ?')
+    .get(row.date, row.window_name, row.id);
+  return clash !== undefined;
+}
+
 function applyOne(db: Db, role: Role, change: PushChange, mealItems: MealItemData[]): PushResult {
   const id = recordId(change.record);
   const table = String(change.table);
@@ -135,6 +149,13 @@ function applyOne(db: Db, role: Role, change: PushChange, mealItems: MealItemDat
         message: 'dose_settings rows are append-only: cannot edit an existing version, push a new one instead',
       };
     }
+  }
+
+  if (spec.name === 'plan_entry' && duplicateSlot(db, row)) {
+    return {
+      table, id: rowId, status: 'rejected', reason: 'duplicate_slot',
+      message: `Another plan entry already exists for ${String(row.date)} ${String(row.window_name)}`,
+    };
   }
 
   const stored = storedRow as { updated_at: number; updated_by: string; server_seq: number } | undefined;
