@@ -15,6 +15,15 @@ function dbAtVersion3() {
   return { db, dir };
 }
 
+/** A migrations directory holding exactly 001-004, so migrate() stops at version 4. */
+function dirThrough004() {
+  const dir = mkdtempSync(join(tmpdir(), 'carbbook-mig4-through-'));
+  for (const file of ['001_init.sql', '002_usda_search.sql', '003_any_unit_foods.sql', '004_meal_plan.sql']) {
+    copyFileSync(join(MIGRATIONS_DIR, file), join(dir, file));
+  }
+  return dir;
+}
+
 function insertPlanEntry(db: ReturnType<typeof openDb>, fields: Record<string, unknown>): void {
   db.prepare(
     `INSERT INTO plan_entry (id, date, window_name, status, note, log_entry_id, updated_at, updated_by, deleted, server_seq)
@@ -41,7 +50,7 @@ describe('migration 004 (meal plan)', () => {
        VALUES ('ds1', 1, '[]', '{}', '{}', 1, 'd', 0, 2)`,
     ).run();
 
-    expect(migrate(db)).toBe(4);
+    expect(migrate(db, dirThrough004())).toBe(4);
     expect(db.pragma('user_version', { simple: true })).toBe(4);
     expect(db.prepare('SELECT name, carbs_per_100g FROM food WHERE id = ?').get('f1')).toEqual({
       name: 'Rice',
@@ -52,7 +61,7 @@ describe('migration 004 (meal plan)', () => {
 
   it('migrates a fresh database straight to version 4', () => {
     const db = openDb(':memory:');
-    expect(migrate(db)).toBe(4);
+    expect(migrate(db, dirThrough004())).toBe(4);
   });
 
   it('creates both tables with the usual sync metadata columns and indexes', () => {
