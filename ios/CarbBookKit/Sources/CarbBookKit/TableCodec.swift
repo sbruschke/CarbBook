@@ -15,6 +15,8 @@ enum TableCodec {
                       "taken_units", "settings_version_id", "notes"],
         "log_item": ["log_entry_id", "ref_type", "ref_id", "display_name", "amount", "unit", "carbs_g"],
         "dose_settings": ["effective_from", "windows", "correction", "rounding"],
+        "plan_entry": ["date", "window_name", "status", "note", "log_entry_id"],
+        "plan_item": ["plan_entry_id", "ref_type", "ref_id", "amount", "unit", "position"],
     ]
     /// Stored as JSON text, sent as JSON objects/arrays on the wire. Explicit nulls inside them
     /// (e.g. `rounding.round_down_below_bg`) are preserved: `JSONValue.null` encodes as `null`.

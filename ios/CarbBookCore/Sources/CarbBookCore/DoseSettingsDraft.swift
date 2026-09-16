@@ -16,6 +16,9 @@ public func validateDoseSettings(_ s: DoseSettingsData) -> String? {
         if !window.ratioGPerUnit.isFinite || window.ratioGPerUnit <= 0 {
             return "window \"\(window.name)\" needs ratio_g_per_unit > 0"
         }
+        if let goal = window.carbGoal, !goal.isValid {
+            return "window \"\(window.name)\" needs carb_goal 0 <= min <= max <= \(Int(DoseLimits.maxCarbsG))"
+        }
     }
     let c = s.correction
     if !c.threshold.isFinite || c.threshold < 0 { return "correction.threshold must be >= 0" }

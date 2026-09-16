@@ -104,4 +104,40 @@ extension LocalStore {
     public func removeQueuedBarcode(_ code: String) throws {
         try dbQueue.write { db in try db.execute(sql: "DELETE FROM barcode_queue WHERE code = ?", arguments: [code]) }
     }
+
+    /// Plan slots with `from <= date <= to` (both "YYYY-MM-DD"), ordered by date then window name.
+    /// String comparison is correct for this format and needs no date parsing in SQL.
+    public func planEntries(from: String, to: String) throws -> [PlanEntryData] {
+        try records("plan_entry", "WHERE deleted = 0 AND date >= ? AND date <= ? ORDER BY date, window_name", [from, to])
+    }
+
+    /// The live slot for one (date, window), or nil. `window_name` is matched trimmed and
+    /// case-insensitively, mirroring the server's `duplicate_slot` uniqueness check (server
+    /// push.ts: `window_name = ? COLLATE NOCASE`), so a slot is found here regardless of how its
+    /// name is cased or padded. The server enforces at most one live row; if a duplicate ever
+    /// reaches this device anyway, the most recently updated one wins.
+    public func planEntry(date: String, windowName: String) throws -> PlanEntryData? {
+        let trimmed = windowName.trimmingCharacters(in: .whitespacesAndNewlines)
+        return try records(
+            "plan_entry",
+            "WHERE deleted = 0 AND date = ? AND window_name = ? COLLATE NOCASE ORDER BY updated_at DESC, id DESC LIMIT 1",
+            [date, trimmed]).first
+    }
+
+    /// Live slots pointing at a log entry (usually 0 or 1).
+    public func planEntries(logEntryId: Id) throws -> [PlanEntryData] {
+        try records("plan_entry", "WHERE deleted = 0 AND log_entry_id = ? ORDER BY date, window_name", [logEntryId])
+    }
+
+    /// Items of the given slots, grouped by `plan_entry_id` and ordered by `position`. Slots with no
+    /// items have no key in the result.
+    public func planItems(entryIds: [Id]) throws -> [Id: [PlanItemData]] {
+        guard !entryIds.isEmpty else { return [:] }
+        let placeholders = entryIds.map { _ in "?" }.joined(separator: ", ")
+        let items: [PlanItemData] = try records(
+            "plan_item",
+            "WHERE deleted = 0 AND plan_entry_id IN (\(placeholders)) ORDER BY position, rowid",
+            StatementArguments(entryIds))
+        return Dictionary(grouping: items, by: \.planEntryId)
+    }
 }

@@ -42,6 +42,8 @@ struct SettingsView: View {
                     }
                     if app.isOwner {
                         NavigationLink("New version…") { DoseSettingsEditorView(base: active) }
+                    } else {
+                        Text("Only the owner can change dose settings.").font(.footnote).foregroundStyle(.secondary)
                     }
                     NavigationLink("Version history") { VersionHistoryView(versions: versions, rejectedIds: rejectedIds) }
                 }

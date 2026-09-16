@@ -95,3 +95,46 @@ struct NumberField: View {
         }
     }
 }
+
+/// Goal feedback for a carb total. Colour is never the only signal: `text` always carries the
+/// numbers ("68 g · goal 50–80") and `accessibilityLabel` adds the status in words (spec §3).
+struct GoalStyle {
+    var status: GoalStatus
+    var text: String
+    var color: Color
+    var accessibilityLabel: String
+}
+
+/// `nil` goal or incomplete carbs still produce a style — `status` is then `.none` and the colour is
+/// the ordinary secondary text colour, so callers never branch on "is there a goal".
+func goalStyle(_ carbs: CarbResult, _ goal: CarbGoal?) -> GoalStyle {
+    let status = goalStatus(carbs, goal)
+    let text = goalText(carbs, goal)
+    return GoalStyle(status: status, text: text, color: goalColor(status),
+                     accessibilityLabel: status == .none ? text : "\(text), \(status.label)")
+}
+
+/// in → green, near → yellow, off → orange, out → red, none → secondary (spec §3).
+func goalColor(_ status: GoalStatus) -> Color {
+    switch status {
+    case .none: .secondary
+    case .inGoal: .green
+    case .near: .yellow
+    case .off: .orange
+    case .out: .red
+    }
+}
+
+/// One line of goal feedback: the numbers in the goal colour, with the spoken status attached.
+struct GoalBadge: View {
+    let style: GoalStyle
+    var font: Font = .callout
+
+    var body: some View {
+        Text(style.text)
+            .font(font)
+            .monospacedDigit()
+            .foregroundStyle(style.color)
+            .accessibilityLabel(style.accessibilityLabel)
+    }
+}

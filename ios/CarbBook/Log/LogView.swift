@@ -6,13 +6,26 @@ struct LogView: View {
     @Environment(AppModel.self) private var app
     @State private var day = Date()
     @State private var entries: [LogEntryData] = []
+    @State private var windows: [DoseWindow] = []
+
+    /// The goal of the window an entry was logged in, if that window still has one.
+    private func goal(for entry: LogEntryData) -> CarbGoal? {
+        guard let name = entry.windowName else { return nil }
+        return windows.first { $0.name == name }?.carbGoal
+    }
 
     var body: some View {
         NavigationStack {
             List {
                 Section {
                     DatePicker("Day", selection: $day, displayedComponents: .date)
-                    LabeledContent("Carbs", value: "\(formatNumber(entries.reduce(0) { $0 + $1.totalCarbsG }))g")
+                    HStack {
+                        Text("Carbs")
+                        Spacer()
+                        GoalBadge(style: goalStyle(
+                            CarbResult(carbsG: entries.reduce(0) { $0 + $1.totalCarbsG }, complete: true),
+                            dayGoal(windows)))
+                    }
                     LabeledContent("Insulin taken", value: "\(formatNumber(entries.reduce(0) { $0 + ($1.takenUnits ?? 0) }, digits: 2))u")
                 }
                 Section("Entries") {
@@ -44,7 +57,8 @@ struct LogView: View {
                 Text(date(ms: entry.eatenAt).formatted(date: .omitted, time: .shortened))
                 Text(entry.windowName ?? "").foregroundStyle(.secondary)
                 Spacer()
-                Text("\(formatNumber(entry.totalCarbsG))g").monospacedDigit()
+                GoalBadge(style: goalStyle(CarbResult(carbsG: entry.totalCarbsG, complete: true), goal(for: entry)),
+                          font: .body)
             }
             HStack {
                 if let bg = entry.bgMgdl {
@@ -62,15 +76,18 @@ struct LogView: View {
         let start = Calendar.current.startOfDay(for: day)
         let end = Calendar.current.date(byAdding: .day, value: 1, to: start)!
         entries = (try? app.store.logEntries(from: ms(start), to: ms(end))) ?? []
+        let versions = (try? app.store.doseSettingsVersions()) ?? []
+        let usable = eligibleDoseSettingsVersions(versions, rejectedIds: (try? app.store.rejectedDoseSettingsIds()) ?? [])
+        windows = activeSettings(usable, ms(day))?.windows ?? []
     }
 
+    /// Deletes each entry and its items, and returns any slot pointing at it to `planned` with the
+    /// link cleared — all in one transaction (`LocalStore.deleteLogEntry`, spec §5), so the Plan
+    /// screen is right immediately and offline; the server applies the same rule when this delete
+    /// pushes.
     private func delete(_ offsets: IndexSet) {
         for index in offsets {
-            let entry = entries[index]
-            for item in (try? app.store.logItems(entryId: entry.id)) ?? [] {
-                try? app.delete("log_item", id: item.id)
-            }
-            try? app.delete("log_entry", id: entry.id)
+            try? app.deleteLogEntry(entries[index].id)
         }
     }
 }

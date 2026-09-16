@@ -54,7 +54,7 @@ final class AppModel {
         store.setLocalWriteHandler { Task { await coordinator.localWriteHappened() } }
     }
 
-    var isOwner: Bool { user?.role == "owner" }
+    var isOwner: Bool { canEditDoseSettings(role: AccountRole(user?.role)) }
 
     func start() {
         guard !started else { return }
@@ -126,6 +126,21 @@ final class AppModel {
 
     func save(_ changes: [SyncChange]) throws {
         try store.save(changes)
+        revision += 1
+    }
+
+    /// A slot save, a clear or a copy: every change is applied in one transaction
+    /// (`LocalStore.applyPlanChanges`), so a partial failure never leaves some slots written and
+    /// others not.
+    func savePlan(_ changes: [SyncChange]) throws {
+        try store.applyPlanChanges(changes)
+        revision += 1
+    }
+
+    /// Soft-deletes a log entry, its items, and unlinks any plan slot pointing at it — all in one
+    /// transaction (`LocalStore.deleteLogEntry`).
+    func deleteLogEntry(_ id: Id) throws {
+        try store.deleteLogEntry(id)
         revision += 1
     }
 

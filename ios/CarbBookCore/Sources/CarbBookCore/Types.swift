@@ -151,14 +151,27 @@ public struct DoseWindow: Codable, Equatable, Sendable {
     /// "HH:MM", 24-hour local time
     public var start: String
     public var ratioGPerUnit: Double
+    /// Per-window carb target, or nil for no goal. Dose math ignores it (spec §2).
+    public var carbGoal: CarbGoal?
 
-    public init(name: String, start: String, ratioGPerUnit: Double) {
-        self.name = name; self.start = start; self.ratioGPerUnit = ratioGPerUnit
+    public init(name: String, start: String, ratioGPerUnit: Double, carbGoal: CarbGoal? = nil) {
+        self.name = name; self.start = start; self.ratioGPerUnit = ratioGPerUnit; self.carbGoal = carbGoal
     }
 
     enum CodingKeys: String, CodingKey {
         case name, start
         case ratioGPerUnit = "ratio_g_per_unit"
+        case carbGoal = "carb_goal"
+    }
+
+    /// Explicit, so "no goal" is sent as JSON `null` rather than omitted: a missing key means "keep
+    /// the stored value" on the server, so only an explicit null clears a goal.
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(name, forKey: .name)
+        try container.encode(start, forKey: .start)
+        try container.encode(ratioGPerUnit, forKey: .ratioGPerUnit)
+        try container.encode(carbGoal, forKey: .carbGoal)
     }
 }
 
