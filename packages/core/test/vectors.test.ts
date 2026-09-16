@@ -4,7 +4,7 @@ import doseVectors from '../../../testdata/dose-vectors.json';
 import type { CorrectionRule, DoseSettingsData, FoodData, MealData, MealItemData, PortionData, RefType, RoundingRule } from '../src/types';
 import { createCatalog, itemCarbs, wouldCreateCycle } from '../src/carbs';
 import { estimateDose, formatBreakdown, parseHHMM } from '../src/dose';
-import { foodAmountToGrams, foodUnits, mealUnits } from '../src/units';
+import { foodAmountToGrams, foodUnits, mealUnits, quickUnits } from '../src/units';
 import goalVectors from '../../../testdata/goal-vectors.json';
 import type { CarbGoal, DoseWindow } from '../src/types';
 import { dayGoal, goalStatus, isValidCarbGoal, type GoalStatus } from '../src/goal';
@@ -44,6 +44,8 @@ describe('units vectors', () => {
     expect(u.carb_cases.length).toBeGreaterThan(0);
     expect(u.unit_list_cases.length).toBeGreaterThan(0);
     expect(u.cycle_cases.length).toBeGreaterThan(0);
+    expect(u.carb_cases.some((c) => c.ref_type === 'quick')).toBe(true);
+    expect(u.unit_list_cases.some((c) => c.ref_type === 'quick')).toBe(true);
   });
   for (const c of u.grams_cases) {
     it(`grams: ${c.name}`, () => {
@@ -63,9 +65,11 @@ describe('units vectors', () => {
   for (const c of u.unit_list_cases) {
     it(`unit list: ${c.ref_id}`, () => {
       const units =
-        c.ref_type === 'food'
-          ? foodUnits(catalog.food(c.ref_id)!, catalog.portions(c.ref_id))
-          : mealUnits(catalog.meal(c.ref_id)!);
+        c.ref_type === 'quick'
+          ? quickUnits()
+          : c.ref_type === 'food'
+            ? foodUnits(catalog.food(c.ref_id)!, catalog.portions(c.ref_id))
+            : mealUnits(catalog.meal(c.ref_id)!);
       expect(units).toEqual(c.expect);
     });
   }
