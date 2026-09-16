@@ -69,6 +69,20 @@ struct CalculatorView: View {
 
     private var itemsSection: some View {
         Section {
+            if let suggestion = model.suggestion {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(suggestion.text).font(.callout)
+                    HStack {
+                        Button("Load") { model.loadSuggestion(app) }
+                        Spacer()
+                        Button("Skip") { model.skipSuggestion(app) }
+                        Spacer()
+                        Button("Dismiss") { model.dismissSuggestion(app) }
+                    }
+                    .buttonStyle(.borderless)
+                }
+                .accessibilityElement(children: .contain)
+            }
             ForEach($model.lines) { $line in
                 LineRow(line: $line, units: model.units(for: line), portions: model.catalog.portions(line.refId),
                         carbs: model.carbs(for: line))
@@ -84,8 +98,13 @@ struct CalculatorView: View {
             Text("Items")
         } footer: {
             if let total = model.result?.total, !model.lines.isEmpty {
-                Text("Total \(formatNumber(total.carbsG))g carbs" + (total.complete ? "" : " (incomplete: some items are missing carb data)"))
-                    .foregroundStyle(total.complete ? Color.secondary : Color.orange)
+                VStack(alignment: .leading, spacing: 2) {
+                    // Goal feedback for the current window's total (spec §3).
+                    GoalBadge(style: goalStyle(total, model.currentWindowGoal), font: .footnote)
+                    if !total.complete {
+                        Text("Incomplete: some items are missing carb data.").foregroundStyle(.orange)
+                    }
+                }
             }
         }
     }

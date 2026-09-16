@@ -32,6 +32,10 @@ final class CalculatorModel {
     /// to `evaluateCalculator`/`recalculateLogEntry` so a rejected edit is never used for a new
     /// estimate — the one shared source for this is `LocalStore.rejectedDoseSettingsIds()`.
     private(set) var rejectedSettingsIds: Set<Id> = []
+    /// The planned slot offered for the current date + window, or nil (spec §5).
+    private(set) var suggestion: PlanSuggestion?
+    /// The slot whose items were loaded in this session; "Log it" marks it `logged`.
+    private(set) var loadedSlotId: Id?
 
     /// Dexcom when a usable reading is loaded, otherwise the typed BG (or none if left blank). A typed
     /// value that isn't a whole number is fed through as a non-finite BG so core refuses with
@@ -44,6 +48,12 @@ final class CalculatorModel {
     var manualBgIsInvalid: Bool { NumberParsing.isMalformed(manualBg, using: NumberParsing.parseWholeNumber) }
 
     var activeSettings: DoseSettingsData? { result?.settings }
+
+    /// The carb goal of the window the estimate is using, if it has one.
+    var currentWindowGoal: CarbGoal? {
+        guard let name = windowOverride ?? result?.estimate?.window?.name else { return nil }
+        return activeSettings?.windows.first { $0.name == name }?.carbGoal
+    }
 
     var taken: String { takenField.text }
 
@@ -64,6 +74,7 @@ final class CalculatorModel {
             message = "Could not read local data: \(error)"
         }
         recompute(app)
+        refreshSuggestion(app)
     }
 
     /// Clock tick (every 30 s while visible, and on returning to the foreground): re-validates the
@@ -93,6 +104,7 @@ final class CalculatorModel {
         } else {
             takenField.applyEstimate("")
         }
+        refreshSuggestion(app)
     }
 
     private func bgNoteText(_ status: BgStatus, nowMs: Int64) -> String {
@@ -161,6 +173,66 @@ final class CalculatorModel {
         lines.append(CalculatorLine(id: UUID().uuidString, refType: refType, refId: refId, displayName: name, amount: amount, unit: unit))
     }
 
+    /// The window the estimate is using (or the override), which decides which slot to offer.
+    private var suggestedWindowName: String? {
+        windowOverride ?? result?.estimate?.window?.name
+    }
+
+    /// Re-reads the planned slot for the current date + window. Called from `reload` and after every
+    /// recompute, because changing the time or the window changes which slot applies.
+    func refreshSuggestion(_ app: AppModel) {
+        guard let windowName = suggestedWindowName else {
+            if suggestion != nil { suggestion = nil }
+            return
+        }
+        let date = PlanDate.string(eatenAt)
+        do {
+            let entry = try app.store.planEntry(date: date, windowName: windowName)
+            var items: [PlanItemData] = []
+            if let entry { items = try app.store.planItems(entryIds: [entry.id])[entry.id] ?? [] }
+            let next = PlanSuggestion.make(entry: entry, items: items, catalog: catalog,
+                                           dismissed: PlanDismissals.load())
+            // Assigning an unchanged value would re-trigger the view update that called this.
+            if next != suggestion { suggestion = next }
+        } catch {
+            if suggestion != nil { suggestion = nil }
+        }
+    }
+
+    /// Load: appends the slot's items as ordinary editable rows and remembers the slot.
+    func loadSuggestion(_ app: AppModel) {
+        guard let suggestion else { return }
+        do {
+            let items = (try app.store.planItems(entryIds: [suggestion.entryId])[suggestion.entryId]) ?? []
+            lines.append(contentsOf: PlanSuggestion.lines(for: items, catalog: catalog,
+                                                          newLineId: { UUID().uuidString }))
+            loadedSlotId = suggestion.entryId
+            self.suggestion = nil
+            recompute(app)
+        } catch {
+            message = "Could not load the planned meal: \(error)"
+        }
+    }
+
+    /// Skip: sets the slot to `skipped` (synced).
+    func skipSuggestion(_ app: AppModel) {
+        guard let suggestion,
+              let entry = try? app.store.planEntry(date: suggestion.date, windowName: suggestion.windowName) else { return }
+        do {
+            try app.savePlan([PlanEditing.statusChange(entry, to: .skipped)])
+            self.suggestion = nil
+        } catch {
+            message = "Could not skip the planned meal: \(error)"
+        }
+    }
+
+    /// Dismiss: hides the suggestion for this slot on this device only. Never synced.
+    func dismissSuggestion(_ app: AppModel) {
+        guard let suggestion else { return }
+        PlanDismissals.dismiss(date: suggestion.date, windowName: suggestion.windowName)
+        self.suggestion = nil
+    }
+
     func logIt(_ app: AppModel) throws {
         recompute(app)
         guard let result, !lines.isEmpty else { return }
@@ -178,9 +250,19 @@ final class CalculatorModel {
         let records = buildLogRecords(
             lines: lines, result: result, bg: bg, eatenAt: eatenAt, takenUnits: takenUnits,
             notes: notes.isEmpty ? nil : notes, newId: app.store.newId)
-        try app.save([SyncChange.encode("log_entry", records.entry)] + records.items.map { try SyncChange.encode("log_item", $0) })
+        var changes = [try SyncChange.encode("log_entry", records.entry)]
+            + (try records.items.map { try SyncChange.encode("log_item", $0) })
+        // Logging while a slot is loaded marks that slot logged and stores the link (spec §5).
+        // Logging without loading changes nothing about the plan.
+        if let loadedSlotId, let entry = (try? app.store.records("plan_entry", "WHERE deleted = 0 AND id = ?",
+                                                                 [loadedSlotId]) as [PlanEntryData])?.first,
+           let linked = PlanLogLink.loggedChange(entry, loggedTo: records.entry) {
+            changes.append(linked)
+        }
+        try app.save(changes)
         message = "Logged \(formatNumber(records.entry.totalCarbsG))g" + (records.entry.takenUnits.map { ", \(formatNumber($0, digits: 2))u taken" } ?? "")
         lines = []
+        loadedSlotId = nil
         takenField.reset()
         notes = ""
         manualBg = ""
