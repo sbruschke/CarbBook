@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import { currentServerSeq } from '../src/db';
 import { initDatabase } from '../src/init';
 import { applyPush } from '../src/sync/push';
+import { pullChanges } from '../src/sync/pull';
 import { planEntry, planItem } from './sync-helpers';
 
 describe('applyPush plan_entry slot uniqueness', () => {
@@ -129,5 +131,86 @@ describe('applyPush plan_entry log_entry_id', () => {
         { table: 'plan_entry', record: planEntry({ id: 'p1', status: 'logged', log_entry_id: 'l1' }) },
       ])[0]!.status,
     ).toBe('accepted');
+  });
+});
+
+describe('deleting a log entry returns its plan slot to planned', () => {
+  function plannedAndLogged() {
+    const db = initDatabase(':memory:');
+    applyPush(db, 'owner', [
+      { table: 'log_entry', record: logEntry('l1') },
+      { table: 'plan_entry', record: planEntry({ id: 'p1', status: 'logged', log_entry_id: 'l1', updated_at: 1500 }) },
+    ]);
+    return db;
+  }
+
+  it('clears the link and the logged status when the log entry is soft-deleted', () => {
+    const db = plannedAndLogged();
+    const before = db.prepare('SELECT server_seq FROM plan_entry WHERE id = ?').pluck().get('p1') as number;
+
+    applyPush(db, 'owner', [{ table: 'log_entry', record: logEntry('l1', { deleted: 1, updated_at: 3000, updated_by: 'laptop' }) }]);
+
+    const after = db.prepare('SELECT * FROM plan_entry WHERE id = ?').get('p1') as Record<string, unknown>;
+    expect(after).toMatchObject({ status: 'planned', log_entry_id: null, deleted: 0, updated_by: 'laptop' });
+    expect(after.server_seq as number).toBeGreaterThan(before);
+    expect(after.updated_at as number).toBeGreaterThan(1500);
+  });
+
+  it('makes the reverted slot visible to a pulling client', () => {
+    const db = plannedAndLogged();
+    const since = currentServerSeq(db);
+    applyPush(db, 'owner', [{ table: 'log_entry', record: logEntry('l1', { deleted: 1, updated_at: 3000 }) }]);
+    const page = pullChanges(db, since, 50);
+    const planChange = page.changes.find((c) => c.table === 'plan_entry');
+    expect(planChange?.record).toMatchObject({ id: 'p1', status: 'planned', log_entry_id: null });
+  });
+
+  it('reverts every slot pointing at the deleted entry and leaves other slots alone', () => {
+    const db = initDatabase(':memory:');
+    applyPush(db, 'owner', [
+      { table: 'log_entry', record: logEntry('l1') },
+      { table: 'log_entry', record: logEntry('l2') },
+      { table: 'plan_entry', record: planEntry({ id: 'p1', status: 'logged', log_entry_id: 'l1' }) },
+      { table: 'plan_entry', record: planEntry({ id: 'p2', window_name: 'Dinner', status: 'logged', log_entry_id: 'l2' }) },
+      { table: 'plan_entry', record: planEntry({ id: 'p3', date: '2026-09-18', status: 'skipped' }) },
+    ]);
+
+    applyPush(db, 'owner', [{ table: 'log_entry', record: logEntry('l1', { deleted: 1, updated_at: 3000 }) }]);
+
+    const rows = db.prepare('SELECT id, status, log_entry_id FROM plan_entry ORDER BY id').all();
+    expect(rows).toEqual([
+      { id: 'p1', status: 'planned', log_entry_id: null },
+      { id: 'p2', status: 'logged', log_entry_id: 'l2' },
+      { id: 'p3', status: 'skipped', log_entry_id: null },
+    ]);
+  });
+
+  it('does nothing when the log entry is merely updated', () => {
+    const db = plannedAndLogged();
+    applyPush(db, 'owner', [{ table: 'log_entry', record: logEntry('l1', { total_carbs_g: 70, updated_at: 3000 }) }]);
+    expect(db.prepare('SELECT status, log_entry_id FROM plan_entry WHERE id = ?').get('p1')).toEqual({
+      status: 'logged',
+      log_entry_id: 'l1',
+    });
+  });
+
+  it('does nothing when a stale delete is ignored by last-write-wins', () => {
+    const db = plannedAndLogged();
+    applyPush(db, 'owner', [{ table: 'log_entry', record: logEntry('l1', { total_carbs_g: 70, updated_at: 5000 }) }]);
+    const stale = applyPush(db, 'owner', [{ table: 'log_entry', record: logEntry('l1', { deleted: 1, updated_at: 4000 }) }]);
+    expect(stale[0]!.status).toBe('ignored');
+    expect(db.prepare('SELECT status FROM plan_entry WHERE id = ?').pluck().get('p1')).toBe('logged');
+  });
+
+  it('leaves a soft-deleted plan entry alone', () => {
+    const db = plannedAndLogged();
+    applyPush(db, 'owner', [
+      { table: 'plan_entry', record: planEntry({ id: 'p1', status: 'logged', log_entry_id: 'l1', deleted: 1, updated_at: 2000 }) },
+    ]);
+    applyPush(db, 'owner', [{ table: 'log_entry', record: logEntry('l1', { deleted: 1, updated_at: 3000 }) }]);
+    expect(db.prepare('SELECT status, deleted FROM plan_entry WHERE id = ?').get('p1')).toEqual({
+      status: 'logged',
+      deleted: 1,
+    });
   });
 });

@@ -124,6 +124,29 @@ function unknownLogEntry(db: Db, row: SqlRow): boolean {
   return db.prepare('SELECT 1 FROM log_entry WHERE id = ?').get(row.log_entry_id) === undefined;
 }
 
+/**
+ * Spec §5: deleting a log entry returns any slot that points at it to `planned` and clears the
+ * link. Done server-side, not on the client: the deleting device may never have held the plan row,
+ * and doing it here means the repair happens exactly once and reaches every device on the next
+ * pull. Each reverted row gets a fresh server_seq, and an updated_at at least one millisecond past
+ * its own previous value so a client's stale copy cannot win the next last-write-wins comparison.
+ */
+function revertPlanEntriesForDeletedLog(db: Db, row: SqlRow): void {
+  const affected = db
+    .prepare('SELECT id, updated_at FROM plan_entry WHERE log_entry_id = ? AND deleted = 0')
+    .all(row.id) as { id: string; updated_at: number }[];
+  if (affected.length === 0) return;
+  const update = db.prepare(
+    `UPDATE plan_entry
+        SET status = 'planned', log_entry_id = NULL, updated_at = ?, updated_by = ?, server_seq = ?
+      WHERE id = ?`,
+  );
+  for (const entry of affected) {
+    const updatedAt = Math.max(row.updated_at as number, entry.updated_at + 1);
+    update.run(updatedAt, row.updated_by, nextServerSeq(db), entry.id);
+  }
+}
+
 function applyOne(db: Db, role: Role, change: PushChange, mealItems: MealItemData[]): PushResult {
   const id = recordId(change.record);
   const table = String(change.table);
@@ -190,6 +213,7 @@ function applyOne(db: Db, role: Role, change: PushChange, mealItems: MealItemDat
   const serverSeq = nextServerSeq(db);
   upsert(db, spec, { ...row, server_seq: serverSeq });
   if (spec.name === 'meal_item') updateMealItemsSnapshot(mealItems, row);
+  if (spec.name === 'log_entry' && row.deleted === 1) revertPlanEntriesForDeletedLog(db, row);
   return { table, id: rowId, status: 'accepted', server_seq: serverSeq };
 }
 
