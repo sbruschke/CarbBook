@@ -1,4 +1,4 @@
-import { type CorrectionMode, type DoseSettingsData, parseHHMM } from '@carbbook/core';
+import { type CorrectionMode, DOSE_LIMITS, type DoseSettingsData, parseHHMM } from '@carbbook/core';
 import { useState } from 'react';
 import { useServices } from '../app/services';
 import { validateDoseSettings } from '../dose/dose';
@@ -10,11 +10,13 @@ interface WindowDraft {
   name: string;
   start: string;
   ratio: string;
+  goalMin: string;
+  goalMax: string;
 }
 
 const numText = (n: number | null) => (n !== null && Number.isFinite(n) ? String(n) : '');
 
-type FieldKey = 'threshold' | 'step' | 'unitsPerStep' | 'increment' | 'roundDown' | `ratio:${string}`;
+type FieldKey = 'threshold' | 'step' | 'unitsPerStep' | 'increment' | 'roundDown' | `ratio:${string}` | `goal:${string}`;
 
 /**
  * Edits a copy of a version and always saves a NEW dose_settings record (new id + effective
@@ -24,7 +26,14 @@ export function DoseSettingsEditor(props: { initial: DoseSettingsData; onDone: (
   const { initial } = props;
   const { store, now } = useServices();
   const [windows, setWindows] = useState<WindowDraft[]>(() =>
-    initial.windows.map((w) => ({ key: uuidv7(), name: w.name, start: w.start, ratio: numText(w.ratio_g_per_unit) })),
+    initial.windows.map((w) => ({
+      key: uuidv7(),
+      name: w.name,
+      start: w.start,
+      ratio: numText(w.ratio_g_per_unit),
+      goalMin: numText(w.carb_goal?.min ?? null),
+      goalMax: numText(w.carb_goal?.max ?? null),
+    })),
   );
   const [threshold, setThreshold] = useState(numText(initial.correction.threshold));
   const [step, setStep] = useState(numText(initial.correction.step));
@@ -53,11 +62,38 @@ export function DoseSettingsEditor(props: { initial: DoseSettingsData; onDone: (
       }
       return value;
     };
-    const parsedWindows = windows.map((w, i) => ({
-      name: w.name.trim(),
-      start: w.start,
-      ratio_g_per_unit: field(`ratio:${w.key}`, w.ratio, parseNonNegative, `Window ${i + 1} carb ratio must be a number (like 8 or 12.5).`),
-    }));
+    const parsedWindows = windows.map((w, i) => {
+      const both = w.goalMin.trim() !== '' && w.goalMax.trim() !== '';
+      const neither = w.goalMin.trim() === '' && w.goalMax.trim() === '';
+      let carbGoal: { min: number; max: number } | null = null;
+      if (!neither) {
+        if (!both) {
+          fieldErrors.push(`Window ${i + 1} carb goal needs both a minimum and a maximum, or neither.`);
+          badFields.add(`goal:${w.key}`);
+        } else {
+          // Carb grams are not "amounts": strict decimal only, no fractions (same rule as ratios).
+          const min = field(`goal:${w.key}`, w.goalMin, parseNonNegative, `Window ${i + 1} carb goal minimum must be a number.`);
+          const max = field(`goal:${w.key}`, w.goalMax, parseNonNegative, `Window ${i + 1} carb goal maximum must be a number.`);
+          if (Number.isFinite(min) && Number.isFinite(max)) {
+            if (min > max) {
+              fieldErrors.push(`Window ${i + 1} carb goal minimum must not be above its maximum.`);
+              badFields.add(`goal:${w.key}`);
+            } else if (max > DOSE_LIMITS.maxCarbsG) {
+              fieldErrors.push(`Window ${i + 1} carb goal maximum must be ${DOSE_LIMITS.maxCarbsG} g or less.`);
+              badFields.add(`goal:${w.key}`);
+            } else {
+              carbGoal = { min, max };
+            }
+          }
+        }
+      }
+      return {
+        name: w.name.trim(),
+        start: w.start,
+        ratio_g_per_unit: field(`ratio:${w.key}`, w.ratio, parseNonNegative, `Window ${i + 1} carb ratio must be a number (like 8 or 12.5).`),
+        carb_goal: carbGoal,
+      };
+    });
     const correction = {
       threshold: field('threshold', threshold, parseWholeNumber, 'Threshold must be a whole number of mg/dL.'),
       step: field('step', step, parseWholeNumber, 'Step must be a whole number of mg/dL.'),
@@ -112,12 +148,31 @@ export function DoseSettingsEditor(props: { initial: DoseSettingsData; onDone: (
             aria-invalid={invalid.has(`ratio:${w.key}`) || undefined}
             onChange={(e) => update(w.key, { ratio: e.target.value })}
           />
+          <input
+            aria-label={`Window ${i + 1} carb goal minimum (g)`}
+            inputMode="decimal"
+            placeholder="min"
+            value={w.goalMin}
+            aria-invalid={invalid.has(`goal:${w.key}`) || undefined}
+            onChange={(e) => update(w.key, { goalMin: e.target.value })}
+          />
+          <input
+            aria-label={`Window ${i + 1} carb goal maximum (g)`}
+            inputMode="decimal"
+            placeholder="max"
+            value={w.goalMax}
+            aria-invalid={invalid.has(`goal:${w.key}`) || undefined}
+            onChange={(e) => update(w.key, { goalMax: e.target.value })}
+          />
           <button type="button" aria-label={`Remove window ${i + 1}`} onClick={() => setWindows((rows) => rows.filter((r) => r.key !== w.key))}>
             ✕
           </button>
         </div>
       ))}
-      <button type="button" onClick={() => setWindows((rows) => [...rows, { key: uuidv7(), name: '', start: '12:00', ratio: '' }])}>
+      <button
+        type="button"
+        onClick={() => setWindows((rows) => [...rows, { key: uuidv7(), name: '', start: '12:00', ratio: '', goalMin: '', goalMax: '' }])}
+      >
         Add window
       </button>
       <h3>Correction</h3>

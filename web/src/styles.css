@@ -328,8 +328,9 @@ fieldset {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
-  margin: 8px 0;
-  padding-bottom: 8px;
+  align-items: center;
+  margin-bottom: 12px;
+  padding-bottom: 12px;
   border-bottom: 1px solid var(--border);
 }
 
