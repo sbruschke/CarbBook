@@ -17,6 +17,9 @@ struct DoseSettingsEditorView: View {
         var name: String
         var start: Date
         var ratio: String
+        var goalEnabled: Bool
+        var goalMin: String
+        var goalMax: String
     }
 
     @State private var windows: [WindowDraft] = []
@@ -42,16 +45,22 @@ struct DoseSettingsEditorView: View {
                         TextField("Name", text: $window.name)
                         DatePicker("Starts", selection: $window.start, displayedComponents: .hourAndMinute)
                         NumberField(label: "Carb ratio 1:", text: $window.ratio, unit: "g/u")
+                        Toggle("Carb goal", isOn: $window.goalEnabled)
+                        if window.goalEnabled {
+                            NumberField(label: "Goal min", text: $window.goalMin, unit: "g")
+                            NumberField(label: "Goal max", text: $window.goalMax, unit: "g")
+                        }
                     }
                 }
                 .onDelete { windows.remove(atOffsets: $0) }
                 Button("Add window") {
-                    windows.append(WindowDraft(name: "", start: Calendar.current.startOfDay(for: Date()), ratio: "10"))
+                    windows.append(WindowDraft(name: "", start: Calendar.current.startOfDay(for: Date()), ratio: "10",
+                                               goalEnabled: false, goalMin: "", goalMax: ""))
                 }
             } header: {
                 Text("Meal windows")
             } footer: {
-                Text("Each window runs until the next one starts; the last wraps past midnight. Ratio must be > 0 and at most \(formatNumber(DoseLimits.maxRatioGPerUnit, digits: 0)) g/u.")
+                Text("Each window runs until the next one starts; the last wraps past midnight. Ratio must be > 0 and at most \(formatNumber(DoseLimits.maxRatioGPerUnit, digits: 0)) g/u. A carb goal needs 0 ≤ min ≤ max ≤ \(formatNumber(DoseLimits.maxCarbsG, digits: 0)) g.")
             }
             Section("Correction") {
                 NumberField(label: "Above BG", text: $threshold, unit: "mg/dL")
@@ -88,13 +97,17 @@ struct DoseSettingsEditorView: View {
         guard !loaded else { return }
         loaded = true
         guard let base else {
-            windows = [WindowDraft(name: "All day", start: Calendar.current.startOfDay(for: Date()), ratio: "10")]
+            windows = [WindowDraft(name: "All day", start: Calendar.current.startOfDay(for: Date()), ratio: "10",
+                                   goalEnabled: false, goalMin: "", goalMax: "")]
             return
         }
         windows = base.windows.map { window in
             let minutes = (try? parseHHMM(window.start)) ?? 0
             let start = Calendar.current.date(byAdding: .minute, value: minutes, to: Calendar.current.startOfDay(for: Date()))!
-            return WindowDraft(name: window.name, start: start, ratio: NumberParsing.editText(window.ratioGPerUnit))
+            return WindowDraft(name: window.name, start: start, ratio: NumberParsing.editText(window.ratioGPerUnit),
+                               goalEnabled: window.carbGoal != nil,
+                               goalMin: NumberParsing.editText(window.carbGoal?.min),
+                               goalMax: NumberParsing.editText(window.carbGoal?.max))
         }
         threshold = NumberParsing.editText(base.correction.threshold)
         step = NumberParsing.editText(base.correction.step)
@@ -120,8 +133,14 @@ struct DoseSettingsEditorView: View {
         let draft = DoseSettingsData(
             id: "draft",
             effectiveFrom: ms(effectiveFrom),
-            windows: windows.map { DoseWindow(name: $0.name.trimmingCharacters(in: .whitespaces), start: hhmm($0.start),
-                                              ratioGPerUnit: DoseSettingsInput.decimal($0.ratio)) },
+            windows: windows.map { draft in
+                DoseWindow(name: draft.name.trimmingCharacters(in: .whitespaces), start: hhmm(draft.start),
+                           ratioGPerUnit: DoseSettingsInput.decimal(draft.ratio),
+                           carbGoal: draft.goalEnabled
+                               ? CarbGoal(min: DoseSettingsInput.decimal(draft.goalMin),
+                                          max: DoseSettingsInput.decimal(draft.goalMax))
+                               : nil)
+            },
             correction: CorrectionRule(threshold: DoseSettingsInput.mgdl(threshold), step: DoseSettingsInput.mgdl(step),
                                        unitsPerStep: DoseSettingsInput.decimal(unitsPerStep), mode: mode),
             rounding: RoundingRule(increment: DoseSettingsInput.decimal(increment),
