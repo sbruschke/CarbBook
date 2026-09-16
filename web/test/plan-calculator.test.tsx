@@ -85,3 +85,30 @@ describe('Skip and Dismiss', () => {
     expect(JSON.parse(localStorage.getItem(DISMISSED_KEY)!)).toEqual(['2026-09-14|lunch']);
   });
 });
+
+describe('logging a loaded slot', () => {
+  it('marks the slot logged and links the log entry', async () => {
+    const user = await setup();
+    renderWith(<Calculator />, services);
+    await user.click(await screen.findByRole('button', { name: 'Load' }));
+    await user.click(screen.getByRole('button', { name: 'Log it' }));
+    await screen.findByText(/Logged/);
+
+    const slot = (await services.db.plan_entry.get('p1'))!;
+    const [logEntry] = await services.db.log_entry.toArray();
+    expect(slot.status).toBe('logged');
+    expect(slot.log_entry_id).toBe(logEntry!.id);
+  });
+
+  it('leaves the plan alone when logging without loading', async () => {
+    const user = await setup();
+    renderWith(<Calculator />, services);
+    await user.type(await screen.findByLabelText('Search foods and meals'), 'tort');
+    await user.click(await screen.findByRole('button', { name: /Tortilla/ }));
+    await user.click(screen.getByRole('button', { name: 'Log it' }));
+    await screen.findByText(/Logged/);
+
+    expect((await services.db.plan_entry.get('p1'))!.status).toBe('planned');
+    expect((await services.db.plan_entry.get('p1'))!.log_entry_id).toBeNull();
+  });
+});

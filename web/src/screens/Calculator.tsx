@@ -192,6 +192,14 @@ export function Calculator() {
         }),
       ),
     ];
+    // Spec §5: logging while a slot is loaded marks the slot and links the entry, in the SAME
+    // transaction as the log rows — an offline device must never end up with one without the other.
+    if (loadedSlot) {
+      changes.push({
+        table: 'plan_entry',
+        data: { ...dataOf<'plan_entry'>(loadedSlot), status: 'logged', log_entry_id: entryId },
+      });
+    }
     await store.saveMany(changes);
     reset();
     setMessage(`Logged ${formatCarbs(carbs.carbs_g)} carbs at ${formatTime(eatenAt)}.`);
