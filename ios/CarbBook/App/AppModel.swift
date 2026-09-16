@@ -54,7 +54,7 @@ final class AppModel {
         store.setLocalWriteHandler { Task { await coordinator.localWriteHappened() } }
     }
 
-    var isOwner: Bool { user?.role == "owner" }
+    var isOwner: Bool { canEditDoseSettings(role: AccountRole(user?.role)) }
 
     func start() {
         guard !started else { return }
