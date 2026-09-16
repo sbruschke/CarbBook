@@ -14,6 +14,13 @@ public struct CarbGoal: Codable, Equatable, Sendable {
     public var isValid: Bool {
         min.isFinite && max.isFinite && min >= 0 && min <= max && max <= DoseLimits.maxCarbsG
     }
+
+    /// Looser than `isValid`: no upper bound. A day goal is a sum of window goals and can
+    /// legitimately exceed the single-window storage ceiling; `goalStatus`/`dayGoal` only need a
+    /// sane band (finite, non-negative, min <= max), not a storable single-window goal.
+    var isUsable: Bool {
+        min.isFinite && max.isFinite && min >= 0 && min <= max
+    }
 }
 
 /// Colour feedback for carbs against a goal (spec §3). Raw values match the TS core and the
@@ -41,7 +48,7 @@ public enum GoalStatus: String, Codable, Equatable, Sendable {
 /// `d` is the distance outside the goal band; 0 inside it. d == 0 → in, d <= 5 → near,
 /// d <= 10 → off, else out. No goal, incomplete carbs or a non-finite total → none.
 public func goalStatus(_ carbs: CarbResult, _ goal: CarbGoal?) -> GoalStatus {
-    guard let goal, goal.isValid, carbs.complete, carbs.carbsG.isFinite else { return .none }
+    guard let goal, goal.isUsable, carbs.complete, carbs.carbsG.isFinite else { return .none }
     let value = carbs.carbsG
     if value >= goal.min && value <= goal.max { return .inGoal }
     let d = Swift.min(abs(value - goal.min), abs(value - goal.max))
@@ -53,7 +60,7 @@ public func goalStatus(_ carbs: CarbResult, _ goal: CarbGoal?) -> GoalStatus {
 /// A day's goal: the sum of that day's window goals. Windows without a goal contribute nothing to
 /// either side; nil when no window in the day has a goal (spec §3).
 public func dayGoal(_ windows: [DoseWindow]) -> CarbGoal? {
-    let goals = windows.compactMap(\.carbGoal).filter(\.isValid)
+    let goals = windows.compactMap(\.carbGoal).filter(\.isUsable)
     guard !goals.isEmpty else { return nil }
     return CarbGoal(min: goals.reduce(0) { $0 + $1.min }, max: goals.reduce(0) { $0 + $1.max })
 }
@@ -61,7 +68,7 @@ public func dayGoal(_ windows: [DoseWindow]) -> CarbGoal? {
 /// "68 g · goal 50–80" — the numbers always show, so colour is never the only signal (spec §3).
 public func goalText(_ carbs: CarbResult, _ goal: CarbGoal?) -> String {
     let amount = carbs.complete && carbs.carbsG.isFinite ? "\(formatCarbs(carbs.carbsG)) g" : "missing data"
-    guard let goal, goal.isValid else { return amount }
+    guard let goal, goal.isUsable else { return amount }
     return "\(amount) · goal \(formatCarbs(goal.min))–\(formatCarbs(goal.max))"
 }
 
