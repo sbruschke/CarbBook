@@ -64,4 +64,40 @@ final class PlanStoreTests: XCTestCase {
         XCTAssertEqual(try store.catalog().food("f1")?.name, "Rice")
         try store.dbQueue.read { db in XCTAssertTrue(try db.tableExists("plan_entry")) }
     }
+
+    func testPlanRowsPushAndPullThroughTheServer() async throws {
+        let server = FakeServer()
+        let deviceA = try LocalStore(path: nil, now: { 1_000 })
+        let deviceB = try LocalStore(path: nil, now: { 1_000 })
+        try deviceA.save("plan_entry", PlanEntryData(id: "p1", date: "2026-09-16", windowName: "Lunch",
+                                                     status: .planned, note: "leftovers", logEntryId: nil))
+        try deviceA.save("plan_item", PlanItemData(id: "i1", planEntryId: "p1", refType: .food, refId: "f1",
+                                                   amount: 2, unit: "p:x", position: 0))
+        _ = try await SyncEngine(store: deviceA, transport: server).run { 1_000 }
+        _ = try await SyncEngine(store: deviceB, transport: server).run { 1_000 }
+
+        let entries: [PlanEntryData] = try deviceB.records("plan_entry")
+        XCTAssertEqual(entries.count, 1)
+        XCTAssertEqual(entries.first?.note, "leftovers")
+        XCTAssertNil(entries.first?.logEntryId)
+        let items: [PlanItemData] = try deviceB.records("plan_item")
+        XCTAssertEqual(items.first?.unit, "p:x")
+        XCTAssertEqual(items.first?.position, 0)
+    }
+
+    func testClearingANoteIsPushedAsAnExplicitNull() async throws {
+        let server = FakeServer()
+        let clock = TestClock(1_000)
+        let store = try LocalStore(path: nil, now: clock.now)
+        try store.save("plan_entry", PlanEntryData(id: "p1", date: "2026-09-16", windowName: "Lunch",
+                                                   status: .planned, note: "leftovers", logEntryId: nil))
+        _ = try await SyncEngine(store: store, transport: server).run(nowMs: clock.now)
+        clock.ms = 2_000
+        try store.save("plan_entry", PlanEntryData(id: "p1", date: "2026-09-16", windowName: "Lunch",
+                                                   status: .skipped, note: nil, logEntryId: nil))
+        let pending = try await store.pendingChanges(limit: 10)
+        XCTAssertEqual(pending.count, 1)
+        XCTAssertEqual(pending[0].record["note"], .null)
+        XCTAssertEqual(pending[0].record["status"], .string("skipped"))
+    }
 }
