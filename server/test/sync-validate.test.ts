@@ -199,3 +199,43 @@ describe('validateRecord', () => {
     expect(validateRecord(TABLE_SPECS.dose_settings, doseSettings(fields as never))).toEqual({ ok: false, message });
   });
 });
+
+describe('dose_settings carb_goal', () => {
+  const withGoal = (carb_goal: unknown) =>
+    doseSettings({
+      windows: [{ name: 'Breakfast', start: '05:00', ratio_g_per_unit: 8, carb_goal }] as never,
+    });
+
+  it('accepts a window with a valid carb_goal and round-trips it', () => {
+    const result = validateRecord(TABLE_SPECS.dose_settings, withGoal({ min: 30, max: 50 }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(decodeRow(TABLE_SPECS.dose_settings, result.row)).toMatchObject({
+      windows: [{ name: 'Breakfast', start: '05:00', ratio_g_per_unit: 8, carb_goal: { min: 30, max: 50 } }],
+    });
+  });
+
+  it('accepts a window with carb_goal null or absent', () => {
+    expect(validateRecord(TABLE_SPECS.dose_settings, withGoal(null)).ok).toBe(true);
+    expect(validateRecord(TABLE_SPECS.dose_settings, doseSettings()).ok).toBe(true);
+  });
+
+  it.each([
+    [{ min: 80, max: 50 }],
+    [{ min: -1, max: 50 }],
+    [{ min: 0, max: 2001 }],
+    [{ min: 30 }],
+    ['30-50'],
+  ])('rejects carb_goal %j', (goal) => {
+    expect(validateRecord(TABLE_SPECS.dose_settings, withGoal(goal))).toEqual({
+      ok: false,
+      message: 'window "Breakfast" has an invalid carb_goal (need 0 <= min <= max <= 2000)',
+    });
+  });
+
+  it('serializes carb_goal in a fixed key order so an identical republish is byte-identical', () => {
+    const a = validateRecord(TABLE_SPECS.dose_settings, withGoal({ min: 30, max: 50 }));
+    const b = validateRecord(TABLE_SPECS.dose_settings, withGoal({ max: 50, min: 30 }));
+    expect(a.ok && b.ok && a.row.windows).toBe(b.ok ? b.row.windows : undefined);
+  });
+});

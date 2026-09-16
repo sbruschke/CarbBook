@@ -1,4 +1,12 @@
-import { isVolumeUnit, MAX_CARBS_PER_100ML, MAX_PORTION_CARBS_G, parseHHMM, VOLUME_UNITS } from '@carbbook/core';
+import {
+  DOSE_LIMITS,
+  isValidCarbGoal,
+  isVolumeUnit,
+  MAX_CARBS_PER_100ML,
+  MAX_PORTION_CARBS_G,
+  parseHHMM,
+  VOLUME_UNITS,
+} from '@carbbook/core';
 
 export const SYNC_TABLES = [
   'food',
@@ -55,6 +63,10 @@ export function checkWindows(value: unknown): string | null {
     if (!isFiniteNumber(window.ratio_g_per_unit) || window.ratio_g_per_unit <= 0) {
       return `window "${window.name}" needs ratio_g_per_unit > 0`;
     }
+    // carb_goal is optional (meal-planning spec §2): absent or null means "no goal".
+    if (window.carb_goal != null && !isValidCarbGoal(window.carb_goal)) {
+      return `window "${window.name}" has an invalid carb_goal (need 0 <= min <= max <= ${DOSE_LIMITS.maxCarbsG})`;
+    }
   }
   return null;
 }
@@ -92,8 +104,16 @@ function reorderKeys(value: unknown, keys: readonly string[]): unknown {
  * Canonicalizers for dose_settings JSON fields: fixed key order so two pushes with the same
  * content but different key ordering serialize identically (see push.ts's append-only check).
  */
+const canonicalizeCarbGoal = (value: unknown): unknown => (value == null ? value : reorderKeys(value, ['min', 'max']));
+
 export const canonicalizeWindows = (value: unknown): unknown =>
-  Array.isArray(value) ? value.map((w) => reorderKeys(w, ['name', 'start', 'ratio_g_per_unit'])) : value;
+  Array.isArray(value)
+    ? value.map((w) => {
+        const out = reorderKeys(w, ['name', 'start', 'ratio_g_per_unit', 'carb_goal']) as Record<string, unknown>;
+        if ('carb_goal' in out) out.carb_goal = canonicalizeCarbGoal(out.carb_goal);
+        return out;
+      })
+    : value;
 export const canonicalizeCorrection = (value: unknown): unknown =>
   reorderKeys(value, ['threshold', 'step', 'units_per_step', 'mode']);
 export const canonicalizeRounding = (value: unknown): unknown =>
