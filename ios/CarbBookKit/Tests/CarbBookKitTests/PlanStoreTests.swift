@@ -100,4 +100,58 @@ final class PlanStoreTests: XCTestCase {
         XCTAssertEqual(pending[0].record["note"], .null)
         XCTAssertEqual(pending[0].record["status"], .string("skipped"))
     }
+
+    private func seedWeek(_ store: LocalStore) throws {
+        try store.save("plan_entry", PlanEntryData(id: "p1", date: "2026-09-14", windowName: "Lunch", status: .planned))
+        try store.save("plan_entry", PlanEntryData(id: "p2", date: "2026-09-16", windowName: "Lunch", status: .planned))
+        try store.save("plan_entry", PlanEntryData(id: "p3", date: "2026-09-16", windowName: "Dinner", status: .skipped))
+        try store.save("plan_entry", PlanEntryData(id: "p4", date: "2026-09-25", windowName: "Lunch", status: .planned))
+        try store.save("plan_item", PlanItemData(id: "i2", planEntryId: "p2", refType: .food, refId: "f1",
+                                                 amount: 1, unit: "g", position: 1))
+        try store.save("plan_item", PlanItemData(id: "i1", planEntryId: "p2", refType: .food, refId: "f2",
+                                                 amount: 2, unit: "g", position: 0))
+    }
+
+    func testPlanEntriesReadsAnInclusiveDateRange() throws {
+        let store = try LocalStore(path: nil, now: { 1_000 })
+        try seedWeek(store)
+        let entries = try store.planEntries(from: "2026-09-13", to: "2026-09-19")
+        XCTAssertEqual(entries.map(\.id), ["p1", "p3", "p2"])
+    }
+
+    func testPlanEntriesSkipsDeletedRows() throws {
+        let store = try LocalStore(path: nil, now: { 1_000 })
+        try seedWeek(store)
+        try store.softDelete("plan_entry", id: "p2")
+        XCTAssertEqual(try store.planEntries(from: "2026-09-13", to: "2026-09-19").map(\.id), ["p1", "p3"])
+    }
+
+    func testPlanItemsAreGroupedByEntryAndOrderedByPosition() throws {
+        let store = try LocalStore(path: nil, now: { 1_000 })
+        try seedWeek(store)
+        let grouped = try store.planItems(entryIds: ["p1", "p2"])
+        XCTAssertEqual(grouped["p2"]?.map(\.id), ["i1", "i2"])
+        XCTAssertNil(grouped["p1"])
+    }
+
+    func testPlanEntryForASlot() throws {
+        let store = try LocalStore(path: nil, now: { 1_000 })
+        try seedWeek(store)
+        XCTAssertEqual(try store.planEntry(date: "2026-09-16", windowName: "Lunch")?.id, "p2")
+        XCTAssertNil(try store.planEntry(date: "2026-09-16", windowName: "Breakfast"))
+    }
+
+    func testPlanEntryForASlotIgnoresCaseAndWhitespace() throws {
+        let store = try LocalStore(path: nil, now: { 1_000 })
+        try seedWeek(store)
+        XCTAssertEqual(try store.planEntry(date: "2026-09-16", windowName: "  LUNCH ")?.id, "p2")
+    }
+
+    func testPlanEntriesLinkedToALogEntry() throws {
+        let store = try LocalStore(path: nil, now: { 1_000 })
+        try store.save("plan_entry", PlanEntryData(id: "p9", date: "2026-09-16", windowName: "Lunch",
+                                                   status: .logged, note: nil, logEntryId: "l1"))
+        XCTAssertEqual(try store.planEntries(logEntryId: "l1").map(\.id), ["p9"])
+        XCTAssertTrue(try store.planEntries(logEntryId: "l2").isEmpty)
+    }
 }
