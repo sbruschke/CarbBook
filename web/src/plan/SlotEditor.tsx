@@ -58,7 +58,9 @@ export function SlotEditor(props: {
     const entry: PlanEntryData = {
       id: entryId,
       date,
-      window_name: windowName,
+      // Trimmed to match the server's stored form — it trims window_name and compares slots
+      // case-insensitively, so an untrimmed value here would still collide there.
+      window_name: windowName.trim(),
       // Editing a slot never claims it was eaten; only logging from a loaded slot sets `logged`.
       status: slot?.entry?.status === 'logged' ? 'logged' : 'planned',
       note: note.trim() || null,
@@ -85,11 +87,21 @@ export function SlotEditor(props: {
       </h1>
       <ItemEditor items={items} catalog={catalog} onChange={setItems} reorderable />
       <SearchPanel label="Add to this slot" onPick={(result) => void pick(result)} />
-      <p className="total" data-testid="slot-carbs">
-        <span className={goalView(carbs, slot?.goal ?? null).className}>
-          <span>{goalView(carbs, slot?.goal ?? null).text}</span>
-        </span>
-      </p>
+      {(() => {
+        const view = goalView(carbs, slot?.goal ?? null);
+        return (
+          <p className="total" data-testid="slot-carbs">
+            <span className={view.className} aria-label={view.ariaLabel}>
+              <span aria-hidden="true">{view.text}</span>
+              {view.word && (
+                <span className="goal-word" aria-hidden="true">
+                  {view.word}
+                </span>
+              )}
+            </span>
+          </p>
+        );
+      })()}
       <label>
         Note
         <textarea value={note} onChange={(e) => setNote(e.target.value)} />

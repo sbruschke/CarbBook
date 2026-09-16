@@ -16,8 +16,13 @@ import {
 import { isLive } from '../db/db';
 import { dayRange } from '../ui/format';
 
-/** Stable identity of a slot: a date plus a window name (spec §2: at most one live entry each). */
-export const slotKey = (date: string, windowName: string): string => `${date}|${windowName}`;
+/**
+ * Stable identity of a slot: a date plus a window name (spec §2: at most one live entry each).
+ * Normalized (trimmed, lowercased) to match the server's uniqueness rule — `window_name` is
+ * trimmed and compared case-insensitively there, so a slot must be found under this key
+ * regardless of how its `window_name` is cased, or a save mints a duplicate the server rejects.
+ */
+export const slotKey = (date: string, windowName: string): string => `${date}|${windowName.trim().toLowerCase()}`;
 
 export interface Slot {
   key: string;

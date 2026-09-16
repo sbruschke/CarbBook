@@ -114,3 +114,22 @@ describe('dayTotal', () => {
     expect(dayTotal(slots).carbs.complete).toBe(false);
   });
 });
+
+describe('slotKey normalization (server matches window_name case-insensitively, trimmed)', () => {
+  it('finds an existing entry when the window name differs only by case or whitespace', () => {
+    const slots = buildSlots({
+      dates: ['2026-09-16'],
+      windows: WINDOWS,
+      entries: [entry({ window_name: ' lunch ' })],
+      items: [item({})],
+      catalog,
+    });
+    const lunch = slots.find((s) => s.windowName === 'Lunch')!;
+    expect(lunch.entry).not.toBeNull();
+    expect(lunch.items).toHaveLength(1);
+  });
+
+  it('treats differently-cased window names as the same slot key', () => {
+    expect(slotKey('2026-09-16', 'Lunch')).toBe(slotKey('2026-09-16', ' lunch '));
+  });
+});

@@ -4,6 +4,13 @@ import { formatCarbs } from '../ui/format';
 /**
  * The words shown beside every goal number. Spec §3: colour is never the only signal, so each
  * state has a short label that is rendered visibly AND folded into the aria-label.
+ *
+ * Deliberately a separate vocabulary from core's `GOAL_STATUS_LABELS` ("in goal", "near goal", …):
+ * that constant is not used anywhere in this web UI today, and these strings are worded for
+ * conversational plan/log text rather than a terse screen-reader label. Both are keyed by the
+ * same `GoalStatus`, and `goal.test.ts`'s shared-vectors case pins every `GOAL_WORDS[status]` to
+ * being defined for each core-produced status — so the two can never disagree on WHICH band a
+ * carbs/goal pair falls into, only on the words used to say so.
  */
 export const GOAL_WORDS: Record<GoalStatus, string> = {
   none: '',
