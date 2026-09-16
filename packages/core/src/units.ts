@@ -1,4 +1,5 @@
-import type { FoodData, MealData, PortionData } from './types';
+import { DOSE_LIMITS } from './dose';
+import type { FoodData, Id, MealData, PortionData, RefType } from './types';
 
 /** Grams per unit. */
 export const MASS_UNITS = { g: 1, kg: 1000, oz: 28.349523125, lb: 453.59237 } as const;
@@ -132,4 +133,34 @@ export function foodAmountToGrams(
     return (amount * portion.grams) / portion.quantity;
   }
   return null;
+}
+
+/** Quick carbs rows (quick-carbs spec §2): `amount` is grams of carbs and this is the only unit. */
+export const QUICK_UNIT = 'carbs';
+export const QUICK_LABEL_MAX = 80;
+export const QUICK_DEFAULT_LABEL = 'Extra carbs';
+
+/** Grams of carbs on a quick row: finite and 0 <= amount <= DOSE_LIMITS.maxCarbsG. */
+export function isValidQuickCarbs(amount: number): boolean {
+  return Number.isFinite(amount) && amount >= 0 && amount <= DOSE_LIMITS.maxCarbsG;
+}
+
+export function quickUnits(): string[] {
+  return [QUICK_UNIT];
+}
+
+/** Stored form of a quick row's label: trimmed, at most 80 characters, null when blank. */
+export function normalizeQuickLabel(label: string | null | undefined): string | null {
+  const trimmed = (label ?? '').trim().slice(0, QUICK_LABEL_MAX).trim();
+  return trimmed === '' ? null : trimmed;
+}
+
+/** What a quick row is called on screen and in log snapshots. */
+export function quickDisplayName(label: string | null | undefined): string {
+  return normalizeQuickLabel(label) ?? QUICK_DEFAULT_LABEL;
+}
+
+/** ref_id to store for a row: a quick row points at itself (keeps ref_id non-null); others keep theirs. */
+export function itemRefId(refType: RefType, refId: Id, rowId: Id): Id {
+  return refType === 'quick' ? rowId : refId;
 }

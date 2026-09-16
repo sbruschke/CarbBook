@@ -56,7 +56,8 @@ export interface MealData {
   notes?: string | null;
 }
 
-export type RefType = 'food' | 'meal';
+/** `quick` = a carbs-only row with no food (quick-carbs spec §2): amount is grams of carbs, unit `carbs`. */
+export type RefType = 'food' | 'meal' | 'quick';
 
 export interface MealItemData {
   id: Id;
@@ -66,6 +67,8 @@ export interface MealItemData {
   amount: number;
   unit: string;
   position: number;
+  /** Quick carbs rows only (quick-carbs spec §2): optional text, at most 80 characters. */
+  label?: string | null;
 }
 
 export type BgSource = 'dexcom' | 'manual' | 'none';
@@ -158,4 +161,6 @@ export interface PlanItemData {
   amount: number;
   unit: string;
   position: number;
+  /** Quick carbs rows only (quick-carbs spec §2): optional text, at most 80 characters. */
+  label?: string | null;
 }
