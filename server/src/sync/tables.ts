@@ -17,6 +17,8 @@ export const SYNC_TABLES = [
   'log_entry',
   'log_item',
   'dose_settings',
+  'plan_entry',
+  'plan_item',
 ] as const;
 
 export type SyncTable = (typeof SYNC_TABLES)[number];
@@ -130,6 +132,16 @@ const optionalText = (max = 200): FieldSpec => ({ type: 'text', nullable: true, 
  */
 const REF_TYPES = ['food', 'meal'] as const;
 
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** True for a real calendar day written as YYYY-MM-DD (so "2026-02-30" is rejected). */
+export function isValidPlanDate(value: unknown): boolean {
+  if (typeof value !== 'string' || !ISO_DATE.test(value)) return false;
+  const [year, month, day] = value.split('-').map(Number) as [number, number, number];
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+}
+
 export const TABLE_SPECS: Record<SyncTable, TableSpec> = {
   food: {
     name: 'food',
@@ -226,6 +238,29 @@ export const TABLE_SPECS: Record<SyncTable, TableSpec> = {
       windows: { type: 'json', check: checkWindows, canonicalize: canonicalizeWindows },
       correction: { type: 'json', check: checkCorrection, canonicalize: canonicalizeCorrection },
       rounding: { type: 'json', check: checkRounding, canonicalize: canonicalizeRounding },
+    },
+  },
+  plan_entry: {
+    name: 'plan_entry',
+    fields: {
+      date: text(10),
+      window_name: text(64),
+      status: { type: 'enum', values: ['planned', 'logged', 'skipped'] },
+      note: optionalText(4000),
+      // Checked against the log_entry table in push.ts, where the DB is available.
+      log_entry_id: optionalText(64),
+    },
+    check: (r) => (isValidPlanDate(r.date) ? null : 'date must be a real calendar date in YYYY-MM-DD form'),
+  },
+  plan_item: {
+    name: 'plan_item',
+    fields: {
+      plan_entry_id: text(64),
+      ref_type: { type: 'enum', values: REF_TYPES },
+      ref_id: text(64),
+      amount: { type: 'number', min: 0 },
+      unit: text(64),
+      position: { type: 'number', integer: true, min: 0 },
     },
   },
 };
