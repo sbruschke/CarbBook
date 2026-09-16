@@ -112,3 +112,41 @@ describe('logging a loaded slot', () => {
     expect((await services.db.plan_entry.get('p1'))!.log_entry_id).toBeNull();
   });
 });
+
+describe('Calculator total against the window goal', () => {
+  it('shows the running total with the current window goal and an accessible label', async () => {
+    const user = await setup();
+    // Give Lunch a goal of 50-80 on a NEW settings version (append-only).
+    const current = (await services.db.dose_settings.toArray())[0]!;
+    await services.db.dose_settings.put({
+      ...current,
+      id: 'dose-goals',
+      windows: current.windows.map((w) => (w.name === 'Lunch' ? { ...w, carb_goal: { min: 50, max: 80 } } : { ...w, carb_goal: null })),
+    });
+    renderWith(<Calculator />, services);
+    await user.click(await screen.findByRole('button', { name: 'Load' }));
+
+    const total = await screen.findByTestId('total-carbs');
+    expect(total).toHaveTextContent('72 g · goal 50–80');
+    expect(total).toHaveTextContent('on target');
+    expect(screen.getByLabelText('72 g, goal 50 to 80, on target')).toHaveClass('goal-in');
+  });
+
+  it('shows the plain total when the current window has no goal', async () => {
+    const user = await setup();
+    // SEED_SETTINGS mirrors the live server's deployed goals, where every window has one (Task 10
+    // adaptation) — so this case needs an explicit settings version with Lunch's goal cleared,
+    // rather than relying on a naturally goal-less window.
+    const current = (await services.db.dose_settings.toArray())[0]!;
+    await services.db.dose_settings.put({
+      ...current,
+      id: 'dose-no-goal',
+      windows: current.windows.map((w) => ({ ...w, carb_goal: null })),
+    });
+    renderWith(<Calculator />, services);
+    await user.click(await screen.findByRole('button', { name: 'Load' }));
+    const total = await screen.findByTestId('total-carbs');
+    expect(total).toHaveTextContent('72 g');
+    expect(total).not.toHaveTextContent('goal');
+  });
+});

@@ -13,6 +13,7 @@ import { type FoodPrefill, prefillFromDraft } from '../foods/label';
 import { parseUsdaFoodId, uuidv7 } from '../lib/ids';
 import { saveMeal } from '../meals/saveMeal';
 import { dismissSlot, loadDismissed } from '../plan/dismissed';
+import { goalView } from '../plan/goal';
 import { suggestionFor } from '../plan/suggestion';
 import type { SearchResult } from '../search/search';
 import { BgField, resolveBg } from '../ui/BgField';
@@ -69,6 +70,8 @@ export function Calculator() {
   const badAmounts = items.some((item) => parseAmount(item.amount) === null);
 
   const currentWindow = estimate?.window?.name ?? windowName;
+  const windowGoal = settings?.windows.find((w) => w.name === currentWindow)?.carb_goal ?? null;
+  const totalView = goalView(carbs, windowGoal);
   const suggestion =
     loadedSlot === null
       ? suggestionFor({
@@ -263,7 +266,15 @@ export function Calculator() {
       <ItemEditor items={items} catalog={catalog} onChange={setItems} />
       {items.length > 0 && (
         <p className="total" data-testid="total-carbs">
-          Total {formatCarbs(carbs.carbs_g)} carbs{carbs.complete ? '' : ' (incomplete)'}
+          <span className={totalView.className} aria-label={totalView.ariaLabel}>
+            <span aria-hidden="true">{totalView.text}</span>
+            {totalView.word && (
+              <span className="goal-word" aria-hidden="true">
+                {totalView.word}
+              </span>
+            )}
+          </span>
+          {carbs.complete ? '' : ' (incomplete)'}
         </p>
       )}
       <section className="card">
