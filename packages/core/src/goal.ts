@@ -1,6 +1,6 @@
 import type { CarbResult } from './carbs';
 import { DOSE_LIMITS } from './dose';
-import type { CarbGoal } from './types';
+import type { CarbGoal, DoseWindow } from './types';
 
 /**
  * A carb goal is usable when both bounds are finite and 0 <= min <= max <= DOSE_LIMITS.maxCarbsG.
@@ -45,4 +45,23 @@ export function goalStatus(carbs: CarbResult, goal: CarbGoal | null | undefined)
   if (distance <= GOAL_NEAR_G + EPS) return 'near';
   if (distance <= GOAL_OFF_G + EPS) return 'off';
   return 'out';
+}
+
+/**
+ * A day's combined goal: the sum of the goals of the day's windows. Windows without a usable goal
+ * contribute nothing to either bound; a day where no window has a goal has no goal at all (null),
+ * which `goalStatus` renders as `none` (spec §3).
+ */
+export function dayGoal(windows: DoseWindow[]): CarbGoal | null {
+  let min = 0;
+  let max = 0;
+  let found = false;
+  for (const w of windows) {
+    const goal = w.carb_goal;
+    if (!isValidCarbGoal(goal)) continue;
+    min += goal.min;
+    max += goal.max;
+    found = true;
+  }
+  return found ? { min, max } : null;
 }

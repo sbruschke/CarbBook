@@ -82,3 +82,51 @@ describe('goalStatus', () => {
     expect(GOAL_STATUS_LABELS.in).toBe('in goal');
   });
 });
+
+import { dayGoal } from '../src/goal';
+import type { DoseWindow } from '../src/types';
+
+const window = (name: string, start: string, carb_goal: { min: number; max: number } | null): DoseWindow => ({
+  name,
+  start,
+  ratio_g_per_unit: 8,
+  carb_goal,
+});
+
+describe('dayGoal', () => {
+  it('sums the goals of the windows that have one', () => {
+    expect(
+      dayGoal([
+        window('Breakfast', '05:00', { min: 30, max: 50 }),
+        window('Lunch', '11:00', { min: 50, max: 80 }),
+      ]),
+    ).toEqual({ min: 80, max: 130 });
+  });
+
+  it('ignores windows without a goal', () => {
+    expect(
+      dayGoal([
+        window('Breakfast', '05:00', { min: 30, max: 50 }),
+        window('AM Snack', '09:00', null),
+        { name: 'Lunch', start: '11:00', ratio_g_per_unit: 8 },
+      ]),
+    ).toEqual({ min: 30, max: 50 });
+  });
+
+  it('ignores windows whose goal is unusable', () => {
+    expect(
+      dayGoal([window('Breakfast', '05:00', { min: 30, max: 50 }), window('Lunch', '11:00', { min: 90, max: 10 })]),
+    ).toEqual({ min: 30, max: 50 });
+  });
+
+  it('is null when no window in the day has a goal', () => {
+    expect(dayGoal([window('Breakfast', '05:00', null), window('Lunch', '11:00', null)])).toBeNull();
+    expect(dayGoal([])).toBeNull();
+  });
+
+  it('produces a goal that goalStatus can use for a day total', () => {
+    const goal = dayGoal([window('Breakfast', '05:00', { min: 30, max: 50 }), window('Lunch', '11:00', { min: 50, max: 80 })]);
+    expect(goalStatus({ carbs_g: 100, complete: true }, goal)).toBe('in');
+    expect(goalStatus({ carbs_g: 134, complete: true }, goal)).toBe('near');
+  });
+});
