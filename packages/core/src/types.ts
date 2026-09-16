@@ -105,6 +105,11 @@ export interface DoseWindow {
   name: string;
   start: string; // "HH:MM", 24-hour local time
   ratio_g_per_unit: number;
+  /**
+   * Per-window carb target for the Plan screen's colour feedback (meal-planning spec §2).
+   * Dose math never reads this: estimateDose only uses name/start/ratio_g_per_unit.
+   */
+  carb_goal?: CarbGoal | null;
 }
 
 export type CorrectionMode = 'started' | 'full' | 'proportional';
