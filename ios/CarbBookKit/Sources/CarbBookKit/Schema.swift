@@ -13,8 +13,33 @@ enum Schema {
         migrator.registerMigration("v2-any-unit-foods") { db in
             try db.execute(sql: v2AnyUnitFoods)
         }
+        migrator.registerMigration("v3-meal-plan") { db in
+            try db.execute(sql: v3MealPlan)
+        }
         return migrator
     }
+
+    /// Meal planning (spec §2). Mirrors server migration 004 minus the CHECKs the server enforces:
+    /// the local database stores whatever the server sends, and a row the server would reject comes
+    /// back as a `sync_rejection` instead of failing an INSERT here. No foreign keys, like every other
+    /// synced table, and every reference column is nullable-safe (`note`, `log_entry_id`).
+    /// No pull-cursor reset: these tables are new, so their rows arrive on the next ordinary pull.
+    static let v3MealPlan = """
+    CREATE TABLE plan_entry (
+      id TEXT PRIMARY KEY, date TEXT NOT NULL, window_name TEXT NOT NULL, status TEXT NOT NULL,
+      note TEXT, log_entry_id TEXT,
+      updated_at INTEGER NOT NULL, updated_by TEXT NOT NULL, deleted INTEGER NOT NULL DEFAULT 0, server_seq INTEGER
+    );
+    CREATE INDEX plan_entry_date ON plan_entry (date);
+    CREATE INDEX plan_entry_log_entry ON plan_entry (log_entry_id);
+    CREATE TABLE plan_item (
+      id TEXT PRIMARY KEY, plan_entry_id TEXT NOT NULL, ref_type TEXT NOT NULL, ref_id TEXT NOT NULL,
+      amount REAL NOT NULL, unit TEXT NOT NULL, position INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL, updated_by TEXT NOT NULL, deleted INTEGER NOT NULL DEFAULT 0, server_seq INTEGER
+    );
+    CREATE INDEX plan_item_entry ON plan_item (plan_entry_id);
+    CREATE INDEX plan_item_ref ON plan_item (ref_id);
+    """
 
     /// Any-unit foods addendum: `food.carbs_per_100ml`, nullable `portion.grams`, `portion.carbs_g`.
     /// SQLite can't drop NOT NULL in place, so `portion` is rebuilt with every row copied (it has no
