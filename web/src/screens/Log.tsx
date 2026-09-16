@@ -1,18 +1,20 @@
-import type { LogItemData, Synced } from '@carbbook/core';
+import { activeSettings, type LogItemData, type Synced } from '@carbbook/core';
 import { useState } from 'react';
-import { useLogData } from '../app/hooks';
+import { useEligibleDoseVersions, useLogData } from '../app/hooks';
 import { useServices } from '../app/services';
 import { LogEntryEditor } from '../log/LogEntryEditor';
+import { goalView } from '../plan/goal';
 import { dayKey, dayRange, formatCarbs, formatTime, formatUnits, shiftDay } from '../ui/format';
 
 export function Log() {
   const { now } = useServices();
   const log = useLogData();
+  const versions = useEligibleDoseVersions();
   const [day, setDay] = useState(() => dayKey(now()));
   const [editing, setEditing] = useState<string | null>(null);
 
   if (editing) return <LogEntryEditor entryId={editing} onDone={() => setEditing(null)} />;
-  if (!log) return <p>Loading…</p>;
+  if (!log || !versions) return <p>Loading…</p>;
 
   const [start, end] = dayRange(day);
   const entries = log.entries.filter((e) => e.eaten_at >= start && e.eaten_at < end).sort((a, b) => a.eaten_at - b.eaten_at);
@@ -38,21 +40,35 @@ export function Log() {
       </p>
       {entries.length === 0 && <p className="muted">Nothing logged this day.</p>}
       <ul className="list">
-        {entries.map((entry) => (
-          <li key={entry.id}>
-            <button type="button" className="list-item" onClick={() => setEditing(entry.id)}>
-              <span>
-                <strong>{formatTime(entry.eaten_at)}</strong> {entry.window_name ?? ''}
-              </span>
-              <span>
-                {formatCarbs(entry.total_carbs_g)} carbs · BG {entry.bg_mgdl ?? '–'} · est.{' '}
-                {entry.suggested_units == null ? '–' : formatUnits(entry.suggested_units)} · took{' '}
-                {entry.taken_units == null ? '–' : formatUnits(entry.taken_units)}
-              </span>
-              <span className="muted">{(itemsByEntry.get(entry.id) ?? []).map((i) => i.display_name).join(', ')}</span>
-            </button>
-          </li>
-        ))}
+        {entries.map((entry) => {
+          // The entry's own settings version if it is still eligible, else whatever was active
+          // then — the same precedence LogEntryEditor uses.
+          const settings = versions.find((v) => v.id === entry.settings_version_id) ?? activeSettings(versions, entry.eaten_at);
+          const goal = settings?.windows.find((w) => w.name === entry.window_name)?.carb_goal ?? null;
+          const view = goalView({ carbs_g: entry.total_carbs_g, complete: true }, goal);
+          return (
+            <li key={entry.id}>
+              <button type="button" className="list-item" onClick={() => setEditing(entry.id)}>
+                <span>
+                  <strong>{formatTime(entry.eaten_at)}</strong> {entry.window_name ?? ''}
+                </span>
+                <span>
+                  <span className={view.className} aria-label={view.ariaLabel}>
+                    <span aria-hidden="true">{view.text}</span>
+                    {view.word && (
+                      <span className="goal-word" aria-hidden="true">
+                        {view.word}
+                      </span>
+                    )}
+                  </span>{' '}
+                  · BG {entry.bg_mgdl ?? '–'} · est. {entry.suggested_units == null ? '–' : formatUnits(entry.suggested_units)} · took{' '}
+                  {entry.taken_units == null ? '–' : formatUnits(entry.taken_units)}
+                </span>
+                <span className="muted">{(itemsByEntry.get(entry.id) ?? []).map((i) => i.display_name).join(', ')}</span>
+              </button>
+            </li>
+          );
+        })}
       </ul>
     </div>
   );

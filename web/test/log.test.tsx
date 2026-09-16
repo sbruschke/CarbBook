@@ -119,3 +119,66 @@ describe('Log', () => {
     expect(await screen.findByText(/A dose was logged at 10:00, within the last 4 hours/)).toBeInTheDocument();
   });
 });
+
+import { LogEntryEditor } from '../src/log/LogEntryEditor';
+
+describe('Log goal colours', () => {
+  it('shows each entry carbs against its window goal', async () => {
+    const user = await setup();
+    const current = (await services.db.dose_settings.toArray())[0]!;
+    await services.db.dose_settings.put({
+      ...current,
+      id: 'dose-goals',
+      windows: current.windows.map((w) => (w.name === 'Lunch' ? { ...w, carb_goal: { min: 50, max: 80 } } : { ...w, carb_goal: null })),
+    });
+    await services.db.log_entry.put(
+      synced({
+        id: 'log-1',
+        eaten_at: NOW,
+        window_name: 'Lunch',
+        bg_mgdl: null,
+        bg_source: 'none',
+        bg_trend: null,
+        total_carbs_g: 72,
+        suggested_units: null,
+        taken_units: null,
+        settings_version_id: 'dose-goals',
+        notes: null,
+      }),
+    );
+    renderWith(<Log />, services);
+    expect(await screen.findByLabelText('72 g, goal 50 to 80, on target')).toHaveClass('goal-in');
+    expect(user).toBeDefined();
+  });
+});
+
+describe('deleting a logged entry', () => {
+  it('returns the slot it came from to planned and clears the link', async () => {
+    const user = await setup();
+    await services.db.log_entry.put(
+      synced({
+        id: 'log-1',
+        eaten_at: NOW,
+        window_name: 'Lunch',
+        bg_mgdl: null,
+        bg_source: 'none',
+        bg_trend: null,
+        total_carbs_g: 72,
+        suggested_units: null,
+        taken_units: null,
+        settings_version_id: null,
+        notes: null,
+      }),
+    );
+    await services.db.plan_entry.put(
+      synced({ id: 'p1', date: '2026-09-14', window_name: 'Lunch', status: 'logged', note: null, log_entry_id: 'log-1' }),
+    );
+    renderWith(<LogEntryEditor entryId="log-1" onDone={() => {}} />, services);
+    await user.click(await screen.findByRole('button', { name: 'Delete entry' }));
+    await user.click(screen.getByRole('button', { name: 'Tap again to delete' }));
+
+    const slot = (await services.db.plan_entry.get('p1'))!;
+    expect(slot.status).toBe('planned');
+    expect(slot.log_entry_id).toBeNull();
+  });
+});

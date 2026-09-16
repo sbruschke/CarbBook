@@ -59,7 +59,7 @@ function EntryForm(props: {
   onDone: () => void;
 }) {
   const { entry, items, data, versions } = props;
-  const { store, now } = useServices();
+  const { db, store, now } = useServices();
   const [eatenText, setEatenText] = useState(toDateTimeLocal(entry.eaten_at));
   const [bgText, setBgText] = useState(entry.bg_mgdl == null ? '' : String(entry.bg_mgdl));
   const [takenText, setTakenText] = useState(entry.taken_units == null ? '' : String(entry.taken_units));
@@ -150,6 +150,12 @@ function EntryForm(props: {
     if (!confirmDelete) {
       setConfirmDelete(true);
       return;
+    }
+    // Spec §5: a slot that points at this entry goes back to planned and loses the link, so the
+    // Calculator offers it again instead of silently losing the plan.
+    const slots = await db.plan_entry.where('log_entry_id').equals(entry.id).filter(isLive).toArray();
+    for (const slot of slots) {
+      await store.save('plan_entry', { ...dataOf<'plan_entry'>(slot), status: 'planned', log_entry_id: null });
     }
     for (const item of items) await store.remove('log_item', item.id);
     await store.remove('log_entry', entry.id);
