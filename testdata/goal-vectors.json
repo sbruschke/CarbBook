@@ -1,0 +1,95 @@
+{
+  "tolerance": 0.001,
+  "status_cases": [
+    { "name": "exactly min", "carbs": 50, "goal": { "min": 50, "max": 80 }, "expect": "in" },
+    { "name": "mid range", "carbs": 65, "goal": { "min": 50, "max": 80 }, "expect": "in" },
+    { "name": "exactly max", "carbs": 80, "goal": { "min": 50, "max": 80 }, "expect": "in" },
+    { "name": "just under min", "carbs": 49.9, "goal": { "min": 50, "max": 80 }, "expect": "near" },
+    { "name": "exactly 5 under min", "carbs": 45, "goal": { "min": 50, "max": 80 }, "expect": "near" },
+    { "name": "just over max", "carbs": 80.1, "goal": { "min": 50, "max": 80 }, "expect": "near" },
+    { "name": "exactly 5 over max", "carbs": 85, "goal": { "min": 50, "max": 80 }, "expect": "near" },
+    { "name": "just past 5 under min", "carbs": 44.9, "goal": { "min": 50, "max": 80 }, "expect": "off" },
+    { "name": "exactly 10 under min", "carbs": 40, "goal": { "min": 50, "max": 80 }, "expect": "off" },
+    { "name": "just past 5 over max", "carbs": 85.1, "goal": { "min": 50, "max": 80 }, "expect": "off" },
+    { "name": "exactly 10 over max", "carbs": 90, "goal": { "min": 50, "max": 80 }, "expect": "off" },
+    { "name": "just past 10 under min", "carbs": 39.9, "goal": { "min": 50, "max": 80 }, "expect": "out" },
+    { "name": "just past 10 over max", "carbs": 90.1, "goal": { "min": 50, "max": 80 }, "expect": "out" },
+    { "name": "nothing eaten against a goal", "carbs": 0, "goal": { "min": 50, "max": 80 }, "expect": "out" },
+    { "name": "far over", "carbs": 200, "goal": { "min": 50, "max": 80 }, "expect": "out" },
+    { "name": "snack goal in range", "carbs": 20, "goal": { "min": 10, "max": 30 }, "expect": "in" },
+    { "name": "snack goal 10 over", "carbs": 40, "goal": { "min": 10, "max": 30 }, "expect": "off" },
+    { "name": "zero width goal hit", "carbs": 0, "goal": { "min": 0, "max": 0 }, "expect": "in" },
+    { "name": "zero width goal 5 over", "carbs": 5, "goal": { "min": 0, "max": 0 }, "expect": "near" },
+    { "name": "no goal", "carbs": 65, "goal": null, "expect": "none" },
+    { "name": "no goal and nothing eaten", "carbs": 0, "goal": null, "expect": "none" },
+    { "name": "incomplete carbs inside the goal", "carbs": 65, "complete": false, "goal": { "min": 50, "max": 80 }, "expect": "none" },
+    { "name": "incomplete carbs outside the goal", "carbs": 5, "complete": false, "goal": { "min": 50, "max": 80 }, "expect": "none" },
+    { "name": "invalid goal min above max", "carbs": 65, "goal": { "min": 80, "max": 50 }, "expect": "none" },
+    { "name": "invalid goal negative min", "carbs": 65, "goal": { "min": -1, "max": 80 }, "expect": "none" },
+    { "name": "invalid goal max above limit", "carbs": 65, "goal": { "min": 0, "max": 2001 }, "expect": "none" }
+  ],
+  "day_cases": [
+    {
+      "name": "breakfast plus lunch",
+      "windows": [
+        { "name": "Breakfast", "start": "05:00", "ratio_g_per_unit": 8, "carb_goal": { "min": 30, "max": 50 } },
+        { "name": "Lunch", "start": "11:00", "ratio_g_per_unit": 8, "carb_goal": { "min": 50, "max": 80 } }
+      ],
+      "expect": { "min": 80, "max": 130 }
+    },
+    {
+      "name": "full seeded day",
+      "windows": [
+        { "name": "Breakfast", "start": "05:00", "ratio_g_per_unit": 8, "carb_goal": { "min": 30, "max": 50 } },
+        { "name": "AM Snack", "start": "09:00", "ratio_g_per_unit": 10, "carb_goal": { "min": 10, "max": 30 } },
+        { "name": "Lunch", "start": "11:00", "ratio_g_per_unit": 8, "carb_goal": { "min": 50, "max": 80 } },
+        { "name": "PM Snack", "start": "14:00", "ratio_g_per_unit": 10, "carb_goal": { "min": 10, "max": 30 } },
+        { "name": "Dinner", "start": "16:30", "ratio_g_per_unit": 8, "carb_goal": { "min": 50, "max": 80 } },
+        { "name": "HS Snack", "start": "19:30", "ratio_g_per_unit": 12, "carb_goal": { "min": 10, "max": 30 } }
+      ],
+      "expect": { "min": 160, "max": 300 }
+    },
+    {
+      "name": "windows without a goal contribute nothing",
+      "windows": [
+        { "name": "Breakfast", "start": "05:00", "ratio_g_per_unit": 8, "carb_goal": { "min": 30, "max": 50 } },
+        { "name": "AM Snack", "start": "09:00", "ratio_g_per_unit": 10, "carb_goal": null },
+        { "name": "Lunch", "start": "11:00", "ratio_g_per_unit": 8 }
+      ],
+      "expect": { "min": 30, "max": 50 }
+    },
+    {
+      "name": "unusable goals are skipped",
+      "windows": [
+        { "name": "Breakfast", "start": "05:00", "ratio_g_per_unit": 8, "carb_goal": { "min": 30, "max": 50 } },
+        { "name": "Lunch", "start": "11:00", "ratio_g_per_unit": 8, "carb_goal": { "min": 90, "max": 10 } }
+      ],
+      "expect": { "min": 30, "max": 50 }
+    },
+    {
+      "name": "no window in the day has a goal",
+      "windows": [
+        { "name": "Breakfast", "start": "05:00", "ratio_g_per_unit": 8, "carb_goal": null },
+        { "name": "Lunch", "start": "11:00", "ratio_g_per_unit": 8 }
+      ],
+      "expect": null
+    },
+    { "name": "no windows at all", "windows": [], "expect": null }
+  ],
+  "day_status_cases": [
+    { "name": "day total in the summed goal", "carbs": 200, "day_goal": { "min": 160, "max": 300 }, "expect": "in" },
+    { "name": "day total 5 under the summed goal", "carbs": 155, "day_goal": { "min": 160, "max": 300 }, "expect": "near" },
+    { "name": "day total 10 over the summed goal", "carbs": 310, "day_goal": { "min": 160, "max": 300 }, "expect": "off" },
+    { "name": "day total far under", "carbs": 100, "day_goal": { "min": 160, "max": 300 }, "expect": "out" },
+    { "name": "day with no goal", "carbs": 200, "day_goal": null, "expect": "none" }
+  ],
+  "valid_cases": [
+    { "name": "ordinary goal", "goal": { "min": 30, "max": 50 }, "expect": true },
+    { "name": "zero width", "goal": { "min": 50, "max": 50 }, "expect": true },
+    { "name": "zero to zero", "goal": { "min": 0, "max": 0 }, "expect": true },
+    { "name": "at the upper limit", "goal": { "min": 0, "max": 2000 }, "expect": true },
+    { "name": "min above max", "goal": { "min": 80, "max": 50 }, "expect": false },
+    { "name": "negative min", "goal": { "min": -1, "max": 50 }, "expect": false },
+    { "name": "max above the limit", "goal": { "min": 0, "max": 2001 }, "expect": false }
+  ]
+}
