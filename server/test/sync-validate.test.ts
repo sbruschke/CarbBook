@@ -304,12 +304,13 @@ describe('plan_item validation', () => {
         amount: 1,
         unit: 'g',
         position: 0,
+        label: null,
       },
     });
   });
 
   it.each([
-    [{ ref_type: 'snack' }, 'ref_type must be one of food, meal'],
+    [{ ref_type: 'snack' }, 'ref_type must be one of food, meal, quick'],
     [{ amount: -1 }, 'amount must be >= 0'],
     [{ amount: 'lots' }, 'amount must be a finite number'],
     [{ unit: '' }, 'unit must not be empty'],
@@ -317,5 +318,68 @@ describe('plan_item validation', () => {
     [{ position: -1 }, 'position must be >= 0'],
   ])('rejects plan_item %j', (fields, message) => {
     expect(validateRecord(TABLE_SPECS.plan_item, planItem('p1', fields))).toEqual({ ok: false, message });
+  });
+});
+
+describe('quick carbs rows (quick-carbs spec §2)', () => {
+  const meta = { updated_at: 1000, updated_by: 'phone', deleted: 0 };
+  const quickMeal = (fields: Record<string, unknown> = {}) => ({
+    id: 'q1', meal_id: 'm1', ref_type: 'quick', ref_id: 'q1', amount: 7, unit: 'carbs', position: 1, label: 'Ranch & salad', ...meta, ...fields,
+  });
+  const quickLog = (fields: Record<string, unknown> = {}) => ({
+    id: 'l1', log_entry_id: 'e1', ref_type: 'quick', ref_id: 'l1', display_name: 'Ranch & salad', amount: 7, unit: 'carbs', carbs_g: 7, ...meta, ...fields,
+  });
+  const quickPlan = (fields: Record<string, unknown> = {}) => planItem('p1', { id: 'qp', ref_type: 'quick', ref_id: 'qp', amount: 7, unit: 'carbs', label: null, ...fields });
+
+  it('accepts quick rows in all three tables, trimming the label', () => {
+    const meal = validateRecord(TABLE_SPECS.meal_item, quickMeal({ label: '  Ranch & salad  ' }));
+    expect(meal).toEqual({ ok: true, row: expect.objectContaining({ ref_type: 'quick', unit: 'carbs', amount: 7, label: 'Ranch & salad' }) });
+    expect(validateRecord(TABLE_SPECS.log_item, quickLog()).ok).toBe(true);
+    expect(validateRecord(TABLE_SPECS.plan_item, quickPlan()).ok).toBe(true);
+    expect(validateRecord(TABLE_SPECS.plan_item, quickPlan({ amount: 0 })).ok).toBe(true);
+    expect(validateRecord(TABLE_SPECS.plan_item, quickPlan({ amount: 2000 })).ok).toBe(true);
+  });
+
+  it('never resolves ref_id for a quick row', () => {
+    expect(validateRecord(TABLE_SPECS.meal_item, quickMeal({ ref_id: 'anything-at-all' })).ok).toBe(true);
+  });
+
+  it('treats a missing label as null', () => {
+    const { label: _label, ...noLabel } = quickMeal();
+    const result = validateRecord(TABLE_SPECS.meal_item, noLabel);
+    expect(result.ok && result.row.label).toBeNull();
+  });
+
+  it.each([
+    [quickMeal({ unit: 'g' }), 'quick carbs rows need unit "carbs"'],
+    [quickMeal({ amount: 2001 }), 'quick carbs amount must be 0-2000 g'],
+    [quickMeal({ amount: -1 }), 'amount must be >= 0'],
+    [quickMeal({ amount: 'lots' }), 'amount must be a finite number'],
+    [quickMeal({ label: 'x'.repeat(81) }), 'label is longer than 80 characters'],
+    [quickMeal({ ref_type: 'food', unit: 'g' }), 'label is only allowed on quick carbs rows'],
+    [quickMeal({ ref_type: 'snack' }), 'ref_type must be one of food, meal, quick'],
+  ])('rejects meal_item %#', (record, message) => {
+    expect(validateRecord(TABLE_SPECS.meal_item, record)).toEqual({ ok: false, message });
+  });
+
+  it.each([
+    [quickLog({ carbs_g: 8 }), 'quick carbs rows need carbs_g equal to amount'],
+    [quickLog({ unit: 'serving' }), 'quick carbs rows need unit "carbs"'],
+    [quickLog({ amount: 2001, carbs_g: 2001 }), 'quick carbs amount must be 0-2000 g'],
+  ])('rejects log_item %#', (record, message) => {
+    expect(validateRecord(TABLE_SPECS.log_item, record)).toEqual({ ok: false, message });
+  });
+
+  it.each([
+    [quickPlan({ unit: 'g' }), 'quick carbs rows need unit "carbs"'],
+    [quickPlan({ amount: 2001 }), 'quick carbs amount must be 0-2000 g'],
+    [planItem('p1', { label: 'Salsa' }), 'label is only allowed on quick carbs rows'],
+  ])('rejects plan_item %#', (record, message) => {
+    expect(validateRecord(TABLE_SPECS.plan_item, record)).toEqual({ ok: false, message });
+  });
+
+  it('still accepts food and meal rows with no label', () => {
+    expect(validateRecord(TABLE_SPECS.meal_item, mealItem('m1', 'food', 'f1')).ok).toBe(true);
+    expect(validateRecord(TABLE_SPECS.plan_item, planItem('p1', { label: null })).ok).toBe(true);
   });
 });

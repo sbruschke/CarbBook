@@ -1,10 +1,13 @@
 import {
   DOSE_LIMITS,
   isValidCarbGoal,
+  isValidQuickCarbs,
   isVolumeUnit,
   MAX_CARBS_PER_100ML,
   MAX_PORTION_CARBS_G,
   parseHHMM,
+  QUICK_LABEL_MAX,
+  QUICK_UNIT,
   VOLUME_UNITS,
 } from '@carbbook/core';
 
@@ -130,7 +133,29 @@ const optionalText = (max = 200): FieldSpec => ({ type: 'text', nullable: true, 
  * a dangling reference as incomplete carbs data rather than an error, which is the safe default —
  * once the parent arrives on a later push, the reference resolves normally.
  */
-const REF_TYPES = ['food', 'meal'] as const;
+const REF_TYPES = ['food', 'meal', 'quick'] as const;
+
+/** meal_item.label / plan_item.label: optional, quick rows only (quick-carbs spec §2). */
+const itemLabel: FieldSpec = { type: 'text', nullable: true, max: QUICK_LABEL_MAX, trim: true };
+
+/**
+ * Cross-field rules for item rows (quick-carbs spec §2). A quick row is grams of carbs with unit
+ * "carbs" inside the dose limit; its ref_id is never resolved (it is the row's own id by
+ * convention). `labels`: the table has a label column, which only quick rows may fill.
+ * `snapshotCarbs`: log_item, whose carbs_g must equal the amount for a quick row.
+ */
+export function checkItemKind(
+  r: Record<string, unknown>,
+  options: { labels: boolean; snapshotCarbs: boolean },
+): string | null {
+  if (r.ref_type !== 'quick') {
+    return options.labels && r.label != null ? 'label is only allowed on quick carbs rows' : null;
+  }
+  if (r.unit !== QUICK_UNIT) return `quick carbs rows need unit "${QUICK_UNIT}"`;
+  if (!isValidQuickCarbs(r.amount as number)) return `quick carbs amount must be 0-${DOSE_LIMITS.maxCarbsG} g`;
+  if (options.snapshotCarbs && r.carbs_g !== r.amount) return 'quick carbs rows need carbs_g equal to amount';
+  return null;
+}
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -201,7 +226,9 @@ export const TABLE_SPECS: Record<SyncTable, TableSpec> = {
       amount: { type: 'number', min: 0 },
       unit: text(64),
       position: { type: 'number', integer: true, min: 0 },
+      label: itemLabel,
     },
+    check: (r) => checkItemKind(r, { labels: true, snapshotCarbs: false }),
   },
   log_entry: {
     name: 'log_entry',
@@ -229,6 +256,7 @@ export const TABLE_SPECS: Record<SyncTable, TableSpec> = {
       unit: text(64),
       carbs_g: { type: 'number', min: 0 },
     },
+    check: (r) => checkItemKind(r, { labels: false, snapshotCarbs: true }),
   },
   dose_settings: {
     name: 'dose_settings',
@@ -264,7 +292,9 @@ export const TABLE_SPECS: Record<SyncTable, TableSpec> = {
       amount: { type: 'number', min: 0 },
       unit: text(64),
       position: { type: 'number', integer: true, min: 0 },
+      label: itemLabel,
     },
+    check: (r) => checkItemKind(r, { labels: true, snapshotCarbs: false }),
   },
 };
 
