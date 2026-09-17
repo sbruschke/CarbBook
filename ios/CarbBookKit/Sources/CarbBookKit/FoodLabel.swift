@@ -138,6 +138,7 @@ public func displayUnitName(_ unit: String, portions: [PortionData]) -> String {
     switch unit {
     case "floz": return "fl oz"
     case Units.serving: return "servings"
+    case Units.quick: return "g carbs"
     default: return unit
     }
 }

@@ -38,15 +38,13 @@ public struct PlanSuggestion: Equatable, Sendable {
     public static func lines(for items: [PlanItemData], catalog: Catalog, newLineId: () -> String) -> [CalculatorLine] {
         items.map { item in
             CalculatorLine(id: newLineId(), refType: item.refType, refId: item.refId,
-                           displayName: displayName(item, catalog: catalog), amount: item.amount, unit: item.unit)
+                           displayName: displayName(item, catalog: catalog), amount: item.amount, unit: item.unit,
+                           label: item.label)
         }
     }
 
     private static func displayName(_ item: PlanItemData, catalog: Catalog) -> String {
-        switch item.refType {
-        case .food: catalog.food(item.refId)?.name ?? "Unknown item"
-        case .meal: catalog.meal(item.refId)?.name ?? "Unknown item"
-        }
+        itemDisplayName(item.refType, item.refId, label: item.label, catalog: catalog)
     }
 
     /// Whether the Calculator should show a freshly computed suggestion: never once a slot has been
