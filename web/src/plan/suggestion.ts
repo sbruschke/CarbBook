@@ -1,6 +1,6 @@
 import { type CarbResult, type Catalog, itemCarbs, type PlanEntryData, type PlanItemData, type Synced, sumCarbs } from '@carbbook/core';
 import { isLive } from '../db/db';
-import { itemName } from '../ui/ItemEditor';
+import { itemLabel } from '../ui/ItemEditor';
 import { slotKey } from './slots';
 
 export interface Suggestion {
@@ -37,7 +37,7 @@ export function suggestionFor(args: {
     key,
     entry,
     items,
-    names: items.map((i) => itemName(args.catalog, i.ref_type, i.ref_id)),
+    names: items.map((i) => itemLabel(args.catalog, i)),
     carbs: sumCarbs(items.map((i) => itemCarbs(args.catalog, i.ref_type, i.ref_id, i.amount, i.unit))),
   };
 }

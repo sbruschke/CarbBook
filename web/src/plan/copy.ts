@@ -1,4 +1,4 @@
-import type { PlanEntryData, PlanItemData, Synced } from '@carbbook/core';
+import { itemRefId, type PlanEntryData, type PlanItemData, type Synced } from '@carbbook/core';
 import { isLive } from '../db/db';
 import type { Change, Store } from '../db/store';
 
@@ -66,16 +66,18 @@ export function copyChanges(args: {
         // merge: append after whatever is already in that slot.
         const base = itemsOf(existing.id).reduce((max, i) => Math.max(max, i.position + 1), 0);
         sourceItems.forEach((item, offset) => {
+          const id = newId();
           changes.push({
             table: 'plan_item',
             data: {
-              id: newId(),
+              id,
               plan_entry_id: existing.id,
               ref_type: item.ref_type,
-              ref_id: item.ref_id,
+              ref_id: itemRefId(item.ref_type, item.ref_id, id),
               amount: item.amount,
               unit: item.unit,
               position: base + offset,
+              label: item.label ?? null,
             },
           });
         });
@@ -94,16 +96,18 @@ export function copyChanges(args: {
         },
       });
       sourceItems.forEach((item, position) => {
+        const id = newId();
         changes.push({
           table: 'plan_item',
           data: {
-            id: newId(),
+            id,
             plan_entry_id: entryId,
             ref_type: item.ref_type,
-            ref_id: item.ref_id,
+            ref_id: itemRefId(item.ref_type, item.ref_id, id),
             amount: item.amount,
             unit: item.unit,
             position,
+            label: item.label ?? null,
           },
         });
       });
