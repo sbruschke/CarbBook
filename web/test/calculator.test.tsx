@@ -213,3 +213,65 @@ describe('Calculator', () => {
     expect(screen.queryByTestId('dose-units')).not.toBeInTheDocument();
   });
 });
+
+describe('quick carbs rows', () => {
+  it('adds a labelled quick row, counts it in the total and dose, and logs it as a snapshot', async () => {
+    const user = await setup();
+    renderWith(<Calculator />, services);
+    await addItem(user, 'tort', /Tortilla/); // 100 g → 48 g
+    await user.click(screen.getByRole('button', { name: '+ Carbs' }));
+    await user.type(screen.getByLabelText('Label for carbs row 1'), 'Ranch & salad');
+    await user.type(screen.getByLabelText('Grams of carbs for carbs row 1'), '7,5');
+    expect(screen.getByText('Ranch & salad — 7.5 g carbs')).toBeInTheDocument();
+    expect(screen.getByTestId('total-carbs')).toHaveTextContent('55.5 g');
+    expect(screen.getByTestId('dose-breakdown')).toHaveTextContent('55.5g ÷ 8');
+
+    await user.click(screen.getByRole('button', { name: 'Log it' }));
+    await screen.findByText(/Logged 55.5 g carbs/);
+    const [entry] = await services.db.log_entry.toArray();
+    expect(entry!.total_carbs_g).toBe(55.5);
+    const quick = (await services.db.log_item.toArray()).find((i) => i.ref_type === 'quick')!;
+    expect(quick).toMatchObject({ log_entry_id: entry!.id, display_name: 'Ranch & salad', amount: 7.5, unit: 'carbs', carbs_g: 7.5 });
+    expect(quick.ref_id).toBe(quick.id);
+  });
+
+  it('logs a blank label as "Extra carbs"', async () => {
+    const user = await setup();
+    renderWith(<Calculator />, services);
+    await user.click(await screen.findByRole('button', { name: '+ Carbs' }));
+    await user.type(screen.getByLabelText('Grams of carbs for carbs row 1'), '12');
+    await user.click(screen.getByRole('button', { name: 'Log it' }));
+    await screen.findByText(/Logged 12 g carbs/);
+    expect((await services.db.log_item.toArray())[0]).toMatchObject({ display_name: 'Extra carbs', carbs_g: 12 });
+  });
+
+  it.each(['', '1/2', '2001', '-3'])('refuses a dose and blocks logging for quick grams %j (fail closed)', async (text) => {
+    const user = await setup();
+    renderWith(<Calculator />, services);
+    await addItem(user, 'tort', /Tortilla/);
+    await user.click(screen.getByRole('button', { name: '+ Carbs' }));
+    if (text) await user.type(screen.getByLabelText('Grams of carbs for carbs row 1'), text);
+    expect(await screen.findByTestId('dose-refusal')).toHaveTextContent(REFUSAL_MESSAGES.incomplete_carbs);
+    expect(screen.queryByTestId('dose-units')).not.toBeInTheDocument();
+    expect(screen.getByTestId('total-carbs')).toHaveTextContent('(incomplete)');
+    await user.click(screen.getByRole('button', { name: 'Log it' }));
+    expect(await screen.findByText('Enter an amount for every item before logging.')).toBeInTheDocument();
+    expect(await services.db.log_entry.count()).toBe(0);
+  });
+
+  it('saves quick rows into a new meal with their label', async () => {
+    const user = await setup();
+    renderWith(<Calculator />, services);
+    await addItem(user, 'tort', /Tortilla/);
+    await user.click(screen.getByRole('button', { name: '+ Carbs' }));
+    await user.type(screen.getByLabelText('Label for carbs row 1'), ' Salsa ');
+    await user.type(screen.getByLabelText('Grams of carbs for carbs row 1'), '6');
+    await user.click(screen.getByRole('button', { name: 'Save as meal' }));
+    await user.type(screen.getByLabelText('Meal name'), 'Taco plate');
+    await user.click(screen.getByRole('button', { name: 'Save meal' }));
+    await screen.findByText('Saved meal "Taco plate".');
+    const quick = (await services.db.meal_item.toArray()).find((i) => i.ref_type === 'quick')!;
+    expect(quick).toMatchObject({ amount: 6, unit: 'carbs', label: 'Salsa', position: 1 });
+    expect(quick.ref_id).toBe(quick.id);
+  });
+});

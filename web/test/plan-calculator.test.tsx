@@ -1,3 +1,4 @@
+import type { PlanItemData } from '@carbbook/core';
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -148,5 +149,28 @@ describe('Calculator total against the window goal', () => {
     const total = await screen.findByTestId('total-carbs');
     expect(total).toHaveTextContent('72 g');
     expect(total).not.toHaveTextContent('goal');
+  });
+});
+
+describe('loading a slot with a quick carbs row', () => {
+  it('brings the label and grams along, and logging snapshots them', async () => {
+    const user = await setup();
+    await services.db.plan_item.put(
+      synced<PlanItemData>({ id: 'i2', plan_entry_id: 'p1', ref_type: 'quick', ref_id: 'i2', amount: 7, unit: 'carbs', position: 1, label: 'Ranch & salad' }),
+    );
+    renderWith(<Calculator />, services);
+    expect(await screen.findByTestId('plan-suggestion')).toHaveTextContent('Planned: Tortilla, Ranch & salad · 79 g');
+    await user.click(screen.getByRole('button', { name: 'Load' }));
+    expect(screen.getByLabelText('Label for carbs row 1')).toHaveValue('Ranch & salad');
+    expect(screen.getByLabelText('Grams of carbs for carbs row 1')).toHaveValue('7');
+    expect(screen.getByTestId('total-carbs')).toHaveTextContent('79 g');
+
+    await user.click(screen.getByRole('button', { name: 'Log it' }));
+    await screen.findByText(/Logged 79 g carbs/);
+    const quick = (await services.db.log_item.toArray()).find((i) => i.ref_type === 'quick')!;
+    expect(quick).toMatchObject({ display_name: 'Ranch & salad', amount: 7, unit: 'carbs', carbs_g: 7 });
+    expect(quick.id).not.toBe('i2');
+    expect(quick.ref_id).toBe(quick.id);
+    expect((await services.db.plan_entry.get('p1'))!.status).toBe('logged');
   });
 });

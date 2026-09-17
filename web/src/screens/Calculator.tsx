@@ -1,4 +1,4 @@
-import { activeSettings, type PlanEntryData, type Synced, sumCarbs } from '@carbbook/core';
+import { activeSettings, itemRefId, type PlanEntryData, type Synced, sumCarbs } from '@carbbook/core';
 import { useState } from 'react';
 import { lastDoseAt, useBgStatus, useCatalogData, useEligibleDoseVersions, useLogData, useNow, usePlanData, useUsdaPicks } from '../app/hooks';
 import { useServices } from '../app/services';
@@ -19,7 +19,7 @@ import type { SearchResult } from '../search/search';
 import { BgField, resolveBg } from '../ui/BgField';
 import { DoseCard } from '../ui/DoseCard';
 import { dayKey, formatCarbs, formatTime, fromDateTimeLocal, parseAmount, parseNonNegative, toDateTimeLocal } from '../ui/format';
-import { type DraftItem, draftItemCarbs, ItemEditor, itemName, newDraftItem } from '../ui/ItemEditor';
+import { type DraftItem, draftAmount, draftItemCarbs, ItemEditor, itemLabel, newDraftItem, newQuickItem } from '../ui/ItemEditor';
 import { ScannerDialog } from '../ui/ScannerDialog';
 import { SearchPanel } from '../ui/SearchPanel';
 import { saveUsdaFoodsFor } from '../usda/materialize';
@@ -67,7 +67,7 @@ export function Calculator() {
   const suggested = estimate?.ok ? estimate.units : null;
   const takenValue = takenEdited ? takenText : suggested === null ? '' : String(suggested);
   const autoWindow = windowName === null ? (estimate?.window?.name ?? null) : null;
-  const badAmounts = items.some((item) => parseAmount(item.amount) === null);
+  const badAmounts = items.some((item) => draftAmount(item) === null);
 
   const currentWindow = estimate?.window?.name ?? windowName;
   const windowGoal = settings?.windows.find((w) => w.name === currentWindow)?.carb_goal ?? null;
@@ -86,6 +86,11 @@ export function Calculator() {
 
   function addFood(refType: 'food' | 'meal', refId: string, extra = catalog) {
     setItems((current) => [...current, newDraftItem(extra, refType, refId, uuidv7(now()))]);
+  }
+
+  /** "+ Carbs": a carbs-only row (quick-carbs spec §2). */
+  function addQuick() {
+    setItems((current) => [...current, newQuickItem(uuidv7(now()))]);
   }
 
   async function pick(result: SearchResult) {
@@ -127,6 +132,7 @@ export function Calculator() {
         ref_id: item.ref_id,
         amount: String(item.amount),
         unit: item.unit,
+        label: item.label ?? '',
       })),
     ]);
     setLoadedSlot(suggestion.entry);
@@ -179,21 +185,23 @@ export function Calculator() {
           notes: null,
         },
       },
-      ...items.map(
-        (item, index): Change => ({
+      ...items.map((item, index): Change => {
+        const id = uuidv7(now());
+        return {
           table: 'log_item',
           data: {
-            id: uuidv7(now()),
+            id,
             log_entry_id: entryId,
             ref_type: item.ref_type,
-            ref_id: item.ref_id,
-            display_name: itemName(catalog, item.ref_type, item.ref_id),
-            amount: parseAmount(item.amount)!,
+            // A quick row points at itself; its label is the logged display name (quick-carbs spec §2).
+            ref_id: itemRefId(item.ref_type, item.ref_id, id),
+            display_name: itemLabel(catalog, item),
+            amount: draftAmount(item)!,
             unit: item.unit,
             carbs_g: results[index]!.carbs_g,
           },
-        }),
-      ),
+        };
+      }),
     ];
     // Spec §5: logging while a slot is loaded marks the slot and links the entry, in the SAME
     // transaction as the log rows — an offline device must never end up with one without the other.
@@ -242,7 +250,7 @@ export function Calculator() {
           {message}
         </p>
       )}
-      <SearchPanel onPick={(result) => void pick(result)} onScan={() => setScanning(true)} />
+      <SearchPanel onPick={(result) => void pick(result)} onScan={() => setScanning(true)} onAddCarbs={addQuick} />
       {scanning && <ScannerDialog onCode={(code) => void lookUp(code)} onClose={() => setScanning(false)} />}
       {suggestion && (
         <section className="card plan-suggestion" data-testid="plan-suggestion">
