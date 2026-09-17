@@ -24,7 +24,7 @@ struct PlanSlotEditorView: View {
         NavigationStack {
             Form {
                 Section {
-                    ForEach($items) { $item in
+                    ForEach($items, id: \.key) { $item in
                         if item.refType == .quick {
                             QuickCarbsRow(label: Binding(get: { $item.wrappedValue.label ?? "" },
                                                          set: { $item.wrappedValue.label = $0 }),

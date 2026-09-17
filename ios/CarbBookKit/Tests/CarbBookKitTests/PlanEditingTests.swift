@@ -315,6 +315,31 @@ final class PlanEditingTests: XCTestCase {
 
     // MARK: - Copy sheet target defaults and same-day guard (spec §4)
 
+    // MARK: - DraftItem.key (stable row identity for SwiftUI's ForEach, spec: no cross-row mix-ups)
+
+    func testTwoNewDraftItemsGetDifferentKeys() {
+        let a = PlanEditing.DraftItem(id: nil, refType: .food, refId: "rice", amount: 100, unit: "g")
+        let b = PlanEditing.DraftItem(id: nil, refType: .food, refId: "rice", amount: 100, unit: "g")
+        XCTAssertNotEqual(a.key, b.key, "two rows with the same (nil) id must still have distinct identities")
+    }
+
+    func testDraftItemKeySurvivesEditingOtherFields() {
+        var item = PlanEditing.DraftItem(id: nil, refType: .food, refId: "rice", amount: 100, unit: "g")
+        let key = item.key
+        item.amount = 50
+        item.unit = "cup"
+        item.label = "changed"
+        XCTAssertEqual(item.key, key, "editing a row's fields must not change its identity")
+    }
+
+    func testRemovingOneDraftItemDoesNotChangeAnothersKey() {
+        let a = PlanEditing.DraftItem(id: nil, refType: .food, refId: "rice", amount: 100, unit: "g")
+        let b = PlanEditing.DraftItem(id: nil, refType: .food, refId: "bread", amount: 50, unit: "g")
+        var items = [a, b]
+        items.remove(at: 0)
+        XCTAssertEqual(items[0].key, b.key, "removing a row must not change a surviving row's identity")
+    }
+
     func testDefaultCopyTargetIsNeverTheSourceDay() {
         XCTAssertEqual(PlanEditing.defaultCopyTarget(source: "2026-09-16"), "2026-09-17")
         XCTAssertNotEqual(PlanEditing.defaultCopyTarget(source: "2026-09-16"), "2026-09-16")
