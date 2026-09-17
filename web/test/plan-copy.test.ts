@@ -145,4 +145,24 @@ describe('copyChanges', () => {
     });
     expect(result.changes).toEqual([]);
   });
+
+  it('copies a quick carbs row with its label and re-points ref_id at the new row', () => {
+    counter = 0;
+    const quick = synced<PlanItemData>({ id: 'q1', plan_entry_id: 'src', ref_type: 'quick', ref_id: 'q1', amount: 7, unit: 'carbs', position: 2, label: 'Ranch & salad' });
+    const result = copyChanges({
+      pairs: [{ from: '2026-09-16', to: '2026-09-17' }],
+      entries: source,
+      items: [...sourceItems, quick],
+      mode: 'skip',
+      newId,
+    });
+    const items = result.changes.filter((c) => c.table === 'plan_item').map((c) => c.data as PlanItemData);
+    expect(items.find((i) => i.ref_type === 'quick')).toEqual({
+      id: 'new-4', plan_entry_id: 'new-1', ref_type: 'quick', ref_id: 'new-4', amount: 7, unit: 'carbs', position: 2, label: 'Ranch & salad',
+    });
+    expect(items.filter((i) => i.ref_type === 'food').map((i) => [i.ref_id, i.label])).toEqual([
+      ['tortilla', null],
+      ['tortilla', null],
+    ]);
+  });
 });

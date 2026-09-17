@@ -1,13 +1,12 @@
-import type { PlanEntryData } from '@carbbook/core';
+import { itemRefId, type PlanEntryData } from '@carbbook/core';
 import type { Change, Store } from '../db/store';
-import { parseAmount } from '../ui/format';
-import type { DraftItem } from '../ui/ItemEditor';
+import { draftAmount, type DraftItem, draftLabel } from '../ui/ItemEditor';
 import { saveUsdaFoodsFor } from '../usda/materialize';
 
 /**
  * Saves a plan slot and its items in one transaction (item key = plan_item id, order = position),
- * exactly as `saveMeal` does for meals. Every amount must already parse with `parseAmount` — the
- * editor blocks saving otherwise, so `!` here is safe.
+ * exactly as `saveMeal` does for meals. Every amount must already be valid (`draftAmount`
+ * non-null) — the editor blocks saving otherwise, so `!` here is safe.
  */
 export async function saveSlot(
   store: Store,
@@ -27,10 +26,11 @@ export async function saveSlot(
           id: item.key,
           plan_entry_id: entry.id,
           ref_type: item.ref_type,
-          ref_id: item.ref_id,
-          amount: parseAmount(item.amount)!,
+          ref_id: itemRefId(item.ref_type, item.ref_id, item.key),
+          amount: draftAmount(item)!,
           unit: item.unit,
           position,
+          label: draftLabel(item),
         },
       }),
     ),

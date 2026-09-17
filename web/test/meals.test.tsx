@@ -76,3 +76,58 @@ describe('Meals', () => {
     expect(screen.getAllByTestId('item-row')).toHaveLength(1);
   });
 });
+
+describe('quick carbs components', () => {
+  it('adds a labelled quick component and counts it per serving', async () => {
+    const user = await setup();
+    renderWith(<Meals />, services);
+    await user.click(await screen.findByRole('button', { name: 'New meal' }));
+    await user.type(screen.getByLabelText('Name'), 'Taco night');
+    await user.type(screen.getByLabelText('Add a component'), 'tort');
+    await user.click(await screen.findByRole('button', { name: /Tortilla/ }));
+    await user.click(screen.getByRole('button', { name: '+ Carbs' }));
+    await user.type(screen.getByLabelText('Label for carbs row 1'), 'Salsa');
+    await user.type(screen.getByLabelText('Grams of carbs for carbs row 1'), '6');
+    expect(screen.getByTestId('meal-carbs')).toHaveTextContent('54 g carbs per serving');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await screen.findByRole('button', { name: /Taco night/ });
+    const quick = (await services.db.meal_item.toArray()).find((i) => i.ref_type === 'quick')!;
+    expect(quick).toMatchObject({ amount: 6, unit: 'carbs', label: 'Salsa', position: 1 });
+    expect(quick.ref_id).toBe(quick.id);
+    const food = (await services.db.meal_item.toArray()).find((i) => i.ref_type === 'food')!;
+    expect(food.label).toBeNull();
+  });
+
+  it('refuses to save a meal whose quick component has no valid grams', async () => {
+    const user = await setup();
+    renderWith(<Meals />, services);
+    await user.click(await screen.findByRole('button', { name: 'New meal' }));
+    await user.type(screen.getByLabelText('Name'), 'Mystery');
+    await user.click(screen.getByRole('button', { name: '+ Carbs' }));
+    await user.type(screen.getByLabelText('Grams of carbs for carbs row 1'), '2001');
+    expect(screen.getByTestId('meal-carbs')).toHaveTextContent('Incomplete carb data');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Every component needs an amount.');
+    expect(await services.db.meal.count()).toBe(0);
+  });
+
+  it('edits an existing quick component', async () => {
+    const user = await setup();
+    await services.db.meal.put(synced(mealData({ id: 'salsa-plate', name: 'Salsa plate' })));
+    await services.db.meal_item.bulkPut([
+      synced(mealItemData({ id: 'i-tortilla', meal_id: 'salsa-plate', ref_id: 'tortilla', position: 0 })),
+      synced(mealItemData({ id: 'i-salsa', meal_id: 'salsa-plate', ref_type: 'quick', ref_id: 'i-salsa', amount: 6, unit: 'carbs', label: 'Salsa', position: 1 })),
+    ]);
+    renderWith(<Meals />, services);
+    await user.click(await screen.findByRole('button', { name: /Salsa plate/ }));
+    expect(screen.getByLabelText('Label for carbs row 1')).toHaveValue('Salsa');
+    const grams = screen.getByLabelText('Grams of carbs for carbs row 1');
+    await user.clear(grams);
+    await user.type(grams, '8');
+    expect(screen.getByTestId('meal-carbs')).toHaveTextContent('56 g carbs per serving');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(async () => expect((await services.db.meal_item.get('i-salsa'))?.amount).toBe(8));
+    expect(await services.db.meal_item.get('i-salsa')).toMatchObject({ label: 'Salsa', ref_id: 'i-salsa', unit: 'carbs' });
+  });
+});

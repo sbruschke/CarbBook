@@ -1,7 +1,7 @@
 import type { DoseWindow, PlanEntryData, PlanItemData, Synced } from '@carbbook/core';
 import { describe, expect, it } from 'vitest';
 import { buildCatalog } from '../src/db/catalog';
-import { buildSlots, dayTotal, slotKey, windowsFor } from '../src/plan/slots';
+import { buildSlots, dayCarbs, dayTotalText, slotKey, windowsFor } from '../src/plan/slots';
 import { foodData, synced } from './helpers';
 import { SEED_SETTINGS } from './render';
 
@@ -85,22 +85,21 @@ describe('windowsFor', () => {
   });
 });
 
-describe('dayTotal', () => {
-  it('sums the slots carbs and the window goals', () => {
+describe('dayCarbs / dayTotalText (quick-carbs spec §3: no day goal)', () => {
+  it('sums the slots carbs', () => {
+    const slots = buildSlots({ dates: ['2026-09-16'], windows: WINDOWS, entries: [entry({})], items: [item({})], catalog });
+    expect(dayCarbs(slots)).toEqual({ carbs_g: 48, complete: true });
+  });
+
+  it('counts quick carbs rows', () => {
     const slots = buildSlots({
       dates: ['2026-09-16'],
       windows: WINDOWS,
       entries: [entry({})],
-      items: [item({})],
+      items: [item({}), item({ id: 'q1', ref_type: 'quick', ref_id: 'q1', amount: 7, unit: 'carbs', position: 1, label: 'Salsa' })],
       catalog,
     });
-    expect(dayTotal(slots)).toEqual({ carbs: { carbs_g: 48, complete: true }, goal: { min: 80, max: 130 } });
-  });
-
-  it('has no day goal when no window in the day has one', () => {
-    const noGoals = WINDOWS.map((w) => ({ ...w, carb_goal: null }));
-    const slots = buildSlots({ dates: ['2026-09-16'], windows: noGoals, entries: [], items: [], catalog });
-    expect(dayTotal(slots).goal).toBeNull();
+    expect(dayCarbs(slots)).toEqual({ carbs_g: 55, complete: true });
   });
 
   it('is incomplete when any slot in the day is incomplete', () => {
@@ -111,7 +110,13 @@ describe('dayTotal', () => {
       items: [item({ ref_id: 'not-here-yet' })],
       catalog,
     });
-    expect(dayTotal(slots).carbs.complete).toBe(false);
+    expect(dayCarbs(slots).complete).toBe(false);
+  });
+
+  it('formats plain grams, or "missing data"', () => {
+    expect(dayTotalText({ carbs_g: 72, complete: true })).toBe('72 g');
+    expect(dayTotalText({ carbs_g: 80.4167, complete: true })).toBe('80.4 g');
+    expect(dayTotalText({ carbs_g: 12, complete: false })).toBe('missing data');
   });
 });
 

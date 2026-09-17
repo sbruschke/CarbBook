@@ -9,6 +9,7 @@ struct CalculatorView: View {
     @State private var showAdd = false
     @State private var showScanner = false
     @State private var showSaveMeal = false
+    @State private var showQuick = false
 
     var body: some View {
         NavigationStack {
@@ -36,6 +37,12 @@ struct CalculatorView: View {
             .sheet(isPresented: $showSaveMeal) {
                 SaveMealSheet { name, yield, weight in
                     try model.saveMeal(name: name, yieldServings: yield, totalWeightG: weight, app)
+                }
+            }
+            .sheet(isPresented: $showQuick) {
+                QuickCarbsSheet { label, grams in
+                    model.addQuick(label: label, grams: grams)
+                    model.recompute(app)
                 }
             }
             .alert(model.message ?? "", isPresented: Binding(get: { model.message != nil }, set: { if !$0 { model.message = nil } })) {
@@ -84,12 +91,20 @@ struct CalculatorView: View {
                 .accessibilityElement(children: .contain)
             }
             ForEach($model.lines) { $line in
-                LineRow(line: $line, units: model.units(for: line), portions: model.catalog.portions(line.refId),
-                        carbs: model.carbs(for: line))
+                if line.refType == .quick {
+                    QuickCarbsRow(label: Binding(get: { $line.wrappedValue.label ?? "" },
+                                                 set: { $line.wrappedValue.label = $0 }),
+                                  amount: $line.amount, carbs: model.carbs(for: line))
+                } else {
+                    LineRow(line: $line, units: model.units(for: line), portions: model.catalog.portions(line.refId),
+                            carbs: model.carbs(for: line))
+                }
             }
             .onDelete { model.lines.remove(atOffsets: $0) }
             HStack {
                 Button { showAdd = true } label: { Label("Add food or meal", systemImage: "plus.circle") }
+                Spacer()
+                Button("+ Carbs") { showQuick = true }
                 Spacer()
                 Button { showScanner = true } label: { Label("Scan", systemImage: "barcode.viewfinder") }
             }

@@ -124,15 +124,21 @@ private func mealItemCarbs(_ catalog: Catalog, _ mealId: Id, _ amount: Double, _
     return CarbResult(carbsG: total.carbsG * factor, complete: total.complete)
 }
 
+/// Quick carbs row: the amount is the carbs; a wrong unit or out-of-range amount is incomplete.
+private func quickItemCarbs(_ amount: Double, _ unit: String) -> CarbResult {
+    unit == Units.quick && isValidQuickCarbs(amount) ? CarbResult(carbsG: amount, complete: true) : .incomplete
+}
+
 private func resolveItem(_ catalog: Catalog, _ refType: RefType, _ refId: Id, _ amount: Double, _ unit: String,
                          _ visiting: inout Set<Id>) -> CarbResult {
     switch refType {
     case .food: foodItemCarbs(catalog, refId, amount, unit)
     case .meal: mealItemCarbs(catalog, refId, amount, unit, &visiting)
+    case .quick: quickItemCarbs(amount, unit)
     }
 }
 
-/// Carbs for one line item (a food or a meal) at the given amount and unit.
+/// Carbs for one line item (a food, a meal or a quick carbs row) at the given amount and unit.
 public func itemCarbs(_ catalog: Catalog, _ refType: RefType, _ refId: Id, _ amount: Double, _ unit: String) -> CarbResult {
     var visiting = Set<Id>()
     return resolveItem(catalog, refType, refId, amount, unit, &visiting)

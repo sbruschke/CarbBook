@@ -12,6 +12,7 @@ const UNIT_NAMES: Record<string, string> = {
   floz: 'fl oz',
   cup: 'cup',
   serving: 'servings',
+  carbs: 'g carbs',
 };
 
 const trim = (n: number, digits: number) => String(Number(n.toFixed(digits)));

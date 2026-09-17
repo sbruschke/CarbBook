@@ -13,7 +13,13 @@ function describe(result: SearchResult): string {
 }
 
 /** Unified search (spec §8): recents before typing, then ranked local results. */
-export function SearchPanel(props: { onPick: (result: SearchResult) => void; onScan?: () => void; label?: string }) {
+export function SearchPanel(props: {
+  onPick: (result: SearchResult) => void;
+  onScan?: () => void;
+  /** "+ Carbs": add a carbs-only row (quick-carbs spec §2). */
+  onAddCarbs?: () => void;
+  label?: string;
+}) {
   const index = useSearchIndex();
   const [query, setQuery] = useState('');
   const typing = query.trim() !== '';
@@ -32,6 +38,11 @@ export function SearchPanel(props: { onPick: (result: SearchResult) => void; onS
         {props.onScan && (
           <button type="button" onClick={props.onScan}>
             Scan
+          </button>
+        )}
+        {props.onAddCarbs && (
+          <button type="button" onClick={props.onAddCarbs}>
+            + Carbs
           </button>
         )}
       </div>

@@ -120,7 +120,8 @@ public struct MealData: Codable, Equatable, Sendable {
 }
 
 public enum RefType: String, Codable, Sendable {
-    case food, meal
+    /// `quick`: a carbs-only row with no food (quick-carbs spec §2) — amount is grams of carbs, unit "carbs".
+    case food, meal, quick
 }
 
 public struct MealItemData: Codable, Equatable, Sendable {
@@ -131,18 +132,36 @@ public struct MealItemData: Codable, Equatable, Sendable {
     public var amount: Double
     public var unit: String
     public var position: Int
+    /// Quick carbs rows only: optional text, at most 80 characters.
+    public var label: String?
     public var deleted: Int?
 
-    public init(id: Id, mealId: Id, refType: RefType, refId: Id, amount: Double, unit: String, position: Int, deleted: Int? = nil) {
+    public init(id: Id, mealId: Id, refType: RefType, refId: Id, amount: Double, unit: String, position: Int,
+                label: String? = nil, deleted: Int? = nil) {
         self.id = id; self.mealId = mealId; self.refType = refType; self.refId = refId
-        self.amount = amount; self.unit = unit; self.position = position; self.deleted = deleted
+        self.amount = amount; self.unit = unit; self.position = position; self.label = label; self.deleted = deleted
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, amount, unit, position, deleted
+        case id, amount, unit, position, label, deleted
         case mealId = "meal_id"
         case refType = "ref_type"
         case refId = "ref_id"
+    }
+
+    /// Explicit, so a nil `label` is sent as JSON `null`: the server reads a missing key as "keep the
+    /// stored value", so only an explicit null clears a label.
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(mealId, forKey: .mealId)
+        try container.encode(refType, forKey: .refType)
+        try container.encode(refId, forKey: .refId)
+        try container.encode(amount, forKey: .amount)
+        try container.encode(unit, forKey: .unit)
+        try container.encode(position, forKey: .position)
+        try container.encode(label, forKey: .label)
+        try container.encodeIfPresent(deleted, forKey: .deleted)
     }
 }
 

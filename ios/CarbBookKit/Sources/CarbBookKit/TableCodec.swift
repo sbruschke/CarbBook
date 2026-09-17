@@ -10,19 +10,21 @@ enum TableCodec {
         "portion": ["food_id", "label", "kind", "quantity", "grams", "carbs_g"],
         "barcode": ["code", "food_id"],
         "meal": ["name", "yield_servings", "total_weight_g", "notes"],
-        "meal_item": ["meal_id", "ref_type", "ref_id", "amount", "unit", "position"],
+        "meal_item": ["meal_id", "ref_type", "ref_id", "amount", "unit", "position", "label"],
         "log_entry": ["eaten_at", "window_name", "bg_mgdl", "bg_source", "bg_trend", "total_carbs_g", "suggested_units",
                       "taken_units", "settings_version_id", "notes"],
         "log_item": ["log_entry_id", "ref_type", "ref_id", "display_name", "amount", "unit", "carbs_g"],
         "dose_settings": ["effective_from", "windows", "correction", "rounding"],
         "plan_entry": ["date", "window_name", "status", "note", "log_entry_id"],
-        "plan_item": ["plan_entry_id", "ref_type", "ref_id", "amount", "unit", "position"],
+        "plan_item": ["plan_entry_id", "ref_type", "ref_id", "amount", "unit", "position", "label"],
     ]
     /// Stored as JSON text, sent as JSON objects/arrays on the wire. Explicit nulls inside them
     /// (e.g. `rounding.round_down_below_bg`) are preserved: `JSONValue.null` encodes as `null`.
-    /// Columns added by the any-unit foods migration. Omitted from the push of a row that was pending
-    /// before the migration (see `Schema.v2AnyUnitFoods`), so the server keeps its stored values.
-    static let anyUnitColumns: [String: [String]] = ["food": ["carbs_per_100ml"], "portion": ["carbs_g"]]
+    /// Columns added by later migrations (`Schema.v2AnyUnitFoods`, `Schema.v4QuickCarbs`). Omitted from
+    /// the push of a row that was pending before its table gained them, so the server keeps its values.
+    static let legacyColumns: [String: [String]] = [
+        "food": ["carbs_per_100ml"], "portion": ["carbs_g"], "meal_item": ["label"], "plan_item": ["label"],
+    ]
     static let jsonColumns: Set<String> = ["windows", "correction", "rounding"]
     static let integerColumns: Set<String> = ["eaten_at", "effective_from", "position", "updated_at", "deleted", "server_seq"]
 

@@ -1,3 +1,4 @@
+import type { PlanItemData } from '@carbbook/core';
 import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -46,6 +47,35 @@ describe('SlotEditor', () => {
     await user.type(amount, '11/2');
     await user.click(screen.getByRole('button', { name: 'Save slot' }));
 
+    expect(await screen.findByRole('alert')).toHaveTextContent('Every item needs an amount.');
+    expect(await services.db.plan_entry.count()).toBe(0);
+  });
+
+  it('adds a quick carbs row and saves it with its label', async () => {
+    const { user, data } = await setup();
+    renderWith(<SlotEditor date="2026-09-16" windowName="Dinner" slot={null} data={data} onDone={() => {}} />, services);
+    await user.type(screen.getByLabelText('Add to this slot'), 'tort');
+    await user.click(await screen.findByRole('button', { name: /Tortilla/ }));
+    await user.click(screen.getByRole('button', { name: '+ Carbs' }));
+    await user.type(screen.getByLabelText('Label for carbs row 1'), 'Ranch & salad');
+    await user.type(screen.getByLabelText('Grams of carbs for carbs row 1'), '7');
+    expect(screen.getByTestId('slot-carbs')).toHaveTextContent('55 g');
+    await user.click(screen.getByRole('button', { name: 'Save slot' }));
+
+    const items = (await services.db.plan_item.toArray()).sort((a, b) => a.position - b.position);
+    expect(items.map((i) => [i.ref_type, i.amount, i.unit, i.label])).toEqual([
+      ['food', 100, 'g', null],
+      ['quick', 7, 'carbs', 'Ranch & salad'],
+    ]);
+    expect(items[1]!.ref_id).toBe(items[1]!.id);
+  });
+
+  it('refuses to save a slot whose quick row has no valid grams', async () => {
+    const { user, data } = await setup();
+    renderWith(<SlotEditor date="2026-09-16" windowName="Dinner" slot={null} data={data} onDone={() => {}} />, services);
+    await user.click(screen.getByRole('button', { name: '+ Carbs' }));
+    await user.type(screen.getByLabelText('Grams of carbs for carbs row 1'), '1/2');
+    await user.click(screen.getByRole('button', { name: 'Save slot' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Every item needs an amount.');
     expect(await services.db.plan_entry.count()).toBe(0);
   });
@@ -116,12 +146,16 @@ describe('Plan cells', () => {
     expect(within(cell).getByLabelText('144 g, goal 50 to 80, far outside')).toHaveClass('goal-out');
   });
 
-  it('shows a day total against the summed day goal', async () => {
+  it('shows the day total as plain grams with no goal colour or goal text', async () => {
     await setup();
     await seedLunch();
     renderWith(<Plan />, services);
     const total = await screen.findByTestId('plan-day-total-2026-09-16');
-    expect(total).toHaveTextContent('72 g · goal');
+    expect(total).toHaveTextContent('Day total: 72 g');
+    expect(total).not.toHaveTextContent('goal');
+    expect(total).not.toHaveTextContent('on target');
+    expect(total).not.toHaveClass('goal');
+    expect(total.querySelector('.goal')).toBeNull();
   });
 
   it('shows "missing data" and no number when an item does not resolve', async () => {
@@ -131,6 +165,18 @@ describe('Plan cells', () => {
     renderWith(<Plan />, services);
     const cell = await screen.findByTestId('plan-cell-2026-09-16-Lunch');
     expect(cell).toHaveTextContent('missing data');
+  });
+
+  it('names a quick carbs row by its label and counts it in the slot', async () => {
+    await setup();
+    await seedLunch(); // 72 g
+    await services.db.plan_item.put(
+      sync<PlanItemData>({ id: 'q-2026-09-16', plan_entry_id: 'p-2026-09-16', ref_type: 'quick', ref_id: 'q-2026-09-16', amount: 7, unit: 'carbs', position: 1, label: 'Ranch & salad' }),
+    );
+    renderWith(<Plan />, services);
+    const cell = await screen.findByTestId('plan-cell-2026-09-16-Lunch');
+    expect(cell).toHaveTextContent('Tortilla, Ranch & salad');
+    expect(cell).toHaveTextContent('79 g · goal 50–80');
   });
 });
 

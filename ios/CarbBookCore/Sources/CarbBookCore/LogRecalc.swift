@@ -34,6 +34,7 @@ public func recalculateLogEntry(
         switch item.refType {
         case .food: if let food = catalog.food(item.refId) { updated.displayName = food.name }
         case .meal: if let meal = catalog.meal(item.refId) { updated.displayName = meal.name }
+        case .quick: break // a quick row keeps its logged label
         }
         newItems.append(updated)
     }

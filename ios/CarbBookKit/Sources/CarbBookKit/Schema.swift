@@ -16,6 +16,9 @@ enum Schema {
         migrator.registerMigration("v3-meal-plan") { db in
             try db.execute(sql: v3MealPlan)
         }
+        migrator.registerMigration("v4-quick-carbs") { db in
+            try db.execute(sql: v4QuickCarbs)
+        }
         return migrator
     }
 
@@ -24,6 +27,19 @@ enum Schema {
     /// back as a `sync_rejection` instead of failing an INSERT here. No foreign keys, like every other
     /// synced table, and every reference column is nullable-safe (`note`, `log_entry_id`).
     /// No pull-cursor reset: these tables are new, so their rows arrive on the next ordinary pull.
+    /// Quick carbs rows (quick-carbs spec §2): `label` on meal_item and plan_item. The local tables have
+    /// no ref_type CHECK, so `quick` rows need no rebuild. App 0.2.0 stored pulled rows without `label`
+    /// (no column) and could not decode `quick` rows at all, so the pull cursor restarts at 0: a full
+    /// re-pull fills them in (`shouldApplyPulled` re-applies an equal version; newer local edits win).
+    /// Rows pending at migration time were edited without knowing `label`; `sync_legacy_pending` makes
+    /// their push omit it (server keeps its stored value) until they are edited again.
+    static let v4QuickCarbs = """
+    ALTER TABLE meal_item ADD COLUMN label TEXT;
+    ALTER TABLE plan_item ADD COLUMN label TEXT;
+    INSERT OR IGNORE INTO sync_legacy_pending (key) SELECT key FROM sync_pending WHERE table_name IN ('meal_item', 'plan_item');
+    UPDATE sync_state SET value = '0' WHERE key = 'pull_cursor';
+    """
+
     static let v3MealPlan = """
     CREATE TABLE plan_entry (
       id TEXT PRIMARY KEY, date TEXT NOT NULL, window_name TEXT NOT NULL, status TEXT NOT NULL,

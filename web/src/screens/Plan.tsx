@@ -8,9 +8,9 @@ import { applyCopy, conflictDates, type CopyMode, copyChanges } from '../plan/co
 import { CopyDialog } from '../plan/CopyDialog';
 import { goalView } from '../plan/goal';
 import { SlotEditor } from '../plan/SlotEditor';
-import { buildSlots, dayTotal, type Slot, windowsFor } from '../plan/slots';
+import { buildSlots, dayCarbs, dayTotalText, type Slot, windowsFor } from '../plan/slots';
 import { dayKey, formatDayLabel, shiftDay, startOfWeek, weekDates } from '../ui/format';
-import { itemName } from '../ui/ItemEditor';
+import { itemLabel } from '../ui/ItemEditor';
 
 export function Plan() {
   const { now, store } = useServices();
@@ -188,11 +188,8 @@ export function Plan() {
                 onEdit={() => setEditing({ date: slot.date, windowName: slot.windowName })}
               />
             ))}
-            <p className="total">
-              <GoalReadout
-                view={goalView(dayTotal(byDate.get(date) ?? []).carbs, dayTotal(byDate.get(date) ?? []).goal)}
-                testId={`plan-day-total-${date}`}
-              />
+            <p className="total" data-testid={`plan-day-total-${date}`}>
+              Day total: {dayTotalText(dayCarbs(byDate.get(date) ?? []))}
             </p>
           </section>
         ))}
@@ -220,7 +217,7 @@ function GoalReadout(props: { view: ReturnType<typeof goalView>; testId: string 
 function PlanCell(props: { slot: Slot; catalog: Catalog; onEdit: () => void }) {
   const { slot, catalog } = props;
   const view = goalView(slot.carbs, slot.goal);
-  const names = slot.items.map((i) => itemName(catalog, i.ref_type, i.ref_id)).join(', ');
+  const names = slot.items.map((i) => itemLabel(catalog, i)).join(', ');
   return (
     <div className="plan-cell" data-testid={`plan-cell-${slot.date}-${slot.windowName}`}>
       <h3>{slot.windowName}</h3>

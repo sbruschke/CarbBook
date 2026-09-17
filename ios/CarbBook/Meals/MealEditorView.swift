@@ -23,6 +23,7 @@ struct MealEditorView: View {
     @State private var allMeals: [MealData] = []
     @State private var allItems: [MealItemData] = []
     @State private var showAdd = false
+    @State private var showQuick = false
     @State private var error: String?
     @State private var loaded = false
 
@@ -63,6 +64,7 @@ struct MealEditorView: View {
                     items.remove(atOffsets: offsets)
                 }
                 Button("Add component") { showAdd = true }
+                Button("+ Carbs") { showQuick = true }
             }
             if let error { Section { Text(error).foregroundStyle(.red) } }
         }
@@ -74,16 +76,27 @@ struct MealEditorView: View {
         .sheet(isPresented: $showAdd) {
             AddItemSheet { hit in add(hit) }
         }
+        .sheet(isPresented: $showQuick) {
+            QuickCarbsSheet { label, grams in addQuick(label: label, grams: grams) }
+        }
         .onAppear(perform: load)
     }
 
+    @ViewBuilder
     private func componentRow(_ item: Binding<MealItemData>, catalog: InMemoryCatalog) -> some View {
         let value = item.wrappedValue
-        let displayName = value.refType == .food ? catalog.food(value.refId)?.name : catalog.meal(value.refId)?.name
-        let units = value.refType == .food
-            ? catalog.food(value.refId).map { foodUnits($0, catalog.portions(value.refId)) } ?? [value.unit]
-            : catalog.meal(value.refId).map { mealUnits($0) } ?? [value.unit]
         let carbs = itemCarbs(catalog, value.refType, value.refId, value.amount, value.unit)
+        if value.refType == .quick {
+            QuickCarbsRow(label: Binding(get: { item.wrappedValue.label ?? "" }, set: { item.wrappedValue.label = $0 }),
+                          amount: item.amount, carbs: carbs)
+        } else {
+            foodOrMealRow(item, catalog: catalog, carbs: carbs)
+        }
+    }
+
+    private func foodOrMealRow(_ item: Binding<MealItemData>, catalog: InMemoryCatalog, carbs: CarbResult) -> some View {
+        let value = item.wrappedValue
+        let units = itemUnits(value.refType, value.refId, currentUnit: value.unit, catalog: catalog)
         let amountText = amountTexts[value.id] ?? AmountInput.text(for: value.amount)
         let amountBinding = Binding<String>(
             get: { amountText },
@@ -93,7 +106,7 @@ struct MealEditorView: View {
             })
         return VStack(alignment: .leading) {
             HStack {
-                Text(displayName ?? "Missing \(value.refType.rawValue)")
+                Text(itemDisplayName(value.refType, value.refId, label: nil, catalog: catalog))
                 Spacer()
                 Text(carbs.complete ? "\(formatNumber(carbs.carbsG))g" : "missing data")
                     .foregroundStyle(carbs.complete ? Color.primary : Color.orange)
@@ -108,6 +121,14 @@ struct MealEditorView: View {
                 Text(AmountInput.invalidMessage).font(.caption).foregroundStyle(.red)
             }
         }
+    }
+
+    /// "+ Carbs": a quick component that points at itself (quick-carbs spec §2).
+    private func addQuick(label: String?, grams: Double) {
+        let id = app.store.newId()
+        items.append(MealItemData(id: id, mealId: mealId, refType: .quick, refId: id, amount: grams,
+                                  unit: Units.quick, position: items.count, label: label))
+        error = nil
     }
 
     private func load() {
@@ -192,6 +213,7 @@ struct MealEditorView: View {
                 var positioned = item
                 positioned.position = index
                 positioned.deleted = nil
+                positioned.label = positioned.refType == .quick ? normalizeQuickLabel(positioned.label) : nil
                 changes.append(try SyncChange.encode("meal_item", positioned))
             }
             try app.save(changes)

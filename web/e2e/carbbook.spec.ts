@@ -156,3 +156,106 @@ test('plan a slot, copy the day, load it in the Calculator and log offline, then
   expect(rows('plan_item').filter((i) => i.deleted === 0).length).toBeGreaterThanOrEqual(2);
   await api.dispose();
 });
+
+test('quick carbs: plan 4 taquitos + 7 g, load, log 75 g, slot logged with both rows (quick-carbs spec §5)', async ({ page, baseURL }) => {
+  // Login first, then reuse the page's authenticated session (page.request shares its cookies)
+  // for the API calls below — the suite's other tests already spend most of the server's login
+  // rate-limit budget (LOGIN_RATE_LIMIT: 5 per 15 min), so this test must not log in twice.
+  await page.goto('/');
+  await page.getByLabel('Username').fill(USERNAME);
+  await page.getByLabel('Password').fill(PASSWORD);
+  await page.getByRole('button', { name: 'Sign in' }).click();
+  await expect(page.getByRole('heading', { name: 'Calculator' })).toBeVisible();
+
+  // A portion-only food (17 g per taquito), pushed through the API as another device would.
+  const meta = { updated_at: Date.now(), updated_by: 'e2e-seed', deleted: 0 };
+  const seeded = await page.request.post(`${baseURL}/api/sync/push`, {
+    data: {
+      changes: [
+        { table: 'food', record: { id: 'e2e-taquitos', name: 'Taquitos', source: 'custom', carbs_per_100g: null, ...meta } },
+        {
+          table: 'portion',
+          record: { id: 'e2e-taquito', food_id: 'e2e-taquitos', label: 'taquito', kind: 'count', quantity: 1, grams: null, carbs_g: 17, ...meta },
+        },
+      ],
+    },
+  });
+  expect(((await seeded.json()) as { results: { status: string }[] }).results.map((r) => r.status)).toEqual(['accepted', 'accepted']);
+
+  await page.getByRole('link', { name: 'Settings' }).click();
+  await page.getByRole('button', { name: 'Sync now' }).click();
+  await expect(page.getByTestId('pending-count')).toHaveText('0 pending changes');
+
+  const today = await page.evaluate(() => {
+    const d = new Date();
+    const p = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+  });
+
+  // Plan tonight's dinner: 4 taquitos + a quick row.
+  await page.getByRole('link', { name: 'Plan' }).click();
+  const cell = page.getByTestId(`plan-cell-${today}-Dinner`);
+  await cell.getByRole('button').click();
+  await page.getByLabel('Add to this slot').fill('taquito');
+  await page.getByRole('button', { name: /Taquitos/ }).click();
+  await page.getByLabel('Amount of Taquitos').fill('4');
+  await page.getByRole('button', { name: '+ Carbs' }).click();
+  await page.getByLabel('Label for carbs row 1').fill('Ranch & salad');
+  await page.getByLabel('Grams of carbs for carbs row 1').fill('7');
+  await expect(page.getByText('Ranch & salad — 7 g carbs')).toBeVisible();
+  await expect(page.getByTestId('slot-carbs')).toContainText('75 g');
+  await page.getByRole('button', { name: 'Save slot' }).click();
+  await expect(cell).toContainText('Taquitos, Ranch & salad');
+  await expect(page.getByTestId(`plan-carbs-${today}-Dinner`)).toContainText('75 g');
+  await expect(page.getByTestId(`plan-day-total-${today}`)).toContainText('Day total:');
+  await expect(page.getByTestId(`plan-day-total-${today}`)).not.toContainText('goal');
+
+  // Load it in the Calculator (Dinner chosen explicitly so the test doesn't depend on the clock) and log it.
+  await page.getByRole('link', { name: 'Calculator' }).click();
+  await page.getByLabel('Window').selectOption('Dinner');
+  await expect(page.getByTestId('plan-suggestion')).toContainText('Planned: Taquitos, Ranch & salad · 75 g');
+  await page.getByRole('button', { name: 'Load' }).click();
+  await expect(page.getByLabel('Label for carbs row 1')).toHaveValue('Ranch & salad');
+  await expect(page.getByTestId('total-carbs')).toContainText('75 g');
+  await page.getByRole('button', { name: 'Log it' }).click();
+  await expect(page.getByRole('status')).toContainText('Logged 75 g carbs');
+
+  await page.getByRole('link', { name: 'Plan' }).click();
+  await expect(cell).toContainText('logged');
+  await expect(cell).toContainText('Taquitos, Ranch & salad');
+
+  // Wait for the outbox to drain before navigating, observed via the topbar's sync-badge: it has
+  // been mounted since page load, so (unlike Settings' own pending-count, whose live query briefly
+  // reads its `?? 0` fallback right after Settings mounts) its value has already settled — no race
+  // between "sync finished before we look" and "sync finishes after we look". This also makes the
+  // test order-independent: sync may complete before or after this point.
+  await expect(page.getByTestId('sync-badge')).not.toContainText('pending', { timeout: 15_000 });
+
+  await page.getByRole('link', { name: 'Settings' }).click();
+  await expect(page.getByTestId('pending-count')).toHaveText('0 pending changes');
+
+  // Server state: the slot is logged and linked; the log and the plan both hold both rows.
+  const pull = (await (await page.request.get(`${baseURL}/api/sync/pull?since=0&limit=1000`)).json()) as {
+    changes: { table: string; record: Record }[];
+  };
+  const rows = (table: string) => pull.changes.filter((c) => c.table === table).map((c) => c.record);
+  const slot = rows('plan_entry').find((e) => e.deleted === 0 && e.date === today && e.window_name === 'Dinner')!;
+  expect(slot.status).toBe('logged');
+  const logged = rows('log_entry').find((e) => e.id === slot.log_entry_id)!;
+  expect(logged.total_carbs_g).toBe(75);
+  const logItems = rows('log_item').filter((i) => i.log_entry_id === logged.id);
+  expect(logItems.map((i) => [i.ref_type, i.display_name, i.amount, i.unit, i.carbs_g])).toEqual(
+    expect.arrayContaining([
+      ['food', 'Taquitos', 4, 'p:e2e-taquito', 68],
+      ['quick', 'Ranch & salad', 7, 'carbs', 7],
+    ]),
+  );
+  expect(logItems).toHaveLength(2);
+  const planItems = rows('plan_item')
+    .filter((i) => i.plan_entry_id === slot.id && i.deleted === 0)
+    .sort((a, b) => (a.position as number) - (b.position as number));
+  expect(planItems.map((i) => [i.ref_type, i.amount, i.label])).toEqual([
+    ['food', 4, null],
+    ['quick', 7, 'Ranch & salad'],
+  ]);
+});

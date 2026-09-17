@@ -34,8 +34,9 @@ public enum AmountInput {
     }
 
     /// True when any line's amount came from invalid text; saving or logging must be blocked.
+    /// Quick carbs rows must also be inside the dose limit (quick-carbs spec §2: fail closed).
     public static func hasInvalidAmount(_ lines: [CalculatorLine]) -> Bool {
-        lines.contains { !$0.amount.isFinite || $0.amount < 0 }
+        lines.contains { isInvalid(amount: $0.amount, refType: $0.refType) }
     }
 
     /// An equality key for `onChange`: compares amounts by bit pattern so a NaN amount equals itself.
@@ -44,7 +45,34 @@ public enum AmountInput {
     }
 
     public static func hasInvalidAmount(_ items: [MealItemData]) -> Bool {
-        items.contains { !$0.amount.isFinite || $0.amount < 0 }
+        items.contains { isInvalid(amount: $0.amount, refType: $0.refType) }
+    }
+
+    static func isInvalid(amount: Double, refType: RefType) -> Bool {
+        !amount.isFinite || amount < 0 || (refType == .quick && !isValidQuickCarbs(amount))
+    }
+}
+
+// MARK: - Quick carbs rows
+
+/// "+ Carbs" rows (quick-carbs spec §2): grams of carbs typed as a plain decimal — never a fraction —
+/// within `DoseLimits.maxCarbsG`. Invalid text maps to NaN so the row is incomplete and saving is blocked.
+public enum QuickCarbsInput {
+    public static let invalidMessage = "Enter grams of carbs (0–2000)"
+
+    public static func parse(_ text: String) -> Double? {
+        guard let value = NumberParsing.parseNonNegative(text), isValidQuickCarbs(value) else { return nil }
+        return value
+    }
+
+    public static func modelAmount(_ text: String) -> Double { parse(text) ?? .nan }
+
+    public static func isInvalid(_ text: String) -> Bool { parse(text) == nil }
+
+    /// "Ranch & salad — 7 g carbs".
+    public static func rowText(label: String?, amount: Double) -> String {
+        let grams = isValidQuickCarbs(amount) ? "\(formatCarbs(amount)) g carbs" : "enter grams of carbs"
+        return "\(quickDisplayName(label)) — \(grams)"
     }
 }
 

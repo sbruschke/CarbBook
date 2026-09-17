@@ -46,6 +46,25 @@ describe('Log', () => {
     expect(screen.getByTestId('day-totals')).toHaveTextContent('10 g carbs · 0 u taken');
   });
 
+  it('never shows a day-level goal colour or goal text on the day header, even when a window has a goal', async () => {
+    const user = await setup();
+    const current = (await services.db.dose_settings.toArray())[0]!;
+    await services.db.dose_settings.put({
+      ...current,
+      id: 'dose-goals-day-header',
+      windows: current.windows.map((w) => (w.name === 'Lunch' ? { ...w, carb_goal: { min: 10, max: 20 } } : { ...w, carb_goal: null })),
+    });
+    await services.db.log_entry.update('today', { settings_version_id: 'dose-goals-day-header' });
+    renderWith(<Log />, services);
+    const totals = await screen.findByTestId('day-totals');
+    expect(totals).toHaveTextContent('30 g carbs · 4 u taken');
+    expect(totals.className).not.toMatch(/goal/);
+    expect(totals.querySelector('[class*="goal"]')).toBeNull();
+    expect(totals.textContent).not.toMatch(/goal|on target|outside/i);
+    await user.click(screen.getByRole('button', { name: 'Previous day' }));
+    expect(screen.getByTestId('day-totals').className).not.toMatch(/goal/);
+  });
+
   it('recalculates an entry from current food data and saves the new snapshot', async () => {
     const user = await setup();
     renderWith(<Log />, services);
@@ -180,5 +199,24 @@ describe('deleting a logged entry', () => {
     const slot = (await services.db.plan_entry.get('p1'))!;
     expect(slot.status).toBe('planned');
     expect(slot.log_entry_id).toBeNull();
+  });
+});
+
+describe('quick carbs rows in the log', () => {
+  it('shows "label · N g carbs" and keeps the label and carbs through a recalculation', async () => {
+    const user = await setup();
+    await services.db.log_item.put(
+      item({ id: 'li-quick', log_entry_id: 'today', ref_type: 'quick', ref_id: 'li-quick', display_name: 'Ranch & salad', amount: 7, unit: 'carbs', carbs_g: 7 }),
+    );
+    renderWith(<Log />, services);
+    await user.click(await screen.findByRole('button', { name: /11:00 Lunch/ }));
+    expect(await screen.findByText('Ranch & salad · 7 g carbs')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Recalculate from current meal' }));
+    expect(screen.getByTestId('entry-carbs')).toHaveTextContent('Total 55 g carbs');
+    expect(screen.getByRole('status')).toHaveTextContent('Recalculated from current foods and meals.');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(async () => expect((await services.db.log_entry.get('today'))?.total_carbs_g).toBe(55));
+    expect(await services.db.log_item.get('li-quick')).toMatchObject({ display_name: 'Ranch & salad', amount: 7, carbs_g: 7 });
   });
 });

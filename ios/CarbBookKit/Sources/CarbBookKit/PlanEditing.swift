@@ -18,9 +18,11 @@ public enum PlanEditing {
         public var refId: Id
         public var amount: Double
         public var unit: String
+        /// Quick carbs rows only: the label as typed.
+        public var label: String?
 
-        public init(id: Id?, refType: RefType, refId: Id, amount: Double, unit: String) {
-            self.id = id; self.refType = refType; self.refId = refId; self.amount = amount; self.unit = unit
+        public init(id: Id?, refType: RefType, refId: Id, amount: Double, unit: String, label: String? = nil) {
+            self.id = id; self.refType = refType; self.refId = refId; self.amount = amount; self.unit = unit; self.label = label
         }
     }
 
@@ -41,6 +43,11 @@ public enum PlanEditing {
         sumCarbs(items.map { itemCarbs(catalog, $0.refType, $0.refId, $0.amount, $0.unit) })
     }
 
+    /// The Plan screen's day total: plain grams, never goal-coloured (quick-carbs spec §3).
+    public static func dayTotalText(_ carbs: CarbResult) -> String {
+        carbs.complete && carbs.carbsG.isFinite ? "\(formatCarbs(carbs.carbsG)) g" : "missing data"
+    }
+
     /// Records for saving a slot: the entry, every kept item renumbered from 0, and a soft delete for
     /// every previously stored item the draft no longer contains. A new slot starts `planned`; an
     /// existing slot keeps its status and `log_entry_id` (editing a logged slot must not unlink it).
@@ -48,7 +55,7 @@ public enum PlanEditing {
     /// and the case-insensitive slot identity every lookup uses (`PlanDate.normalizedWindowName`).
     public static func saveChanges(draft: Draft, existing: PlanEntryData?, existingItems: [PlanItemData],
                                    newId: () -> Id) throws -> [SyncChange] {
-        guard draft.items.allSatisfy({ $0.amount.isFinite && $0.amount >= 0 }) else { throw EditError.invalidAmount }
+        guard !draft.items.contains(where: { AmountInput.isInvalid(amount: $0.amount, refType: $0.refType) }) else { throw EditError.invalidAmount }
         let trimmedNote = draft.note?.trimmingCharacters(in: .whitespacesAndNewlines)
         let entry = PlanEntryData(
             id: existing?.id ?? newId(),
@@ -63,8 +70,10 @@ public enum PlanEditing {
             let id = item.id ?? newId()
             if item.id != nil { kept.insert(id) }
             changes.append(try SyncChange.encode("plan_item", PlanItemData(
-                id: id, planEntryId: entry.id, refType: item.refType, refId: item.refId,
-                amount: item.amount, unit: item.unit, position: position)))
+                id: id, planEntryId: entry.id, refType: item.refType,
+                refId: itemRefId(item.refType, item.refId, rowId: id),
+                amount: item.amount, unit: item.unit, position: position,
+                label: item.refType == .quick ? normalizeQuickLabel(item.label) : nil)))
         }
         for removed in existingItems where !kept.contains(removed.id) {
             var record = removed
@@ -221,8 +230,11 @@ public enum PlanEditing {
             }
             var written: [PlanItemData] = []
             for (offset, item) in sourceItems.enumerated() {
-                let copied = PlanItemData(id: newId(), planEntryId: entryId, refType: item.refType, refId: item.refId,
-                                          amount: item.amount, unit: item.unit, position: startPosition + offset)
+                let id = newId()
+                let copied = PlanItemData(id: id, planEntryId: entryId, refType: item.refType,
+                                          refId: itemRefId(item.refType, item.refId, rowId: id),
+                                          amount: item.amount, unit: item.unit, position: startPosition + offset,
+                                          label: item.label)
                 changes.append(try SyncChange.encode("plan_item", copied))
                 written.append(copied)
             }

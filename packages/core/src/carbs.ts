@@ -2,6 +2,7 @@ import type { FoodData, Id, MealData, MealItemData, PortionData, RefType } from 
 import {
   MASS_UNITS,
   PORTION_PREFIX,
+  QUICK_UNIT,
   SERVING_UNIT,
   VOLUME_UNITS,
   densityOf,
@@ -11,6 +12,7 @@ import {
   isValidCarbsPer100g,
   isValidCarbsPer100ml,
   isValidPortionCarbs,
+  isValidQuickCarbs,
   isVolumeUnit,
 } from './units';
 
@@ -152,6 +154,11 @@ function mealItemCarbs(catalog: Catalog, mealId: Id, amount: number, unit: strin
   return { carbs_g: total.carbs_g * factor, complete: total.complete };
 }
 
+/** Quick carbs row: the amount is the carbs. Anything else (wrong unit, out of range) is incomplete. */
+function quickItemCarbs(amount: number, unit: string): CarbResult {
+  return unit === QUICK_UNIT && isValidQuickCarbs(amount) ? { carbs_g: amount, complete: true } : INCOMPLETE;
+}
+
 function resolveItem(
   catalog: Catalog,
   refType: RefType,
@@ -160,12 +167,19 @@ function resolveItem(
   unit: string,
   visiting: Set<Id>,
 ): CarbResult {
-  return refType === 'food'
-    ? foodItemCarbs(catalog, refId, amount, unit)
-    : mealItemCarbs(catalog, refId, amount, unit, visiting);
+  switch (refType) {
+    case 'food':
+      return foodItemCarbs(catalog, refId, amount, unit);
+    case 'meal':
+      return mealItemCarbs(catalog, refId, amount, unit, visiting);
+    case 'quick':
+      return quickItemCarbs(amount, unit);
+    default:
+      return INCOMPLETE;
+  }
 }
 
-/** Carbs for one line item (a food or a meal) at the given amount and unit. */
+/** Carbs for one line item (a food, a meal or a quick carbs row) at the given amount and unit. */
 export function itemCarbs(catalog: Catalog, refType: RefType, refId: Id, amount: number, unit: string): CarbResult {
   return resolveItem(catalog, refType, refId, amount, unit, new Set());
 }

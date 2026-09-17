@@ -5,8 +5,8 @@ import { useServices } from '../app/services';
 import { buildCatalog, type CatalogData } from '../db/catalog';
 import { parseUsdaFoodId, uuidv7 } from '../lib/ids';
 import type { SearchResult } from '../search/search';
-import { formatDayLabel, parseAmount } from '../ui/format';
-import { type DraftItem, draftItemCarbs, ItemEditor, newDraftItem } from '../ui/ItemEditor';
+import { formatDayLabel } from '../ui/format';
+import { type DraftItem, draftAmount, draftItemCarbs, ItemEditor, newDraftItem, newQuickItem } from '../ui/ItemEditor';
 import { SearchPanel } from '../ui/SearchPanel';
 import { goalView } from './goal';
 import { removeSlot, saveSlot } from './saveSlot';
@@ -30,7 +30,7 @@ export function SlotEditor(props: {
   const [entryId] = useState(() => slot?.entry?.id ?? uuidv7(now()));
   const [originalItemIds] = useState(() => (slot?.items ?? []).map((i) => i.id));
   const [items, setItems] = useState<DraftItem[]>(() =>
-    (slot?.items ?? []).map((i) => ({ key: i.id, ref_type: i.ref_type, ref_id: i.ref_id, amount: String(i.amount), unit: i.unit })),
+    (slot?.items ?? []).map((i) => ({ key: i.id, ref_type: i.ref_type, ref_id: i.ref_id, amount: String(i.amount), unit: i.unit, label: i.label ?? '' })),
   );
   const [note, setNote] = useState(slot?.entry?.note ?? '');
   const [errors, setErrors] = useState<string[]>([]);
@@ -52,7 +52,7 @@ export function SlotEditor(props: {
   async function save() {
     const problems: string[] = [];
     if (items.length === 0) problems.push('Add at least one item, or delete the slot.');
-    if (items.some((i) => parseAmount(i.amount) === null)) problems.push('Every item needs an amount.');
+    if (items.some((i) => draftAmount(i) === null)) problems.push('Every item needs an amount.');
     setErrors(problems);
     if (problems.length > 0) return;
     const entry: PlanEntryData = {
@@ -86,7 +86,11 @@ export function SlotEditor(props: {
         {windowName} · {formatDayLabel(date)}
       </h1>
       <ItemEditor items={items} catalog={catalog} onChange={setItems} reorderable />
-      <SearchPanel label="Add to this slot" onPick={(result) => void pick(result)} />
+      <SearchPanel
+        label="Add to this slot"
+        onPick={(result) => void pick(result)}
+        onAddCarbs={() => setItems((current) => [...current, newQuickItem(uuidv7(now()))])}
+      />
       {(() => {
         const view = goalView(carbs, slot?.goal ?? null);
         return (

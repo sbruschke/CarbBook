@@ -24,6 +24,7 @@ function checkField(name: string, spec: FieldSpec, value: unknown): { value: str
       if (typeof value !== 'string') return { error: `${name} must be a string` };
       const trimmed = spec.trim ? value.trim() : value;
       if (!spec.nullable && trimmed.trim() === '') return { error: `${name} must not be empty` };
+      if (spec.nullable && trimmed === '') return { value: null };
       if (trimmed.length > (spec.max ?? 200)) return { error: `${name} is longer than ${spec.max ?? 200} characters` };
       return { value: trimmed };
     }
