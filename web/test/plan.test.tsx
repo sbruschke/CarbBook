@@ -146,12 +146,16 @@ describe('Plan cells', () => {
     expect(within(cell).getByLabelText('144 g, goal 50 to 80, far outside')).toHaveClass('goal-out');
   });
 
-  it('shows a day total against the summed day goal', async () => {
+  it('shows the day total as plain grams with no goal colour or goal text', async () => {
     await setup();
     await seedLunch();
     renderWith(<Plan />, services);
     const total = await screen.findByTestId('plan-day-total-2026-09-16');
-    expect(total).toHaveTextContent('72 g · goal');
+    expect(total).toHaveTextContent('Day total: 72 g');
+    expect(total).not.toHaveTextContent('goal');
+    expect(total).not.toHaveTextContent('on target');
+    expect(total).not.toHaveClass('goal');
+    expect(total.querySelector('.goal')).toBeNull();
   });
 
   it('shows "missing data" and no number when an item does not resolve', async () => {

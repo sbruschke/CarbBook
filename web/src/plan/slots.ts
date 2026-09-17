@@ -3,7 +3,6 @@ import {
   type CarbGoal,
   type CarbResult,
   type Catalog,
-  dayGoal,
   type DoseSettingsData,
   type DoseWindow,
   itemCarbs,
@@ -14,7 +13,7 @@ import {
   sumCarbs,
 } from '@carbbook/core';
 import { isLive } from '../db/db';
-import { dayRange } from '../ui/format';
+import { dayRange, formatCarbs } from '../ui/format';
 
 /**
  * Stable identity of a slot: a date plus a window name (spec §2: at most one live entry each).
@@ -82,18 +81,12 @@ export function buildSlots(args: {
   );
 }
 
-/**
- * A day's planned carbs against the sum of that day's window goals (spec §3). Windows with no goal
- * contribute nothing to either side; with no goals at all the total has none, which `goalView`
- * renders as a plain number with no colour.
- *
- * Core's `dayGoal` takes `DoseWindow[]` and reads `carb_goal` off each — not the
- * `(CarbGoal | null)[]` this plan originally assumed, so each slot's goal is wrapped back into a
- * window-shaped stub before summing.
- */
-export function dayTotal(slots: Slot[]): { carbs: CarbResult; goal: CarbGoal | null } {
-  return {
-    carbs: sumCarbs(slots.map((s) => s.carbs)),
-    goal: dayGoal(slots.map((s) => ({ carb_goal: s.goal }) as DoseWindow)),
-  };
+/** A day's planned carbs. Day totals carry no goal and no colour (quick-carbs spec §3). */
+export function dayCarbs(slots: Slot[]): CarbResult {
+  return sumCarbs(slots.map((s) => s.carbs));
+}
+
+/** "72 g", or "missing data" when any slot in the day is incomplete. */
+export function dayTotalText(carbs: CarbResult): string {
+  return carbs.complete ? formatCarbs(carbs.carbs_g) : 'missing data';
 }

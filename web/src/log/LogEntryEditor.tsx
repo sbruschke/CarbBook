@@ -99,7 +99,12 @@ function EntryForm(props: {
           kept.push(row.display_name);
           return row;
         }
-        return { ...row, carbs_g: result.carbs_g, display_name: itemName(catalog, row.ref_type, row.ref_id) };
+        return {
+          ...row,
+          carbs_g: result.carbs_g,
+          // A quick row has no food to take a name from: it keeps its logged label.
+          display_name: row.ref_type === 'quick' ? row.display_name : itemName(catalog, row.ref_type, row.ref_id),
+        };
       }),
     );
     setMessage(

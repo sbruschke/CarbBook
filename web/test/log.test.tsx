@@ -182,3 +182,22 @@ describe('deleting a logged entry', () => {
     expect(slot.log_entry_id).toBeNull();
   });
 });
+
+describe('quick carbs rows in the log', () => {
+  it('shows "label · N g carbs" and keeps the label and carbs through a recalculation', async () => {
+    const user = await setup();
+    await services.db.log_item.put(
+      item({ id: 'li-quick', log_entry_id: 'today', ref_type: 'quick', ref_id: 'li-quick', display_name: 'Ranch & salad', amount: 7, unit: 'carbs', carbs_g: 7 }),
+    );
+    renderWith(<Log />, services);
+    await user.click(await screen.findByRole('button', { name: /11:00 Lunch/ }));
+    expect(await screen.findByText('Ranch & salad · 7 g carbs')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Recalculate from current meal' }));
+    expect(screen.getByTestId('entry-carbs')).toHaveTextContent('Total 55 g carbs');
+    expect(screen.getByRole('status')).toHaveTextContent('Recalculated from current foods and meals.');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(async () => expect((await services.db.log_entry.get('today'))?.total_carbs_g).toBe(55));
+    expect(await services.db.log_item.get('li-quick')).toMatchObject({ display_name: 'Ranch & salad', amount: 7, carbs_g: 7 });
+  });
+});
