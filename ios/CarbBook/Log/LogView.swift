@@ -22,9 +22,11 @@ struct LogView: View {
                     HStack {
                         Text("Carbs")
                         Spacer()
-                        GoalBadge(style: goalStyle(
-                            CarbResult(carbsG: entries.reduce(0) { $0 + $1.totalCarbsG }, complete: true),
-                            dayGoal(windows)))
+                        // Per spec: carb goals are per meal/snack only, never a cumulative day goal.
+                        // This is a plain gram total with no goal colour or goal text.
+                        Text("\(formatNumber(entries.reduce(0) { $0 + $1.totalCarbsG }, digits: 0)) g")
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
                     }
                     LabeledContent("Insulin taken", value: "\(formatNumber(entries.reduce(0) { $0 + ($1.takenUnits ?? 0) }, digits: 2))u")
                 }
