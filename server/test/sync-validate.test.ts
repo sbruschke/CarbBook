@@ -382,4 +382,9 @@ describe('quick carbs rows (quick-carbs spec §2)', () => {
     expect(validateRecord(TABLE_SPECS.meal_item, mealItem('m1', 'food', 'f1')).ok).toBe(true);
     expect(validateRecord(TABLE_SPECS.plan_item, planItem('p1', { label: null })).ok).toBe(true);
   });
+
+  it('stores a whitespace-only label as null, not empty', () => {
+    const result = validateRecord(TABLE_SPECS.meal_item, quickMeal({ label: '   ' }));
+    expect(result).toEqual({ ok: true, row: expect.objectContaining({ label: null }) });
+  });
 });
