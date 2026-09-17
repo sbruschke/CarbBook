@@ -70,4 +70,64 @@ final class QuickCarbsTests: XCTestCase {
         """.utf8))
         XCTAssertEqual(log.refType, .quick)
     }
+
+    let utc: Calendar = {
+        var c = Calendar(identifier: .gregorian)
+        c.timeZone = TimeZone(identifier: "UTC")!
+        return c
+    }()
+    // 2026-09-14 18:00 UTC → Dinner in seedSettings.
+    let dinner = Date(timeIntervalSince1970: 1_789_408_800)
+
+    func testLogAndMealRecordsSnapshotQuickLines() {
+        let lines = [
+            CalculatorLine(id: "l1", refType: .food, refId: "tortilla", displayName: "Tortilla", amount: 100, unit: "g"),
+            CalculatorLine(id: "l2", refType: .quick, refId: "", displayName: "", amount: 7, unit: Units.quick,
+                           label: " Ranch & salad "),
+            CalculatorLine(id: "l3", refType: .quick, refId: "", displayName: "", amount: 3, unit: Units.quick),
+        ]
+        let result = evaluateCalculator(lines: lines, catalog: catalog, settingsVersions: [seedSettings], eatenAt: dinner,
+                                        calendar: utc, windowOverride: nil, bg: .none, lastDoseAtMs: nil, nowMs: 0)
+        XCTAssertEqual(result.total, CarbResult(carbsG: 58, complete: true))
+        XCTAssertNotNil(result.breakdown, "quick rows count toward the dose like any other row")
+
+        var n = 0
+        let (entry, items) = buildLogRecords(lines: lines, result: result, bg: .none, eatenAt: dinner, takenUnits: nil,
+                                             notes: nil, newId: { n += 1; return "id\(n)" })
+        XCTAssertEqual(entry.totalCarbsG, 58)
+        XCTAssertEqual(items.map(\.displayName), ["Tortilla", "Ranch & salad", "Extra carbs"])
+        XCTAssertEqual(items.map(\.refId), ["tortilla", items[1].id, items[2].id])
+        XCTAssertEqual(items.map(\.carbsG), [48, 7, 3])
+        XCTAssertEqual(items[1].unit, Units.quick)
+
+        let meal = buildMealRecords(name: "Taco", yieldServings: 1, totalWeightG: nil, lines: lines,
+                                    newId: { n += 1; return "id\(n)" })
+        XCTAssertEqual(meal.items.map(\.label), [nil, "Ranch & salad", nil])
+        XCTAssertEqual(meal.items[1].refId, meal.items[1].id)
+        XCTAssertEqual(meal.items[0].refId, "tortilla")
+    }
+
+    func testAnInvalidQuickLineRefusesTheDose() {
+        let lines = [CalculatorLine(id: "l1", refType: .quick, refId: "", displayName: "", amount: 2001, unit: Units.quick)]
+        let result = evaluateCalculator(lines: lines, catalog: catalog, settingsVersions: [seedSettings], eatenAt: dinner,
+                                        calendar: utc, windowOverride: nil, bg: .none, lastDoseAtMs: nil, nowMs: 0)
+        XCTAssertFalse(result.total.complete)
+        XCTAssertNil(result.breakdown)
+        XCTAssertNotNil(result.refusal)
+    }
+
+    func testRecalculationKeepsAQuickRowsLoggedName() {
+        let entry = LogEntryData(id: "e1", eatenAt: 1_789_408_800_000, windowName: "Dinner", bgMgdl: nil, bgSource: "none",
+                                 bgTrend: nil, totalCarbsG: 55, suggestedUnits: 7, takenUnits: 7, settingsVersionId: "s1", notes: nil)
+        let items = [
+            LogItemData(id: "x1", logEntryId: "e1", refType: .food, refId: "tortilla", displayName: "Old name", amount: 100, unit: "g", carbsG: 40),
+            LogItemData(id: "x2", logEntryId: "e1", refType: .quick, refId: "x2", displayName: "Ranch & salad", amount: 7,
+                        unit: Units.quick, carbsG: 7),
+        ]
+        let result = recalculateLogEntry(entry: entry, items: items, catalog: catalog, settingsVersions: [seedSettings])
+        XCTAssertTrue(result.complete)
+        XCTAssertEqual(result.items.map(\.displayName), ["Tortilla", "Ranch & salad"])
+        XCTAssertEqual(result.items.map(\.carbsG), [48, 7])
+        XCTAssertEqual(result.entry.totalCarbsG, 55)
+    }
 }

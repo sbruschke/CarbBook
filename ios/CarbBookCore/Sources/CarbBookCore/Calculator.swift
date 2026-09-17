@@ -8,10 +8,13 @@ public struct CalculatorLine: Equatable, Sendable, Identifiable {
     public var displayName: String
     public var amount: Double
     public var unit: String
+    /// Quick carbs rows only: the label as typed (quick-carbs spec §2). Their `displayName` is ignored.
+    public var label: String?
 
-    public init(id: String, refType: RefType, refId: Id, displayName: String, amount: Double, unit: String) {
+    public init(id: String, refType: RefType, refId: Id, displayName: String, amount: Double, unit: String,
+                label: String? = nil) {
         self.id = id; self.refType = refType; self.refId = refId
-        self.displayName = displayName; self.amount = amount; self.unit = unit
+        self.displayName = displayName; self.amount = amount; self.unit = unit; self.label = label
     }
 }
 
@@ -125,9 +128,13 @@ public func buildLogRecords(
         settingsVersionId: result.settings?.id,
         notes: notes
     )
-    let items = zip(lines, result.lineCarbs).map { line, carbs in
-        LogItemData(id: newId(), logEntryId: entry.id, refType: line.refType, refId: line.refId,
-                    displayName: line.displayName, amount: line.amount, unit: line.unit, carbsG: carbs.carbsG)
+    let items = zip(lines, result.lineCarbs).map { line, carbs -> LogItemData in
+        let id = newId()
+        // A quick row points at itself and is logged under its label (quick-carbs spec §2).
+        return LogItemData(id: id, logEntryId: entry.id, refType: line.refType,
+                           refId: itemRefId(line.refType, line.refId, rowId: id),
+                           displayName: line.refType == .quick ? quickDisplayName(line.label) : line.displayName,
+                           amount: line.amount, unit: line.unit, carbsG: carbs.carbsG)
     }
     return (entry, items)
 }
@@ -141,9 +148,12 @@ public func buildMealRecords(
     newId: () -> Id
 ) -> (meal: MealData, items: [MealItemData]) {
     let meal = MealData(id: newId(), name: name, yieldServings: yieldServings, totalWeightG: totalWeightG)
-    let items = lines.enumerated().map { index, line in
-        MealItemData(id: newId(), mealId: meal.id, refType: line.refType, refId: line.refId,
-                     amount: line.amount, unit: line.unit, position: index)
+    let items = lines.enumerated().map { index, line -> MealItemData in
+        let id = newId()
+        return MealItemData(id: id, mealId: meal.id, refType: line.refType,
+                            refId: itemRefId(line.refType, line.refId, rowId: id),
+                            amount: line.amount, unit: line.unit, position: index,
+                            label: line.refType == .quick ? normalizeQuickLabel(line.label) : nil)
     }
     return (meal, items)
 }
