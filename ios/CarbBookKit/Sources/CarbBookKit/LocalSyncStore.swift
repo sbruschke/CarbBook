@@ -27,7 +27,7 @@ extension LocalStore: SyncStore {
             return try pending.compactMap { entry -> SyncChange? in
                 guard var change = try self.change(db, table: entry["table_name"], id: entry["record_id"]) else { return nil }
                 if legacy.contains(change.key) {
-                    for column in TableCodec.anyUnitColumns[change.table] ?? [] { change.record.removeValue(forKey: column) }
+                    for column in TableCodec.legacyColumns[change.table] ?? [] { change.record.removeValue(forKey: column) }
                 }
                 return change
             }
