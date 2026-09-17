@@ -140,10 +140,7 @@ final class CalculatorModel {
     }
 
     func units(for line: CalculatorLine) -> [String] {
-        switch line.refType {
-        case .food: catalog.food(line.refId).map { foodUnits($0, catalog.portions(line.refId)) } ?? [line.unit]
-        case .meal: catalog.meal(line.refId).map { mealUnits($0) } ?? [line.unit]
-        }
+        itemUnits(line.refType, line.refId, currentUnit: line.unit, catalog: catalog)
     }
 
     /// Adds a search hit; USDA foods are copied into the synced food table first.
@@ -167,6 +164,12 @@ final class CalculatorModel {
         // First valid portion, else 100 g, else 1 cup (any-unit foods); unknown foods default to 100 g.
         let initial = catalog.food(id).map { defaultFoodAmountAndUnit($0, catalog.portions(id)) } ?? (amount: 100, unit: "g")
         append(.food, id, name, amount: initial.amount, unit: initial.unit)
+    }
+
+    /// "+ Carbs": a carbs-only row. Its ref_id is set to the stored row's id when it is logged or saved.
+    func addQuick(label: String?, grams: Double) {
+        lines.append(CalculatorLine(id: UUID().uuidString, refType: .quick, refId: "", displayName: quickDisplayName(label),
+                                    amount: grams, unit: Units.quick, label: label))
     }
 
     private func append(_ refType: RefType, _ refId: Id, _ name: String, amount: Double, unit: String) {
