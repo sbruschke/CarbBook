@@ -31,7 +31,7 @@ describe('quick carbs draft rows', () => {
     expect(draftAmount(quick('7'))).toBe(7);
     expect(draftAmount(quick(' 7,5 '))).toBe(7.5);
     expect(draftAmount(quick('2000'))).toBe(2000);
-    for (const bad of ['', ' ', '1/2', '½', '-1', '2001', '1e3', 'abc']) expect(draftAmount(quick(bad)), bad).toBeNull();
+    for (const bad of ['', ' ', '1/2', '½', '-1', '2001', '1e3', 'abc', '0x10', '7/2']) expect(draftAmount(quick(bad)), bad).toBeNull();
     // Food rows keep the fraction parser.
     expect(draftAmount({ key: 'f', ref_type: 'food', ref_id: 'taquitos', amount: '1/2', unit: 'g' })).toBe(0.5);
   });

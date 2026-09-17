@@ -46,6 +46,25 @@ describe('Log', () => {
     expect(screen.getByTestId('day-totals')).toHaveTextContent('10 g carbs · 0 u taken');
   });
 
+  it('never shows a day-level goal colour or goal text on the day header, even when a window has a goal', async () => {
+    const user = await setup();
+    const current = (await services.db.dose_settings.toArray())[0]!;
+    await services.db.dose_settings.put({
+      ...current,
+      id: 'dose-goals-day-header',
+      windows: current.windows.map((w) => (w.name === 'Lunch' ? { ...w, carb_goal: { min: 10, max: 20 } } : { ...w, carb_goal: null })),
+    });
+    await services.db.log_entry.update('today', { settings_version_id: 'dose-goals-day-header' });
+    renderWith(<Log />, services);
+    const totals = await screen.findByTestId('day-totals');
+    expect(totals).toHaveTextContent('30 g carbs · 4 u taken');
+    expect(totals.className).not.toMatch(/goal/);
+    expect(totals.querySelector('[class*="goal"]')).toBeNull();
+    expect(totals.textContent).not.toMatch(/goal|on target|outside/i);
+    await user.click(screen.getByRole('button', { name: 'Previous day' }));
+    expect(screen.getByTestId('day-totals').className).not.toMatch(/goal/);
+  });
+
   it('recalculates an entry from current food data and saves the new snapshot', async () => {
     const user = await setup();
     renderWith(<Log />, services);

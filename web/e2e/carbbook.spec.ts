@@ -224,12 +224,15 @@ test('quick carbs: plan 4 taquitos + 7 g, load, log 75 g, slot logged with both 
   await expect(cell).toContainText('logged');
   await expect(cell).toContainText('Taquitos, Ranch & salad');
 
+  // Wait for the outbox to drain before navigating, observed via the topbar's sync-badge: it has
+  // been mounted since page load, so (unlike Settings' own pending-count, whose live query briefly
+  // reads its `?? 0` fallback right after Settings mounts) its value has already settled — no race
+  // between "sync finished before we look" and "sync finishes after we look". This also makes the
+  // test order-independent: sync may complete before or after this point.
+  await expect(page.getByTestId('sync-badge')).not.toContainText('pending', { timeout: 15_000 });
+
   await page.getByRole('link', { name: 'Settings' }).click();
-  // Settings just mounted, so its pending-count live query briefly reads its `?? 0` fallback
-  // before the real (non-zero) count loads — wait for that real value first, or the next
-  // assertion below could match the transient "0" instead of a genuine post-sync "0".
-  await expect(page.getByTestId('pending-count')).not.toHaveText('0 pending changes');
-  await expect(page.getByTestId('pending-count')).toHaveText('0 pending changes', { timeout: 15_000 });
+  await expect(page.getByTestId('pending-count')).toHaveText('0 pending changes');
 
   // Server state: the slot is logged and linked; the log and the plan both hold both rows.
   const pull = (await (await page.request.get(`${baseURL}/api/sync/pull?since=0&limit=1000`)).json()) as {
