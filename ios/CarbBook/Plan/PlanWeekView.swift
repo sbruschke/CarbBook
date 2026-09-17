@@ -60,12 +60,14 @@ struct PlanWeekView: View {
     }
 
     private func dayHeader(_ date: String) -> some View {
-        let total = model.dayCarbs(date)
-        let style = goalStyle(total, model.dayGoalFor(date))
-        return HStack {
+        HStack {
             Text(PlanDate.date(date).map { $0.formatted(.dateTime.weekday(.abbreviated).month().day()) } ?? date)
             Spacer()
-            GoalBadge(style: style, font: .caption)
+            // Goals are per meal/snack only: the day total is plain grams with no colour (quick-carbs spec §3).
+            Text(PlanEditing.dayTotalText(model.dayCarbs(date)))
+                .font(.caption)
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
             Button { copyScope = .day(date) } label: { Image(systemName: "doc.on.doc") }
                 .buttonStyle(.borderless)
                 .accessibilityLabel("Copy \(date) to another day")
@@ -110,11 +112,8 @@ struct PlanWeekView: View {
     }
 
     private func itemsText(_ slot: PlanSlot) -> String {
-        slot.items.map { item in
-            switch item.refType {
-            case .food: model.catalog.food(item.refId)?.name ?? "Unknown item"
-            case .meal: model.catalog.meal(item.refId)?.name ?? "Unknown item"
-            }
-        }.joined(separator: ", ")
+        slot.items
+            .map { itemDisplayName($0.refType, $0.refId, label: $0.label, catalog: model.catalog) }
+            .joined(separator: ", ")
     }
 }

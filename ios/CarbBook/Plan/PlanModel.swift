@@ -62,12 +62,10 @@ final class PlanModel {
             ?? PlanSlot(date: date, window: window, entry: nil, items: [], carbs: CarbResult(carbsG: 0, complete: true))
     }
 
-    /// Carbs planned for a whole day, against that day's summed window goals.
+    /// Carbs planned for a whole day (no day goal: goals are per meal/snack only).
     func dayCarbs(_ date: String) -> CarbResult {
         sumCarbs(windows.map { slot(date: date, window: $0).carbs })
     }
-
-    func dayGoalFor(_ date: String) -> CarbGoal? { dayGoal(windows) }
 
     func showWeek(offsetBy weeks: Int, _ app: AppModel) {
         anchor = PlanDate.shift(anchor, byDays: weeks * 7)
