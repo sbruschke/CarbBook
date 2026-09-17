@@ -11,8 +11,14 @@ public enum PlanEditing {
         public var message: String { "\(AmountInput.invalidMessage). Fix it before saving." }
     }
 
-    /// One editable row in the slot editor. `id` is nil for a row the user just added.
-    public struct DraftItem: Equatable, Sendable, Identifiable {
+    /// One editable row in the slot editor. `id` is nil for a row the user just added; `key` is a
+    /// stable, unique identity assigned once at creation (never re-derived from `id`) and kept
+    /// unchanged across edits, so SwiftUI's `ForEach` never conflates two rows that both have a nil
+    /// `id` — a mix-up that would previously let a user's typed amount land in the wrong row (an
+    /// on-screen-only bug: saved values were always correct, but this matters in an insulin-dosing
+    /// app). Deliberately NOT `Identifiable` on `id`, so nothing can accidentally key a `ForEach` off
+    /// the optional, non-unique persisted id again; every `ForEach` over draft rows must use `\.key`.
+    public struct DraftItem: Equatable, Sendable {
         public var id: Id?
         public var refType: RefType
         public var refId: Id
@@ -20,9 +26,12 @@ public enum PlanEditing {
         public var unit: String
         /// Quick carbs rows only: the label as typed.
         public var label: String?
+        public let key: UUID
 
-        public init(id: Id?, refType: RefType, refId: Id, amount: Double, unit: String, label: String? = nil) {
-            self.id = id; self.refType = refType; self.refId = refId; self.amount = amount; self.unit = unit; self.label = label
+        public init(id: Id?, refType: RefType, refId: Id, amount: Double, unit: String, label: String? = nil,
+                    key: UUID = UUID()) {
+            self.id = id; self.refType = refType; self.refId = refId; self.amount = amount; self.unit = unit
+            self.label = label; self.key = key
         }
     }
 
