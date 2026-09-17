@@ -1,4 +1,7 @@
 import { createCatalog } from '@carbbook/core';
+import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { useState } from 'react';
 import { describe, expect, it } from 'vitest';
 import { unitLabel } from '../src/ui/format';
 import {
@@ -6,6 +9,7 @@ import {
   draftAmount,
   draftItemCarbs,
   draftLabel,
+  ItemEditor,
   itemLabel,
   newDraftItem,
   newQuickItem,
@@ -61,5 +65,44 @@ describe('quick carbs draft rows', () => {
 
   it('shows the carbs unit as "g carbs"', () => {
     expect(unitLabel('carbs', [])).toBe('g carbs');
+  });
+});
+
+function Harness(props: { initial: DraftItem[] }) {
+  const [items, setItems] = useState(props.initial);
+  return (
+    <>
+      <ItemEditor items={items} catalog={catalog} onChange={setItems} reorderable />
+      <output data-testid="state">{JSON.stringify(items)}</output>
+    </>
+  );
+}
+
+describe('ItemEditor quick rows', () => {
+  it('edits the label and grams, shows "label — N g carbs", and removes the row', async () => {
+    const user = userEvent.setup();
+    render(<Harness initial={[{ key: 'f1', ref_type: 'food', ref_id: 'taquitos', amount: '100', unit: 'g' }, newQuickItem('q1')]} />);
+
+    expect(screen.getByText('Extra carbs — enter grams of carbs')).toBeInTheDocument();
+    expect(screen.getByLabelText('Carbs in carbs row 1')).toHaveTextContent('—');
+    expect(screen.queryByLabelText('Unit for carbs row 1')).not.toBeInTheDocument();
+
+    await user.type(screen.getByLabelText('Label for carbs row 1'), 'Ranch & salad');
+    await user.type(screen.getByLabelText('Grams of carbs for carbs row 1'), '7');
+    expect(screen.getByText('Ranch & salad — 7 g carbs')).toBeInTheDocument();
+    expect(screen.getByLabelText('Carbs in carbs row 1')).toHaveTextContent('7 g');
+    expect(screen.getByLabelText('Label for carbs row 1')).toHaveAttribute('maxlength', '80');
+
+    await user.click(screen.getByRole('button', { name: 'Move carbs row 1 up' }));
+    expect(JSON.parse(screen.getByTestId('state').textContent!).map((i: DraftItem) => i.key)).toEqual(['q1', 'f1']);
+
+    await user.click(screen.getByRole('button', { name: 'Remove carbs row 1' }));
+    expect(JSON.parse(screen.getByTestId('state').textContent!).map((i: DraftItem) => i.key)).toEqual(['f1']);
+  });
+
+  it('numbers several quick rows in order', () => {
+    render(<Harness initial={[newQuickItem('a'), { ...newQuickItem('b'), label: 'Salsa', amount: '6' }]} />);
+    expect(screen.getByLabelText('Label for carbs row 2')).toHaveValue('Salsa');
+    expect(screen.getByLabelText('Grams of carbs for carbs row 2')).toHaveValue('6');
   });
 });

@@ -112,13 +112,65 @@ export function ItemEditor(props: {
     next.splice(index + delta, 0, moved!);
     onChange(next);
   };
+  const rowButtons = (item: DraftItem, index: number, name: string) => (
+    <>
+      {props.reorderable && (
+        <>
+          <button type="button" aria-label={`Move ${name} up`} disabled={index === 0} onClick={() => move(index, -1)}>
+            ↑
+          </button>
+          <button
+            type="button"
+            aria-label={`Move ${name} down`}
+            disabled={index === items.length - 1}
+            onClick={() => move(index, 1)}
+          >
+            ↓
+          </button>
+        </>
+      )}
+      <button type="button" aria-label={`Remove ${name}`} onClick={() => onChange(items.filter((i) => i.key !== item.key))}>
+        ✕
+      </button>
+    </>
+  );
 
+  let quickCount = 0;
   return (
     <ul className="items" aria-label="Items">
       {items.map((item, index) => {
-        const name = itemName(catalog, item.ref_type, item.ref_id);
         const result = draftItemCarbs(catalog, item);
-        const amountMissing = parseAmount(item.amount) === null;
+        if (item.ref_type === 'quick') {
+          quickCount += 1;
+          const name = `carbs row ${quickCount}`;
+          return (
+            <li key={item.key} className="item-row quick-row" data-testid="item-row">
+              <div className="item-name">{quickRowText(item.label, item.amount)}</div>
+              <div className="item-controls">
+                <input
+                  aria-label={`Label for ${name}`}
+                  placeholder="Label (optional)"
+                  maxLength={QUICK_LABEL_INPUT_MAX}
+                  value={item.label ?? ''}
+                  onChange={(e) => update(item.key, { label: e.target.value })}
+                />
+                <input
+                  aria-label={`Grams of carbs for ${name}`}
+                  inputMode="decimal"
+                  placeholder="g carbs"
+                  value={item.amount}
+                  onChange={(e) => update(item.key, { amount: e.target.value })}
+                />
+                <span className="item-carbs" aria-label={`Carbs in ${name}`}>
+                  {result.complete ? formatCarbs(result.carbs_g) : '—'}
+                </span>
+                {rowButtons(item, index, name)}
+              </div>
+            </li>
+          );
+        }
+        const name = itemName(catalog, item.ref_type, item.ref_id);
+        const amountMissing = draftAmount(item) === null;
         return (
           <li key={item.key} className="item-row" data-testid="item-row">
             <div className="item-name">
@@ -143,24 +195,7 @@ export function ItemEditor(props: {
               <span className="item-carbs" aria-label={`Carbs in ${name}`}>
                 {result.complete ? formatCarbs(result.carbs_g) : '—'}
               </span>
-              {props.reorderable && (
-                <>
-                  <button type="button" aria-label={`Move ${name} up`} disabled={index === 0} onClick={() => move(index, -1)}>
-                    ↑
-                  </button>
-                  <button
-                    type="button"
-                    aria-label={`Move ${name} down`}
-                    disabled={index === items.length - 1}
-                    onClick={() => move(index, 1)}
-                  >
-                    ↓
-                  </button>
-                </>
-              )}
-              <button type="button" aria-label={`Remove ${name}`} onClick={() => onChange(items.filter((i) => i.key !== item.key))}>
-                ✕
-              </button>
+              {rowButtons(item, index, name)}
             </div>
           </li>
         );
