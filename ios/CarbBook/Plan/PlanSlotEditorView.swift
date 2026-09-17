@@ -13,6 +13,7 @@ struct PlanSlotEditorView: View {
     @State private var items: [PlanEditing.DraftItem] = []
     @State private var note = ""
     @State private var showAdd = false
+    @State private var showQuick = false
     @State private var error: String?
     @State private var loaded = false
     /// Loaded once (`loadCatalog`, off the main thread) rather than re-read from the DB on every
@@ -24,13 +25,24 @@ struct PlanSlotEditorView: View {
             Form {
                 Section {
                     ForEach($items) { $item in
-                        PlanItemRow(item: $item, name: displayName(item), units: units(for: item),
-                                    portions: catalog.portions(item.refId),
-                                    carbs: itemCarbs(catalog, item.refType, item.refId, item.amount, item.unit))
+                        if item.refType == .quick {
+                            QuickCarbsRow(label: Binding(get: { $item.wrappedValue.label ?? "" },
+                                                         set: { $item.wrappedValue.label = $0 }),
+                                          amount: $item.amount,
+                                          carbs: itemCarbs(catalog, item.refType, item.refId, item.amount, item.unit))
+                        } else {
+                            PlanItemRow(item: $item, name: displayName(item), units: units(for: item),
+                                        portions: catalog.portions(item.refId),
+                                        carbs: itemCarbs(catalog, item.refType, item.refId, item.amount, item.unit))
+                        }
                     }
                     .onDelete { items.remove(atOffsets: $0) }
-                    Button { showAdd = true } label: { Label("Add food or meal", systemImage: "plus.circle") }
-                        .buttonStyle(.borderless)
+                    HStack {
+                        Button { showAdd = true } label: { Label("Add food or meal", systemImage: "plus.circle") }
+                        Spacer()
+                        Button("+ Carbs") { showQuick = true }
+                    }
+                    .buttonStyle(.borderless)
                 } header: {
                     Text("Items")
                 } footer: {
@@ -45,6 +57,12 @@ struct PlanSlotEditorView: View {
             .navigationBarTitleDisplayMode(.inline)
             .sheet(isPresented: $showAdd) {
                 AddItemSheet { hit in add(hit) }
+            }
+            .sheet(isPresented: $showQuick) {
+                QuickCarbsSheet { label, grams in
+                    items.append(PlanEditing.DraftItem(id: nil, refType: .quick, refId: "", amount: grams,
+                                                       unit: Units.quick, label: label))
+                }
             }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
@@ -68,24 +86,19 @@ struct PlanSlotEditorView: View {
 
     /// Plans never snapshot a display name, so it is resolved live from the catalog.
     private func displayName(_ item: PlanEditing.DraftItem) -> String {
-        switch item.refType {
-        case .food: catalog.food(item.refId)?.name ?? "Unknown item"
-        case .meal: catalog.meal(item.refId)?.name ?? "Unknown item"
-        }
+        itemDisplayName(item.refType, item.refId, label: item.label, catalog: catalog)
     }
 
     private func units(for item: PlanEditing.DraftItem) -> [String] {
-        switch item.refType {
-        case .food: catalog.food(item.refId).map { foodUnits($0, catalog.portions(item.refId)) } ?? [item.unit]
-        case .meal: catalog.meal(item.refId).map { mealUnits($0) } ?? [item.unit]
-        }
+        itemUnits(item.refType, item.refId, currentUnit: item.unit, catalog: catalog)
     }
 
     private func load() {
         guard !loaded else { return }
         loaded = true
         items = slot.items.map {
-            PlanEditing.DraftItem(id: $0.id, refType: $0.refType, refId: $0.refId, amount: $0.amount, unit: $0.unit)
+            PlanEditing.DraftItem(id: $0.id, refType: $0.refType, refId: $0.refId, amount: $0.amount, unit: $0.unit,
+                                  label: $0.label)
         }
         note = slot.entry?.note ?? ""
     }
@@ -119,7 +132,7 @@ struct PlanSlotEditorView: View {
     }
 
     private func save() {
-        guard !items.contains(where: { !$0.amount.isFinite || $0.amount < 0 }) else {
+        guard !items.contains(where: { !$0.amount.isFinite || $0.amount < 0 || ($0.refType == .quick && !isValidQuickCarbs($0.amount)) }) else {
             error = PlanEditing.EditError.invalidAmount.message
             return
         }
