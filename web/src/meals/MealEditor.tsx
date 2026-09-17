@@ -6,7 +6,7 @@ import { buildCatalog, type CatalogData } from '../db/catalog';
 import { parseUsdaFoodId, uuidv7 } from '../lib/ids';
 import type { SearchResult } from '../search/search';
 import { formatCarbs, parseAmount, parseNonNegative } from '../ui/format';
-import { type DraftItem, ItemEditor, newDraftItem } from '../ui/ItemEditor';
+import { type DraftItem, draftAmount, ItemEditor, newDraftItem, newQuickItem } from '../ui/ItemEditor';
 import { SearchPanel } from '../ui/SearchPanel';
 import { saveMeal, withDraftMeal } from './saveMeal';
 
@@ -25,7 +25,7 @@ export function MealEditor(props: { data: CatalogData; mealId: string | null; on
     data.meal_items
       .filter((i) => i.meal_id === mealId)
       .sort((a, b) => a.position - b.position)
-      .map((i) => ({ key: i.id, ref_type: i.ref_type, ref_id: i.ref_id, amount: String(i.amount), unit: i.unit })),
+      .map((i) => ({ key: i.id, ref_type: i.ref_type, ref_id: i.ref_id, amount: String(i.amount), unit: i.unit, label: i.label ?? '' })),
   );
   const [message, setMessage] = useState<string | null>(null);
   const [errors, setErrors] = useState<string[]>([]);
@@ -63,7 +63,7 @@ export function MealEditor(props: { data: CatalogData; mealId: string | null; on
     if (!(meal.yield_servings > 0)) problems.push('Yield must be more than 0 servings.');
     if (meal.total_weight_g != null && !(meal.total_weight_g > 0)) problems.push('Total weight must be empty or more than 0 g.');
     if (items.length === 0) problems.push('Add at least one component.');
-    if (items.some((i) => parseAmount(i.amount) === null)) problems.push('Every component needs an amount.');
+    if (items.some((i) => draftAmount(i) === null)) problems.push('Every component needs an amount.');
     setErrors(problems);
     if (problems.length > 0) return;
     const keys = new Set(items.map((i) => i.key));
@@ -98,7 +98,11 @@ export function MealEditor(props: { data: CatalogData; mealId: string | null; on
       </label>
       <h2>Components</h2>
       <ItemEditor items={items} catalog={catalog} onChange={setItems} reorderable />
-      <SearchPanel label="Add a component" onPick={(result) => void pick(result)} />
+      <SearchPanel
+        label="Add a component"
+        onPick={(result) => void pick(result)}
+        onAddCarbs={() => setItems((current) => [...current, newQuickItem(uuidv7(now()))])}
+      />
       {message && <p role="alert">{message}</p>}
       <p className="total" data-testid="meal-carbs">
         {perServing.complete ? `${formatCarbs(perServing.carbs_g)} carbs per serving` : 'Incomplete carb data'}

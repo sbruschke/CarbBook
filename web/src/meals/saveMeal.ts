@@ -1,11 +1,13 @@
-import type { MealData, MealItemData } from '@carbbook/core';
+import { itemRefId, type MealData, type MealItemData } from '@carbbook/core';
 import type { CatalogData } from '../db/catalog';
 import type { Change, Store } from '../db/store';
-import { parseAmount } from '../ui/format';
-import type { DraftItem } from '../ui/ItemEditor';
+import { draftAmount, type DraftItem, draftLabel } from '../ui/ItemEditor';
 import { saveUsdaFoodsFor } from '../usda/materialize';
 
-/** Saves a meal and its components (item key = meal_item id, order = position). */
+/**
+ * Saves a meal and its components (item key = meal_item id, order = position). Every amount must
+ * already be valid (`draftAmount` non-null) — the editors block saving otherwise.
+ */
 export async function saveMeal(store: Store, meal: MealData, items: DraftItem[], removedItemIds: string[] = []): Promise<void> {
   await saveUsdaFoodsFor(store, items);
   const changes: Change[] = [
@@ -17,10 +19,11 @@ export async function saveMeal(store: Store, meal: MealData, items: DraftItem[],
           id: item.key,
           meal_id: meal.id,
           ref_type: item.ref_type,
-          ref_id: item.ref_id,
-          amount: parseAmount(item.amount)!,
+          ref_id: itemRefId(item.ref_type, item.ref_id, item.key),
+          amount: draftAmount(item)!,
           unit: item.unit,
           position,
+          label: draftLabel(item),
         },
       }),
     ),
@@ -37,10 +40,11 @@ export function withDraftMeal(data: CatalogData, meal: MealData, items: DraftIte
       id: item.key,
       meal_id: meal.id,
       ref_type: item.ref_type,
-      ref_id: item.ref_id,
-      amount: parseAmount(item.amount) ?? Number.NaN,
+      ref_id: itemRefId(item.ref_type, item.ref_id, item.key),
+      amount: draftAmount(item) ?? Number.NaN,
       unit: item.unit,
       position,
+      label: draftLabel(item),
       ...meta,
     }),
   );
