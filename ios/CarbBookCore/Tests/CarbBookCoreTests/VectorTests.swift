@@ -90,6 +90,8 @@ final class VectorTests: XCTestCase {
         XCTAssertFalse(u.carb_cases.isEmpty)
         XCTAssertFalse(u.unit_list_cases.isEmpty)
         XCTAssertFalse(u.cycle_cases.isEmpty)
+        XCTAssertTrue(u.carb_cases.contains { $0.ref_type == .quick }, "quick carbs vectors present")
+        XCTAssertTrue(u.unit_list_cases.contains { $0.ref_type == .quick })
         let catalog = InMemoryCatalog(foods: u.foods, portions: u.portions, meals: u.meals, mealItems: u.meal_items)
         for c in u.grams_cases {
             let food = try XCTUnwrap(catalog.food(c.food_id), c.name)
@@ -106,9 +108,12 @@ final class VectorTests: XCTestCase {
             XCTAssertEqual(r.carbsG, c.expect.carbs_g, accuracy: u.tolerance, "carbs: \(c.name)")
         }
         for c in u.unit_list_cases {
-            let units = c.ref_type == .food
-                ? foodUnits(try XCTUnwrap(catalog.food(c.ref_id)), catalog.portions(c.ref_id))
-                : mealUnits(try XCTUnwrap(catalog.meal(c.ref_id)))
+            let units: [String]
+            switch c.ref_type {
+            case .food: units = foodUnits(try XCTUnwrap(catalog.food(c.ref_id)), catalog.portions(c.ref_id))
+            case .meal: units = mealUnits(try XCTUnwrap(catalog.meal(c.ref_id)))
+            case .quick: units = quickUnits()
+            }
             XCTAssertEqual(units, c.expect, "unit list: \(c.ref_id)")
         }
         for c in u.cycle_cases {

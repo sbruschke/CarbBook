@@ -46,7 +46,8 @@ public struct PlanEntryData: Codable, Equatable, Sendable {
 }
 
 /// One row inside a planned slot: the same shape as `log_item` minus the snapshot fields
-/// (`display_name`, `carbs_g`). Plans never snapshot; carbs are computed live with `itemCarbs`.
+/// (`display_name`, `carbs_g`), plus the quick-row `label`. Plans never snapshot; carbs are computed
+/// live with `itemCarbs`.
 public struct PlanItemData: Codable, Equatable, Sendable {
     public var id: Id
     public var planEntryId: Id
@@ -55,18 +56,34 @@ public struct PlanItemData: Codable, Equatable, Sendable {
     public var amount: Double
     public var unit: String
     public var position: Int
+    /// Quick carbs rows only: optional text, at most 80 characters.
+    public var label: String?
     public var deleted: Int?
 
     public init(id: Id, planEntryId: Id, refType: RefType, refId: Id, amount: Double, unit: String,
-                position: Int, deleted: Int? = nil) {
+                position: Int, label: String? = nil, deleted: Int? = nil) {
         self.id = id; self.planEntryId = planEntryId; self.refType = refType; self.refId = refId
-        self.amount = amount; self.unit = unit; self.position = position; self.deleted = deleted
+        self.amount = amount; self.unit = unit; self.position = position; self.label = label; self.deleted = deleted
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, amount, unit, position, deleted
+        case id, amount, unit, position, label, deleted
         case planEntryId = "plan_entry_id"
         case refType = "ref_type"
         case refId = "ref_id"
+    }
+
+    /// Explicit, so a nil `label` is sent as JSON `null` (see `MealItemData.encode`).
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(planEntryId, forKey: .planEntryId)
+        try container.encode(refType, forKey: .refType)
+        try container.encode(refId, forKey: .refId)
+        try container.encode(amount, forKey: .amount)
+        try container.encode(unit, forKey: .unit)
+        try container.encode(position, forKey: .position)
+        try container.encode(label, forKey: .label)
+        try container.encodeIfPresent(deleted, forKey: .deleted)
     }
 }

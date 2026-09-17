@@ -17,12 +17,43 @@ public enum Units {
     public static let maxCarbsPer100g = 100.0
     public static let maxCarbsPer100ml = 150.0
     public static let maxPortionCarbsG = 500.0
+
+    /// Quick carbs rows (quick-carbs spec §2): amount is grams of carbs and this is the only unit.
+    public static let quick = "carbs"
+    public static let quickLabelMax = 80
+    public static let quickDefaultLabel = "Extra carbs"
 }
 
 public func isMassUnit(_ unit: String) -> Bool { Units.massGrams[unit] != nil }
 public func isVolumeUnit(_ unit: String) -> Bool { Units.volumeMl[unit] != nil }
 
 public func isValidAmount(_ amount: Double) -> Bool { amount.isFinite && amount >= 0 }
+
+/// Grams of carbs on a quick row: finite and 0 ... DoseLimits.maxCarbsG. Mirrors units.ts.
+public func isValidQuickCarbs(_ amount: Double) -> Bool {
+    amount.isFinite && amount >= 0 && amount <= DoseLimits.maxCarbsG
+}
+
+public func quickUnits() -> [String] { [Units.quick] }
+
+/// Stored form of a quick row's label: trimmed, at most 80 UTF-16 units (the server counts JS
+/// string length), nil when blank. Mirrors units.ts `normalizeQuickLabel`.
+public func normalizeQuickLabel(_ label: String?) -> String? {
+    let trimmed = (label ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+    let capped = String(decoding: trimmed.utf16.prefix(Units.quickLabelMax), as: UTF16.self)
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+    return capped.isEmpty ? nil : capped
+}
+
+/// What a quick row is called on screen and in log snapshots.
+public func quickDisplayName(_ label: String?) -> String {
+    normalizeQuickLabel(label) ?? Units.quickDefaultLabel
+}
+
+/// ref_id to store for a row: a quick row points at itself; food and meal rows keep theirs.
+public func itemRefId(_ refType: RefType, _ refId: Id, rowId: Id) -> Id {
+    refType == .quick ? rowId : refId
+}
 
 private func inRange(_ value: Double?, _ max: Double) -> Bool {
     guard let value else { return false }

@@ -31,7 +31,8 @@
   "meals": [
     { "id": "rice-corn", "name": "Rice and cream style corn", "yield_servings": 2, "total_weight_g": 414 },
     { "id": "plate", "name": "Plate", "yield_servings": 1, "total_weight_g": null },
-    { "id": "bad", "name": "Has an unlabeled food", "yield_servings": 1, "total_weight_g": null }
+    { "id": "bad", "name": "Has an unlabeled food", "yield_servings": 1, "total_weight_g": null },
+    { "id": "with-quick", "name": "Bread with extra carbs", "yield_servings": 2, "total_weight_g": null }
   ],
   "meal_items": [
     { "id": "i1", "meal_id": "rice-corn", "ref_type": "food", "ref_id": "rice", "amount": 1, "unit": "cup", "position": 0 },
@@ -39,7 +40,9 @@
     { "id": "i3", "meal_id": "plate", "ref_type": "meal", "ref_id": "rice-corn", "amount": 1.5, "unit": "serving", "position": 0 },
     { "id": "i4", "meal_id": "plate", "ref_type": "food", "ref_id": "bread", "amount": 1, "unit": "p:bread-slice", "position": 1 },
     { "id": "i5", "meal_id": "bad", "ref_type": "food", "ref_id": "rice", "amount": 100, "unit": "g", "position": 0 },
-    { "id": "i6", "meal_id": "bad", "ref_type": "food", "ref_id": "mystery", "amount": 50, "unit": "g", "position": 1 }
+    { "id": "i6", "meal_id": "bad", "ref_type": "food", "ref_id": "mystery", "amount": 50, "unit": "g", "position": 1 },
+    { "id": "i7", "meal_id": "with-quick", "ref_type": "food", "ref_id": "bread", "amount": 2, "unit": "p:bread-slice", "position": 0 },
+    { "id": "i8", "meal_id": "with-quick", "ref_type": "quick", "ref_id": "i8", "amount": 7, "unit": "carbs", "label": "Ranch & salad", "position": 1 }
   ],
   "grams_cases": [
     { "name": "grams", "food_id": "rice", "amount": 100, "unit": "g", "expect": 100 },
@@ -84,7 +87,16 @@
     { "name": "invalid carbs per 100 g does not fall back to per 100 ml", "ref_type": "food", "ref_id": "mass-fallback", "amount": 100, "unit": "g", "expect": { "carbs_g": 0, "complete": false } },
     { "name": "invalid carbs per 100 g leaves volume on per 100 ml", "ref_type": "food", "ref_id": "mass-fallback", "amount": 100, "unit": "ml", "expect": { "carbs_g": 50, "complete": true } },
     { "name": "invalid portion carbs do not fall back to portion grams", "ref_type": "food", "ref_id": "portion-fallback", "amount": 1, "unit": "p:big", "expect": { "carbs_g": 0, "complete": false } },
-    { "name": "volume portion carbs_g is ignored", "ref_type": "food", "ref_id": "vol-portion-carbs", "amount": 1, "unit": "p:vp-cup", "expect": { "carbs_g": 40, "complete": true } }
+    { "name": "volume portion carbs_g is ignored", "ref_type": "food", "ref_id": "vol-portion-carbs", "amount": 1, "unit": "p:vp-cup", "expect": { "carbs_g": 40, "complete": true } },
+    { "name": "quick carbs zero", "ref_type": "quick", "ref_id": "q1", "amount": 0, "unit": "carbs", "expect": { "carbs_g": 0, "complete": true } },
+    { "name": "quick carbs 7 g", "ref_type": "quick", "ref_id": "q1", "amount": 7, "unit": "carbs", "expect": { "carbs_g": 7, "complete": true } },
+    { "name": "quick carbs decimal", "ref_type": "quick", "ref_id": "q1", "amount": 7.5, "unit": "carbs", "expect": { "carbs_g": 7.5, "complete": true } },
+    { "name": "quick carbs at the 2000 g limit", "ref_type": "quick", "ref_id": "q1", "amount": 2000, "unit": "carbs", "expect": { "carbs_g": 2000, "complete": true } },
+    { "name": "quick carbs above the limit", "ref_type": "quick", "ref_id": "q1", "amount": 2001, "unit": "carbs", "expect": { "carbs_g": 0, "complete": false } },
+    { "name": "quick carbs negative", "ref_type": "quick", "ref_id": "q1", "amount": -1, "unit": "carbs", "expect": { "carbs_g": 0, "complete": false } },
+    { "name": "quick carbs wrong unit", "ref_type": "quick", "ref_id": "q1", "amount": 7, "unit": "g", "expect": { "carbs_g": 0, "complete": false } },
+    { "name": "quick carbs ref_id is never looked up", "ref_type": "quick", "ref_id": "not-a-row", "amount": 12, "unit": "carbs", "expect": { "carbs_g": 12, "complete": true } },
+    { "name": "meal with a quick component", "ref_type": "meal", "ref_id": "with-quick", "amount": 1, "unit": "serving", "expect": { "carbs_g": 15.75, "complete": true } }
   ],
   "unit_list_cases": [
     { "ref_type": "food", "ref_id": "rice", "expect": ["g", "kg", "oz", "lb", "ml", "l", "tsp", "tbsp", "floz", "cup"] },
@@ -102,7 +114,8 @@
     { "ref_type": "food", "ref_id": "vol-fallback", "expect": ["g", "kg", "oz", "lb"] },
     { "ref_type": "food", "ref_id": "mass-fallback", "expect": ["ml", "l", "tsp", "tbsp", "floz", "cup"] },
     { "ref_type": "food", "ref_id": "portion-fallback", "expect": ["g", "kg", "oz", "lb"] },
-    { "ref_type": "food", "ref_id": "vol-portion-carbs", "expect": ["g", "kg", "oz", "lb", "ml", "l", "tsp", "tbsp", "floz", "cup"] }
+    { "ref_type": "food", "ref_id": "vol-portion-carbs", "expect": ["g", "kg", "oz", "lb", "ml", "l", "tsp", "tbsp", "floz", "cup"] },
+    { "ref_type": "quick", "ref_id": "q1", "expect": ["carbs"] }
   ],
   "cycle_cases": [
     { "meal_id": "plate", "candidate": "plate", "expect": true },
