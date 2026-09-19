@@ -5,7 +5,8 @@ import { getJson, type ImageCandidate, type ImageSearchProvider, type ProviderOp
 /**
  * Wikimedia Commons via action=query with a search generator. No API key. Licence and
  * attribution are reliable here, which is why it is worth having alongside Openverse.
- * Bytes always come from upload.wikimedia.org, the only host in the allowlist for this provider.
+ * Bytes come from upload.wikimedia.org (originals) or thumb.wikimedia.org (imageinfo.thumburl,
+ * what the live API actually returns) — both allowlisted for this provider in urlguard.ts.
  */
 interface CommonsImageInfo {
   thumburl?: string;

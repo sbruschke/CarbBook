@@ -9,7 +9,7 @@ describe('PROVIDER_HOSTS', () => {
   it('lists exactly the hosts each provider serves bytes from', () => {
     expect(PROVIDER_HOSTS).toEqual({
       openverse: ['api.openverse.org'],
-      wikimedia: ['upload.wikimedia.org'],
+      wikimedia: ['upload.wikimedia.org', 'thumb.wikimedia.org'],
       themealdb: ['www.themealdb.com'],
       off: ['images.openfoodfacts.org', 'static.openfoodfacts.org'],
     });
@@ -29,6 +29,16 @@ describe('isProviderHost', () => {
     // off has two hosts; [0] alone would have broken the second one.
     expect(isProviderHost('https://images.openfoodfacts.org/x.jpg', 'off')).toBe(true);
     expect(isProviderHost('https://static.openfoodfacts.org/x.jpg', 'off')).toBe(true);
+  });
+
+  it('matches both Wikimedia hosts: the original upload host and the live thumbnail host', () => {
+    expect(isProviderHost('https://upload.wikimedia.org/wikipedia/commons/a/b/Tomato_soup.jpg', 'wikimedia')).toBe(true);
+    expect(
+      isProviderHost(
+        'https://thumb.wikimedia.org/wikipedia/commons/thumb/b/b5/Tomato_soup.jpg/960px-Tomato_soup.jpg',
+        'wikimedia',
+      ),
+    ).toBe(true);
   });
 
   it('compares hostnames case-insensitively', () => {

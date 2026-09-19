@@ -5,7 +5,11 @@ export interface ImageCandidate {
   thumb_url: string;
   /** What POST /api/images/adopt will fetch. Must be on the provider's own host (urlguard.ts). */
   full_url: string;
+  /** The provider's own claim, shown pre-adopt only; can be off (Wikimedia's is ~20% low vs the
+   *  bytes it actually serves). Stored dimensions come from sharp measuring the adopted bytes
+   *  (see store.ts), never from this field. */
   width: number | null;
+  /** See `width`. */
   height: number | null;
   license: string | null;
   attribution: string | null;

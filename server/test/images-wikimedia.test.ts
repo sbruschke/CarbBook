@@ -11,7 +11,8 @@ const RESPONSE = {
         title: 'File:Tomato soup.jpg',
         imageinfo: [
           {
-            thumburl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/b/Tomato_soup.jpg/800px-Tomato_soup.jpg',
+            thumburl:
+              'https://thumb.wikimedia.org/wikipedia/commons/thumb/a/b/Tomato_soup.jpg/800px-Tomato_soup.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail',
             thumbwidth: 800,
             thumbheight: 533,
             url: 'https://upload.wikimedia.org/wikipedia/commons/a/b/Tomato_soup.jpg',
@@ -60,8 +61,10 @@ describe('wikimedia provider', () => {
     expect(candidates).toEqual([
       {
         provider: 'wikimedia',
-        thumb_url: 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/b/Tomato_soup.jpg/800px-Tomato_soup.jpg',
-        full_url: 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/b/Tomato_soup.jpg/800px-Tomato_soup.jpg',
+        thumb_url:
+          'https://thumb.wikimedia.org/wikipedia/commons/thumb/a/b/Tomato_soup.jpg/800px-Tomato_soup.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail',
+        full_url:
+          'https://thumb.wikimedia.org/wikipedia/commons/thumb/a/b/Tomato_soup.jpg/800px-Tomato_soup.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail',
         width: 800,
         height: 533,
         license: 'CC BY-SA 4.0',

@@ -4,7 +4,13 @@ import { getJson, type ImageCandidate, type ImageSearchProvider, type ProviderOp
 /**
  * TheMealDB: a small catalogue of prepared dishes with good photos, free on the public test
  * key `1`. High relevance when it hits, nothing when it misses — a miss is reported as
- * `{"meals": null}`, not an empty array. Appending /preview to a thumb yields a small version.
+ * `{"meals": null}`, not an empty array. Appending /medium to a thumb yields a 350x350 version,
+ * sharp enough for a retina grid cell while staying far smaller than the 700x700 original —
+ * /preview is only 150x150, blurry at 2x/3x device pixel ratio.
+ *
+ * The stored original is 700x700, the largest size TheMealDB offers, so images adopted from this
+ * provider top out at 700px rather than the usual 800px cap — that is this source's own ceiling,
+ * not a URL we chose wrong.
  *
  * The API has no licence field; images are the site's own, credited as "TheMealDB".
  */
@@ -28,7 +34,7 @@ export function createMealDbProvider(options: ProviderOptions): ImageSearchProvi
           if (!thumb || !isProviderHost(thumb, 'themealdb')) return [];
           const candidate: ImageCandidate = {
             provider: 'themealdb',
-            thumb_url: `${thumb}/preview`,
+            thumb_url: `${thumb}/medium`,
             full_url: thumb,
             width: null,
             height: null,

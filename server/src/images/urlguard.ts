@@ -24,7 +24,10 @@ export type AdoptProvider = 'openverse' | 'wikimedia' | 'themealdb' | 'off';
 /** Exact hostnames, never suffix matches: "upload.wikimedia.org.evil.test" must not pass. */
 export const PROVIDER_HOSTS: Record<AdoptProvider, string[]> = {
   openverse: ['api.openverse.org'],
-  wikimedia: ['upload.wikimedia.org'],
+  // Commons' imageinfo.thumburl points at thumb.wikimedia.org, not upload.wikimedia.org — both
+  // are Wikimedia-owned hosts serving image bytes, so both belong here rather than rewriting one
+  // hostname to the other and hard-coding an assumption about their path structures staying alike.
+  wikimedia: ['upload.wikimedia.org', 'thumb.wikimedia.org'],
   themealdb: ['www.themealdb.com'],
   off: ['images.openfoodfacts.org', 'static.openfoodfacts.org'],
 };

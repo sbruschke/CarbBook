@@ -30,7 +30,7 @@ const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
 describe('themealdb provider', () => {
-  it('maps meals, uses the /preview thumbnail, and honours the limit', async () => {
+  it('maps meals, uses the /medium thumbnail, and honours the limit', async () => {
     const { fetch, calls } = stubFetch(() => json(RESPONSE));
     const candidates = await createMealDbProvider(options(fetch)).search('soup', 1);
 
@@ -38,7 +38,7 @@ describe('themealdb provider', () => {
     expect(candidates).toEqual([
       {
         provider: 'themealdb',
-        thumb_url: 'https://www.themealdb.com/images/media/meals/abc123.jpg/preview',
+        thumb_url: 'https://www.themealdb.com/images/media/meals/abc123.jpg/medium',
         full_url: 'https://www.themealdb.com/images/media/meals/abc123.jpg',
         width: null,
         height: null,
