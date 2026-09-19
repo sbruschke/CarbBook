@@ -95,3 +95,57 @@ final class ImagesKitTests: XCTestCase {
         XCTAssertEqual(pending[0].record["image_id"], .null, "a new edit carries every column")
     }
 }
+
+/// The data-loss guard for images: `LocalStore.writeLocal` fills every column the incoming record
+/// omits with null, so a core struct with no `imageId` turns an ordinary edit into "clear the image".
+/// These two pull a row that already has an image (as one chosen on the web arrives), edit an
+/// unrelated field, and check the push still carries the same `image_id`.
+extension ImagesKitTests {
+    private func pulled(_ table: String, _ record: [String: JSONValue], into store: LocalStore) async throws {
+        var row = record
+        row["updated_at"] = .number(1_000)
+        row["updated_by"] = .string("web-1")
+        row["deleted"] = .number(0)
+        row["server_seq"] = .number(1)
+        try await store.applyPull([SyncChange(table: table, record: row)], nextSince: 1)
+    }
+
+    func testEditingAPulledFoodKeepsItsImage() async throws {
+        let clock = TestClock(2_000)
+        let store = try LocalStore(path: nil, now: clock.now)
+        try await pulled("food", [
+            "id": .string("f1"), "name": .string("Rice"), "source": .string("custom"),
+            "carbs_per_100g": .number(28.2), "image_id": .string(hash),
+        ], into: store)
+
+        var food = try XCTUnwrap(store.foods().first)
+        XCTAssertEqual(food.imageId, hash, "a pulled image_id must decode onto the struct")
+        food.name = "Jasmine rice"
+        clock.ms = 3_000
+        try store.save("food", food)
+
+        let pending = try await store.pendingChanges(limit: 10)
+        XCTAssertEqual(pending.map(\.key), ["food/f1"])
+        XCTAssertEqual(pending[0].record["name"], .string("Jasmine rice"))
+        XCTAssertEqual(pending[0].record["image_id"], .string(hash), "editing the name must not wipe the image")
+    }
+
+    func testEditingAPulledMealKeepsItsImage() async throws {
+        let clock = TestClock(2_000)
+        let store = try LocalStore(path: nil, now: clock.now)
+        try await pulled("meal", [
+            "id": .string("m1"), "name": .string("Chilli"), "yield_servings": .number(4),
+            "image_id": .string(hash),
+        ], into: store)
+
+        var meal = try XCTUnwrap(store.meals().first)
+        XCTAssertEqual(meal.imageId, hash, "a pulled image_id must decode onto the struct")
+        meal.name = "Chilli con carne"
+        clock.ms = 3_000
+        try store.save("meal", meal)
+
+        let pending = try await store.pendingChanges(limit: 10)
+        XCTAssertEqual(pending.map(\.key), ["meal/m1"])
+        XCTAssertEqual(pending[0].record["image_id"], .string(hash), "editing the name must not wipe the image")
+    }
+}

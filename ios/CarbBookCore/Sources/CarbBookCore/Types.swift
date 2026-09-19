@@ -17,20 +17,23 @@ public struct FoodData: Codable, Equatable, Sendable {
     public var fiberPer100g: Double?
     public var densityGPerMl: Double?
     public var notes: String?
+    /// Optional image, referencing `image.id` (images spec). A dangling id renders as no image.
+    public var imageId: Id?
     public var deleted: Int?
 
     public init(id: Id, name: String, brand: String? = nil, source: String? = nil, sourceRef: String? = nil,
                 derivedFrom: Id? = nil, carbsPer100g: Double?, carbsPer100ml: Double? = nil, fiberPer100g: Double? = nil,
-                densityGPerMl: Double? = nil, notes: String? = nil, deleted: Int? = nil) {
+                densityGPerMl: Double? = nil, notes: String? = nil, imageId: Id? = nil, deleted: Int? = nil) {
         self.id = id; self.name = name; self.brand = brand; self.source = source; self.sourceRef = sourceRef
         self.derivedFrom = derivedFrom; self.carbsPer100g = carbsPer100g; self.carbsPer100ml = carbsPer100ml
         self.fiberPer100g = fiberPer100g
-        self.densityGPerMl = densityGPerMl; self.notes = notes; self.deleted = deleted
+        self.densityGPerMl = densityGPerMl; self.notes = notes; self.imageId = imageId; self.deleted = deleted
     }
 
     enum CodingKeys: String, CodingKey {
         case id, name, brand, source, notes, deleted
         case sourceRef = "source_ref"
+        case imageId = "image_id"
         case derivedFrom = "derived_from"
         case carbsPer100g = "carbs_per_100g"
         case carbsPer100ml = "carbs_per_100ml"
@@ -54,6 +57,7 @@ public struct FoodData: Codable, Equatable, Sendable {
         try container.encodeIfPresent(fiberPer100g, forKey: .fiberPer100g)
         try container.encodeIfPresent(densityGPerMl, forKey: .densityGPerMl)
         try container.encodeIfPresent(notes, forKey: .notes)
+        try container.encodeIfPresent(imageId, forKey: .imageId)
         try container.encodeIfPresent(deleted, forKey: .deleted)
     }
 }
@@ -105,17 +109,21 @@ public struct MealData: Codable, Equatable, Sendable {
     public var yieldServings: Double
     public var totalWeightG: Double?
     public var notes: String?
+    /// Optional image, referencing `image.id` (images spec). A dangling id renders as no image.
+    public var imageId: Id?
     public var deleted: Int?
 
-    public init(id: Id, name: String, yieldServings: Double, totalWeightG: Double? = nil, notes: String? = nil, deleted: Int? = nil) {
+    public init(id: Id, name: String, yieldServings: Double, totalWeightG: Double? = nil, notes: String? = nil,
+                imageId: Id? = nil, deleted: Int? = nil) {
         self.id = id; self.name = name; self.yieldServings = yieldServings
-        self.totalWeightG = totalWeightG; self.notes = notes; self.deleted = deleted
+        self.totalWeightG = totalWeightG; self.notes = notes; self.imageId = imageId; self.deleted = deleted
     }
 
     enum CodingKeys: String, CodingKey {
         case id, name, notes, deleted
         case yieldServings = "yield_servings"
         case totalWeightG = "total_weight_g"
+        case imageId = "image_id"
     }
 }
 

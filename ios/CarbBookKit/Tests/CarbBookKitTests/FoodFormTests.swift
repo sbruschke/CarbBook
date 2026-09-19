@@ -366,6 +366,24 @@ final class FoodFormTests: XCTestCase {
         XCTAssertEqual(try built(form).removedPortionIds, ["p1"])
     }
 
+    /// The editor rebuilds `FoodData` from scratch on save, so without this the food's image would
+    /// be dropped by any ordinary edit (and `LocalStore.writeLocal` would push `image_id: null`).
+    func testEditingKeepsTheStoredImage() throws {
+        let hash = String(repeating: "b", count: 64)
+        var form = FoodForm(food: FoodData(id: "f1", name: "Bread", source: "custom", carbsPer100g: 50, imageId: hash), portions: [])
+        XCTAssertEqual(form.imageId, hash)
+        form.name = "Sourdough"
+        XCTAssertEqual(try built(form).food.imageId, hash)
+    }
+
+    /// Removing the image is a deliberate choice, so nil must reach the record and clear the column.
+    func testRemovingTheImageClearsIt() throws {
+        var form = FoodForm(food: FoodData(id: "f1", name: "Bread", source: "custom", carbsPer100g: 50,
+                                           imageId: String(repeating: "b", count: 64)), portions: [])
+        form.imageId = nil
+        XCTAssertNil(try built(form).food.imageId)
+    }
+
     func testLargeGramsRoundTripWithoutLocaleGrouping() throws {
         let loaf = PortionData(id: "p1", foodId: "f1", label: "loaf", kind: "count", quantity: 1, grams: 1200)
         let form = FoodForm(food: FoodData(id: "f1", name: "Bread", source: "custom", carbsPer100g: 50), portions: [loaf])
