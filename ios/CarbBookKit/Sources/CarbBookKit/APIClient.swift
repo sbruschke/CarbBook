@@ -241,6 +241,14 @@ public final class APIClient: @unchecked Sendable {
         }
     }
 
+    /// JPEG bytes of `GET /api/images/:hash`. Content-addressed, so the response never changes and
+    /// `ImageCache` keeps it on disk for good.
+    public func imageBytes(hash: String) async throws -> Data {
+        var request = makeRequest("GET", "/api/images/\(hash)")
+        request.setValue("image/jpeg", forHTTPHeaderField: "Accept")
+        return try await send(request)
+    }
+
     /// Raw bytes of a server path such as a manifest's `sqlite_url`.
     public func download(path: String) async throws -> Data {
         var request = makeRequest("GET", path)

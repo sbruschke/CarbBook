@@ -179,4 +179,15 @@ final class APIClientTests: XCTestCase {
         XCTAssertNil(food.carbsPer100g)
         XCTAssertEqual(portions, [])
     }
+
+    func testImageBytesGetsTheHashPathWithTheToken() async throws {
+        let bytes = Data([0xFF, 0xD8, 0xFF, 0xE0])
+        let stub = StubTransport { _ in (200, bytes) }
+        let api = APIClient(baseURL: base, transport: stub, token: { "tok" })
+        let hash = String(repeating: "a", count: 64)
+        let fetched = try await api.imageBytes(hash: hash)
+        XCTAssertEqual(fetched, bytes)
+        XCTAssertEqual(stub.requests.first?.url?.path, "/api/images/\(hash)")
+        XCTAssertEqual(stub.requests.first?.value(forHTTPHeaderField: "Authorization"), "Bearer tok")
+    }
 }
