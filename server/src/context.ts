@@ -16,6 +16,8 @@ export interface AppDeps {
   imageProviders: ImageSearchProvider[];
   /** Fetches an already-guarded URL for adoption. Separate from provider search so tests can stub it. */
   fetchImage: (url: string) => Promise<Buffer>;
+  /** Hostname resolution for the adopt guard. Injected so route tests stay hermetic. */
+  dnsLookup?: (hostname: string) => Promise<{ address: string; family: number }[]>;
 }
 
 export interface AppContext {

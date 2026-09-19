@@ -74,6 +74,9 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
     // read of Cloudflare's CF-Connecting-IP via `clientIp()` (see src/ip.ts).
     trustProxy: false,
     bodyLimit: 5 * 1024 * 1024,
+    // Fastify's ajv defaults silently strip unknown body properties; we would rather a request
+    // carrying a field this server does not understand fail loudly than half-apply.
+    ajv: { customOptions: { removeAdditional: false } },
   });
   app.setErrorHandler(errorHandler);
   app.decorateRequest('auth', null);
