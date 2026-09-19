@@ -6,6 +6,7 @@ import { isLive } from '../db/db';
 import { FoodEditor } from '../foods/FoodEditor';
 import { foodBasisSummary, type FoodPrefill, prefillFromDraft } from '../foods/label';
 import { formatTime } from '../ui/format';
+import { ImageThumb } from '../ui/ImageThumb';
 import { ScannerDialog } from '../ui/ScannerDialog';
 
 type Mode = { kind: 'list' } | { kind: 'edit'; id: string } | { kind: 'new'; prefill?: FoodPrefill };
@@ -39,7 +40,10 @@ export function Foods() {
         return;
       case 'draft':
         setMessage(null);
-        setMode({ kind: 'new', prefill: prefillFromDraft(result.draft) });
+        setMode({
+          kind: 'new',
+          prefill: { ...prefillFromDraft(result.draft), ...(result.image_candidate ? { image_candidate: result.image_candidate } : {}) },
+        });
         return;
       case 'manual':
         setMessage(null);
@@ -114,6 +118,7 @@ export function Foods() {
         {shown.map((food) => (
           <li key={food.id}>
             <button type="button" className="list-item" onClick={() => setMode({ kind: 'edit', id: food.id })}>
+              <ImageThumb imageId={food.image_id} alt="" />
               <span>{food.name}</span>
               <span className="muted">
                 {[

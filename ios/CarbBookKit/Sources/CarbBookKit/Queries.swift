@@ -33,6 +33,12 @@ extension LocalStore {
     public func foods() throws -> [FoodData] { try records("food", "WHERE deleted = 0 ORDER BY name COLLATE NOCASE") }
     public func meals() throws -> [MealData] { try records("meal", "WHERE deleted = 0 ORDER BY name COLLATE NOCASE") }
 
+    /// The synced `image` row, for the attribution shown under a chosen image. nil when the row has
+    /// not arrived yet (or never will): the picture itself still loads by hash.
+    public func image(id: Id) throws -> ImageData? {
+        try records("image", "WHERE deleted = 0 AND id = ?", [id]).first
+    }
+
     public func portions(foodId: Id) throws -> [PortionData] {
         try records("portion", "WHERE deleted = 0 AND food_id = ? ORDER BY grams IS NULL, grams, id", [foodId])
     }

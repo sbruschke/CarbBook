@@ -19,8 +19,31 @@ enum Schema {
         migrator.registerMigration("v4-quick-carbs") { db in
             try db.execute(sql: v4QuickCarbs)
         }
+        migrator.registerMigration("v5-images") { db in
+            try db.execute(sql: v5Images)
+        }
         return migrator
     }
+
+    /// Images (images spec 2026-09-18). Mirrors server migration 006 without the CHECKs the server
+    /// enforces: this database stores whatever the server sends, and a row the server would reject
+    /// comes back as a `sync_rejection` rather than failing an INSERT here.
+    /// `image_id` is added to food and meal; rows pending at migration time were edited without
+    /// knowing the column, so `sync_legacy_pending` makes their push omit it (the server keeps its
+    /// stored value) until they are edited again — the v4 pattern.
+    /// No pull-cursor reset: the image table is new, so its rows arrive on the next ordinary pull.
+    static let v5Images = """
+    CREATE TABLE image (
+      id TEXT PRIMARY KEY, mime TEXT NOT NULL, width INTEGER NOT NULL, height INTEGER NOT NULL,
+      source TEXT NOT NULL, source_url TEXT, license TEXT, attribution TEXT,
+      updated_at INTEGER NOT NULL, updated_by TEXT NOT NULL, deleted INTEGER NOT NULL DEFAULT 0, server_seq INTEGER
+    );
+    ALTER TABLE food ADD COLUMN image_id TEXT;
+    ALTER TABLE meal ADD COLUMN image_id TEXT;
+    CREATE INDEX food_image ON food (image_id);
+    CREATE INDEX meal_image ON meal (image_id);
+    INSERT OR IGNORE INTO sync_legacy_pending (key) SELECT key FROM sync_pending WHERE table_name IN ('food', 'meal');
+    """
 
     /// Meal planning (spec §2). Mirrors server migration 004 minus the CHECKs the server enforces:
     /// the local database stores whatever the server sends, and a row the server would reject comes

@@ -23,6 +23,9 @@ services:
       - PORT=3000
       - DATABASE_PATH=/data/carbbook.db
       - USDA_DIR=/data/usda
+      # Image bytes (images spec 2026-09-18). Inside the existing /data bind, so no new volume —
+      # but NOT covered by the database backup: these are regenerable only by re-adopting.
+      - IMAGE_DIR=/data/images
       - WEB_DIR=/app/web/dist
       - DEXCOM_API_URL=http://dexcom-api:8000
       - DEXCOM_API_TOKEN=${DEXCOM_API_TOKEN}

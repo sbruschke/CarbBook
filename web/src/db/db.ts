@@ -2,6 +2,7 @@ import type {
   BarcodeData,
   DoseSettingsData,
   FoodData,
+  ImageData,
   LogEntryData,
   LogItemData,
   MealData,
@@ -27,6 +28,7 @@ export const SYNC_TABLES = [
   'dose_settings',
   'plan_entry',
   'plan_item',
+  'image',
 ] as const;
 
 export type SyncTable = (typeof SYNC_TABLES)[number];
@@ -42,6 +44,7 @@ export interface SyncRecords {
   dose_settings: Synced<DoseSettingsData>;
   plan_entry: Synced<PlanEntryData>;
   plan_item: Synced<PlanItemData>;
+  image: Synced<ImageData>;
 }
 
 export type AnySyncRecord = SyncRecords[SyncTable];
@@ -136,6 +139,7 @@ export class CarbBookDb extends Dexie {
   declare dose_settings: Table<SyncRecords['dose_settings'], string>;
   declare plan_entry: Table<SyncRecords['plan_entry'], string>;
   declare plan_item: Table<SyncRecords['plan_item'], string>;
+  declare image: Table<SyncRecords['image'], string>;
   declare outbox: Table<OutboxRow, string>;
   declare meta: Table<MetaRow, string>;
   declare sync_error: Table<SyncErrorRow, string>;
@@ -207,6 +211,29 @@ export class CarbBookDb extends Dexie {
       dose_settings: 'id, effective_from',
       plan_entry: 'id, date, window_name, log_entry_id',
       plan_item: 'id, plan_entry_id, ref_id',
+      outbox: 'key',
+      meta: 'key',
+      sync_error: 'key, at',
+      usda_food: 'fdc_id',
+      usda_portion: 'id, fdc_id',
+      pending_barcode: 'code',
+    });
+    // v4 adds the `image` metadata table and an `image_id` index on `food` and `meal` (images
+    // spec 2026-09-18). A pure addition: no existing store definition changes, no data migration
+    // is needed, and the pull cursor is left alone — the rows are new on the server too, so they
+    // arrive on the next ordinary pull.
+    this.version(4).stores({
+      food: 'id, source_ref, image_id',
+      portion: 'id, food_id',
+      barcode: 'id, code, food_id',
+      meal: 'id, image_id',
+      meal_item: 'id, meal_id, ref_id',
+      log_entry: 'id, eaten_at',
+      log_item: 'id, log_entry_id, ref_id',
+      dose_settings: 'id, effective_from',
+      plan_entry: 'id, date, window_name, log_entry_id',
+      plan_item: 'id, plan_entry_id, ref_id',
+      image: 'id',
       outbox: 'key',
       meta: 'key',
       sync_error: 'key, at',

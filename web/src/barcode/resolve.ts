@@ -2,12 +2,12 @@ import { type FoodData, isNewer, type PortionData, type Synced } from '@carbbook
 import type { Table } from 'dexie';
 import type { AnySyncRecord, CarbBookDb } from '../db/db';
 import { type Api, ApiError, NetworkError } from '../lib/api';
-import type { BarcodeResponse, FoodDraft } from '../lib/wire';
+import type { BarcodeResponse, FoodDraft, ImageCandidate } from '../lib/wire';
 
 export type BarcodeResolution =
   | { kind: 'local'; food: Synced<FoodData> }
   | { kind: 'known'; food: Synced<FoodData>; portions: Synced<PortionData>[] }
-  | { kind: 'draft'; draft: FoodDraft }
+  | { kind: 'draft'; draft: FoodDraft; image_candidate?: ImageCandidate }
   /** Open Food Facts had nothing or failed: enter the food by hand, prefilled with the code. */
   | { kind: 'manual'; code: string; message: string }
   /** Offline and not known locally: kept to look up later (spec §6). */
@@ -69,7 +69,7 @@ export async function resolveBarcode(
       });
       return { kind: 'known', food: response.food, portions: response.portions };
     case 'draft':
-      return { kind: 'draft', draft: response.draft };
+      return { kind: 'draft', draft: response.draft, ...(response.image_candidate ? { image_candidate: response.image_candidate } : {}) };
     case 'not_found':
       return { kind: 'manual', code, message: `No product found for barcode ${code}. Enter the food from its label.` };
     case 'unavailable':

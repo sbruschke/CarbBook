@@ -25,6 +25,23 @@
 
 - `server/migrations/NNN_*.sql` run automatically via `initDatabase` on container start; `004_meal_plan.sql` (plan tables + case-insensitive slot index) deployed 2026-09-16, rehearsed against a live backup copy first — safe to re-run (idempotent) and guards against re-applying onto an already-migrated schema.
 
+## Images
+
+- Bytes live at `/opt/carbbook/data/images/<ab>/<hash>.jpg`, content-addressed by the SHA-256 of the
+  normalised image (<=800px JPEG q80, EXIF stripped). `IMAGE_DIR=/data/images` in `compose.yml`, inside
+  the existing `/data` bind, so there is no extra volume to create on a rebuild — but the directory does
+  need to exist and be owned like the database.
+- **These bytes are NOT in the database backup.** They are regenerable only by re-adopting or re-uploading.
+  A restore from backup leaves `food.image_id` pointing at hashes whose files are gone; thumbnails then
+  render as nothing (by design) rather than breaking. Copy `data/images/` separately if that matters.
+- Deployed 2026-09-19 with migration 006 (`image` table, `food.image_id`, `meal.image_id`).
+- `sharp` is a native dependency; the linux-arm64 prebuilt resolves with no toolchain (verified in the
+  running container: `vips 8.18.6`). If a future bump ever builds from source on the Pi, stop and
+  re-decide rather than adding build tools to the image.
+- Unreferenced bytes are kept by default. `ssh -t pi docker exec -it carbs-server carbbook images gc`
+  reports them; `--delete` removes them, and only those older than 30 days — a device that has been
+  offline may hold a reference it has not pushed yet.
+
 ## Backups
 
 - Pi: `carbbook-backup.timer` 03:15 → `/opt/carbbook/backups/carbbook-YYYYmmdd-HHMMSS.db.gz`, integrity-checked, newest 14.

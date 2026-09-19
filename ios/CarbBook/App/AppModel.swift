@@ -19,6 +19,8 @@ final class AppModel {
     let api: APIClient
     let coordinator: SyncCoordinator
     let usdaInstaller: UsdaInstaller
+    /// Food and meal photos, kept in Caches: the OS may purge them and they refetch on demand.
+    let images: ImageCache
     var usda: UsdaLibrary?
     var usdaStatus = "USDA library not downloaded yet"
     var user: ApiUser?
@@ -45,6 +47,12 @@ final class AppModel {
             Task { @MainActor in relay.model?.syncChanged(phase, report) }
         })
         usdaInstaller = UsdaInstaller(api: api, store: store, directory: support.appendingPathComponent("usda"))
+        let caches = try! FileManager.default.url(
+            for: .cachesDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+        // Shadowed so the fetch closure captures the client, not a not-yet-initialised `self`.
+        let imageAPI = api
+        images = ImageCache(directory: caches.appendingPathComponent("images"),
+                            fetch: { try await imageAPI.imageBytes(hash: $0) })
         needsLogin = Keychain.loadToken() == nil
         user = UserCache.load()
         usda = try? usdaInstaller.installedLibrary()

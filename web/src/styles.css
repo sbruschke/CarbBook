@@ -480,3 +480,80 @@ fieldset {
     width: 100%;
   }
 }
+
+.image-thumb {
+  object-fit: cover;
+  border-radius: 8px;
+  flex-shrink: 0;
+  background: var(--accent-soft);
+}
+
+.image-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.image-search {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.image-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 8px;
+}
+
+.image-grid button {
+  width: 100%;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--card);
+}
+
+.image-grid img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+}
+
+/* A list row only becomes two columns when it actually has a thumbnail; without one it keeps
+   its plain stacked layout, so an empty image slot costs no space. */
+.result:has(> .image-thumb),
+.list-item:has(> .image-thumb) {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 10px;
+  align-items: center;
+}
+
+.result > .image-thumb,
+.list-item > .image-thumb {
+  grid-row: span 2;
+}
+
+.plan-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.image-offer {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.image-offer img {
+  border-radius: 8px;
+  object-fit: cover;
+}

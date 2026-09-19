@@ -33,7 +33,8 @@ struct PlanSlotEditorView: View {
                         } else {
                             PlanItemRow(item: $item, name: displayName(item), units: units(for: item),
                                         portions: catalog.portions(item.refId),
-                                        carbs: itemCarbs(catalog, item.refType, item.refId, item.amount, item.unit))
+                                        carbs: itemCarbs(catalog, item.refType, item.refId, item.amount, item.unit),
+                                        imageID: itemImageId(item.refType, item.refId, catalog: catalog))
                         }
                     }
                     .onDelete { items.remove(atOffsets: $0) }
@@ -150,20 +151,25 @@ struct PlanItemRow: View {
     let units: [String]
     let portions: [PortionData]
     let carbs: CarbResult
+    /// The food or meal's image, resolved by the caller from the catalog it already holds.
+    let imageID: String?
     @State private var amountText: String
 
-    init(item: Binding<PlanEditing.DraftItem>, name: String, units: [String], portions: [PortionData], carbs: CarbResult) {
+    init(item: Binding<PlanEditing.DraftItem>, name: String, units: [String], portions: [PortionData], carbs: CarbResult,
+         imageID: String?) {
         _item = item
         self.name = name
         self.units = units
         self.portions = portions
         self.carbs = carbs
+        self.imageID = imageID
         _amountText = State(initialValue: AmountInput.text(for: item.wrappedValue.amount))
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
+                ImageThumbView(imageID: imageID, size: 28)
                 Text(name).lineLimit(2)
                 Spacer()
                 Text(carbs.complete ? "\(formatNumber(carbs.carbsG))g" : "missing data")

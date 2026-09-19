@@ -51,6 +51,9 @@ public struct FoodForm: Equatable, Sendable {
     public var density: String
     public var notes: String
     public var portions: [Portion]
+    /// The chosen image, initialised from the stored food so an ordinary edit carries it through
+    /// instead of clearing it (`build` writes whatever is here). The picker sets it; nil = no image.
+    public var imageId: Id?
     /// Stored bases the user explicitly removed.
     public var removedBaseG = false
     public var removedBaseMl = false
@@ -64,6 +67,7 @@ public struct FoodForm: Equatable, Sendable {
         fiber = NumberParsing.editText(food?.fiberPer100g)
         density = NumberParsing.editText(food?.densityGPerMl)
         notes = food?.notes ?? ""
+        imageId = food?.imageId
         self.portions = portions.map {
             Portion(id: $0.id, label: $0.label, kind: $0.kind, quantity: NumberParsing.editText($0.quantity),
                     grams: NumberParsing.editText($0.grams), carbsG: NumberParsing.editText($0.carbsG))
@@ -366,7 +370,7 @@ public struct FoodForm: Equatable, Sendable {
             sourceRef: copy ? nil : base?.sourceRef,
             derivedFrom: copy ? base?.id : base?.derivedFrom,
             carbsPer100g: carbsPer100g, carbsPer100ml: carbsPer100ml, fiberPer100g: fiberValue, densityGPerMl: densityValue,
-            notes: Self.blank(notes) ? nil : notes)
+            notes: Self.blank(notes) ? nil : notes, imageId: imageId)
         let kept = Set(saved.map(\.id))
         let removed = copy ? [] : basePortionIds.filter { !kept.contains($0) }
         return .success(Output(food: food, portions: saved, removedPortionIds: removed))

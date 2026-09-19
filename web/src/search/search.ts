@@ -10,6 +10,8 @@ export interface SearchResult {
   brand: string | null;
   source: FoodSource | null;
   carbs_per_100g: number | null;
+  /** The row's image, carried here so a result row needs no second lookup to show a thumbnail. */
+  image_id?: string | null;
 }
 
 export interface SearchInput {
@@ -66,7 +68,7 @@ export function buildSearchIndex(input: SearchInput): SearchIndex {
   for (const meal of input.meals) {
     if (meal.deleted !== 0) continue;
     entries.push({
-      result: { kind: 'meal', id: meal.id, name: meal.name, brand: null, source: null, carbs_per_100g: null },
+      result: { kind: 'meal', id: meal.id, name: meal.name, brand: null, source: null, carbs_per_100g: null, image_id: meal.image_id ?? null },
       tokens: tokenize(meal.name),
       tier: 0,
       lastLogged: input.lastLogged.get(meal.id) ?? null,
@@ -77,7 +79,15 @@ export function buildSearchIndex(input: SearchInput): SearchIndex {
     savedIds.add(food.id);
     const source = food.source ?? 'custom';
     entries.push({
-      result: { kind: 'food', id: food.id, name: food.name, brand: food.brand ?? null, source, carbs_per_100g: food.carbs_per_100g },
+      result: {
+        kind: 'food',
+        id: food.id,
+        name: food.name,
+        brand: food.brand ?? null,
+        source,
+        carbs_per_100g: food.carbs_per_100g,
+        image_id: food.image_id ?? null,
+      },
       tokens: tokenize(`${food.name} ${food.brand ?? ''}`),
       tier: source === 'custom' ? 0 : 1,
       lastLogged: input.lastLogged.get(food.id) ?? null,

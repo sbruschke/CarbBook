@@ -1,5 +1,6 @@
 /** Fields requested from Open Food Facts API v2 (verified against world.openfoodfacts.org 2026-09-14). */
-export const OFF_FIELDS = 'code,product_name,brands,serving_size,serving_quantity,serving_quantity_unit,nutriments';
+export const OFF_FIELDS =
+  'code,product_name,brands,serving_size,serving_quantity,serving_quantity_unit,nutriments,image_front_url,image_front_small_url';
 
 export interface OffProduct {
   code: string;
@@ -9,6 +10,9 @@ export interface OffProduct {
   serving_quantity?: number | string;
   serving_quantity_unit?: string;
   nutriments?: Record<string, unknown>;
+  /** Product photo, when OFF has one. Always on an OFF-owned host. */
+  image_front_url?: string;
+  image_front_small_url?: string;
 }
 
 export interface OffClient {

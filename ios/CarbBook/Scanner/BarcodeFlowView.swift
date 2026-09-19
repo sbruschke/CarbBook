@@ -64,8 +64,10 @@ struct BarcodeFlowView: View {
             foundView(food, portions: portions, note: "Saved on this phone.")
         case .known(let food, let portions):
             foundView(food, portions: portions, note: "Saved on the server; syncing it to this phone.")
-        case .draft(let draft):
-            OffDraftForm(draft: draft) { food in finish(food) }
+        case .draft(let draft, let candidate):
+            // The resolution (and so the offered photo) is held in `stage`, so it is still here when
+            // the user confirms — no threading through a dismissed scanner, as the web had to do.
+            OffDraftForm(draft: draft, imageCandidate: candidate) { food in finish(food) }
         case .notFound(let code):
             manualPrompt(code, message: "No product found for \(code).")
         case .unavailable(let code, let message):
@@ -128,11 +130,17 @@ struct BarcodeFlowView: View {
 /// Missing carbs must be entered from the label before saving. Rules live in CarbBookKit `OffDraftEntry`.
 struct OffDraftForm: View {
     @Environment(AppModel.self) private var app
+    /// The product photo OFF offers, when it has one. Offered unticked: adopting an image is a
+    /// decision, not a side effect of scanning a barcode.
+    let imageCandidate: ImageCandidate?
     let onSaved: (FoodData) -> Void
     @State private var entry: OffDraftEntry
     @State private var errors: [String] = []
+    @State private var usePhoto = false
+    @State private var saving = false
 
-    init(draft: OffDraft, onSaved: @escaping (FoodData) -> Void) {
+    init(draft: OffDraft, imageCandidate: ImageCandidate?, onSaved: @escaping (FoodData) -> Void) {
+        self.imageCandidate = imageCandidate
         self.onSaved = onSaved
         _entry = State(initialValue: OffDraftEntry(draft: draft))
     }
@@ -156,9 +164,25 @@ struct OffDraftForm: View {
                 if let serving = entry.draft.servingSize { LabeledContent("Label serving", value: serving) }
                 LabeledContent("Barcode", value: entry.draft.barcode)
             }
+            if let imageCandidate {
+                Section("Photo") {
+                    AsyncImage(url: URL(string: imageCandidate.thumbUrl)) { phase in
+                        if let image = phase.image {
+                            image.resizable().aspectRatio(contentMode: .fill)
+                        } else {
+                            Color.clear
+                        }
+                    }
+                    .frame(width: 120, height: 120)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    Toggle("Use this photo", isOn: $usePhoto)
+                    Text(imageCandidate.attribution ?? "Open Food Facts").font(.caption).foregroundStyle(.secondary)
+                }
+            }
             ForEach(errors, id: \.self) { Text($0).foregroundStyle(.red) }
             Button("Save food") { save() }
                 .buttonStyle(.borderedProminent)
+                .disabled(saving)
         }
     }
 
@@ -167,13 +191,30 @@ struct OffDraftForm: View {
         case .failure(let failure):
             errors = failure.messages
         case .success(let records):
-            do {
-                try app.save([SyncChange.encode("food", records.food)]
-                    + records.portions.map { try SyncChange.encode("portion", $0) }
-                    + [SyncChange.encode("barcode", records.barcode)])
-                onSaved(records.food)
-            } catch {
-                errors = ["Could not save: \(error)"]
+            // The offered photo is fetched and stored only now, as the user commits the food. A
+            // failure here stops the save rather than quietly dropping the photo: nothing is written
+            // yet, so the user can untick the box and save again.
+            saving = true
+            Task {
+                var food = records.food
+                if usePhoto, let imageCandidate {
+                    do {
+                        food.imageId = try await app.api.adoptImage(imageCandidate).id
+                    } catch {
+                        errors = ["Could not save the photo (\(error)). Untick it to save without one."]
+                        saving = false
+                        return
+                    }
+                }
+                do {
+                    try app.save([SyncChange.encode("food", food)]
+                        + records.portions.map { try SyncChange.encode("portion", $0) }
+                        + [SyncChange.encode("barcode", records.barcode)])
+                    onSaved(food)
+                } catch {
+                    errors = ["Could not save: \(error)"]
+                }
+                saving = false
             }
         }
     }

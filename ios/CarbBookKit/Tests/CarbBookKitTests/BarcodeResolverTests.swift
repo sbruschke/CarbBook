@@ -35,7 +35,7 @@ final class BarcodeResolverTests: XCTestCase {
                 : (200, json(#"{"status":"unavailable","code":"222222","message":"Open Food Facts timed out"}"#))
         }, token: { "t" })
         let resolver = BarcodeResolver(store: store, api: api)
-        guard case .draft(let draft) = try await resolver.resolve("111111") else { return XCTFail("expected a draft") }
+        guard case .draft(let draft, _) = try await resolver.resolve("111111") else { return XCTFail("expected a draft") }
         XCTAssertNil(draft.food.carbsPer100g)
         let unavailable = try await resolver.resolve("222222")
         XCTAssertEqual(unavailable, .unavailable(code: "222222", message: "Open Food Facts timed out"))

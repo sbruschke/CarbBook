@@ -23,13 +23,17 @@ struct FoodsView: View {
                     NavigationLink {
                         FoodEditorView(food: food, barcode: nil) { _ in }
                     } label: {
-                        VStack(alignment: .leading) {
-                            Text(food.name)
-                            let basis = FoodLabel.basisSummary(food, portionsByFood[food.id] ?? [])
-                            Text([food.brand, food.source, basis ?? "no carb data"]
-                                .compactMap { $0 }.joined(separator: " · "))
-                                .font(.caption)
-                                .foregroundStyle(basis == nil ? Color.orange : Color.secondary)
+                        HStack {
+                            // The row already has the food, so its image needs no second lookup.
+                            ImageThumbView(imageID: food.imageId)
+                            VStack(alignment: .leading) {
+                                Text(food.name)
+                                let basis = FoodLabel.basisSummary(food, portionsByFood[food.id] ?? [])
+                                Text([food.brand, food.source, basis ?? "no carb data"]
+                                    .compactMap { $0 }.joined(separator: " · "))
+                                    .font(.caption)
+                                    .foregroundStyle(basis == nil ? Color.orange : Color.secondary)
+                            }
                         }
                     }
                     // USDA-sourced originals are never deleted (spec §3); editing one makes a custom copy instead.

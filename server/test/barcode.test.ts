@@ -62,6 +62,28 @@ describe('GET /api/barcode/:code', () => {
     expect(response.json()).toEqual({ status: 'unavailable', code: '3017624010070', message: 'Open Food Facts responded 503' });
   });
 
+  it('returns the OFF photo alongside a draft', async () => {
+    const off: OffClient = {
+      lookup: async (code) => ({
+        code,
+        product_name: 'Noodle kit',
+        image_front_url: 'https://images.openfoodfacts.org/images/products/073/762/806/4502/front_en.4.400.jpg',
+        image_front_small_url: 'https://images.openfoodfacts.org/images/products/073/762/806/4502/front_en.4.200.jpg',
+      }),
+    };
+    const { get } = await appWithOff(off);
+    const response = await get('0737628064502');
+    expect(response.json().image_candidate).toMatchObject({ provider: 'off', attribution: 'Open Food Facts' });
+  });
+
+  it('omits image_candidate when OFF has no photo', async () => {
+    const off: OffClient = { lookup: async (code) => ({ code, product_name: 'Noodle kit' }) };
+    const { get } = await appWithOff(off);
+    const response = await get('0737628064502');
+    expect(response.json()).toHaveProperty('status', 'draft');
+    expect(response.json().image_candidate).toBeUndefined();
+  });
+
   it('rejects malformed codes', async () => {
     const { get } = await appWithOff(neverCalled);
     expect((await get('abc')).statusCode).toBe(400);

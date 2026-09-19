@@ -16,6 +16,13 @@ function dbAtVersion4() {
   return { db, dir };
 }
 
+/** A migrations directory holding exactly 001-005, so migrate() stops at version 5. */
+function dirThrough005() {
+  const dir = mkdtempSync(join(tmpdir(), 'carbbook-mig5-through-'));
+  for (const file of [...THROUGH_004, '005_quick_carbs.sql']) copyFileSync(join(MIGRATIONS_DIR, file), join(dir, file));
+  return dir;
+}
+
 /** Rows shaped like the live data on 2026-09-16: uuidv7 ids, portion units, a soft delete, device ids. */
 function seedLiveLikeRows(db: Db) {
   db.exec(`
@@ -49,7 +56,7 @@ describe('migration 005 (quick carbs)', () => {
     const before = Object.fromEntries(ITEM_TABLES.map((t) => [t, rows(db, t)]));
     const indexesBefore = Object.fromEntries(ITEM_TABLES.map((t) => [t, indexNames(db, t)]));
 
-    expect(migrate(db)).toBe(5);
+    expect(migrate(db, dirThrough005())).toBe(5);
     expect(db.pragma('user_version', { simple: true })).toBe(5);
 
     for (const table of ITEM_TABLES) {
@@ -146,6 +153,6 @@ describe('migration 005 (quick carbs)', () => {
 
   it('migrates a fresh database straight to version 5', () => {
     const db = openDb(':memory:');
-    expect(migrate(db)).toBe(5);
+    expect(migrate(db, dirThrough005())).toBe(5);
   });
 });

@@ -7,7 +7,9 @@ public enum BarcodeResolution: Equatable, Sendable {
     /// Known to the server but not pulled yet; the caller should sync. Carbs may be nil (missing data).
     case known(FoodData, [PortionData])
     /// Open Food Facts draft for the user to confirm. Carbs may be nil (missing data, not an error).
-    case draft(OffDraft)
+    /// `imageCandidate` is the product photo OFF offers, when it has one; adopting it is the user's
+    /// choice at confirm time, never a side effect of scanning.
+    case draft(OffDraft, imageCandidate: ImageCandidate?)
     /// Nothing anywhere; offer manual entry prefilled with the code.
     case notFound(code: String)
     /// OFF failed or timed out; offer manual entry prefilled with the code.
@@ -36,7 +38,7 @@ public struct BarcodeResolver: Sendable {
         do {
             switch try await api.barcode(code) {
             case .known(let food, let portions): return .known(food, portions)
-            case .draft(let draft): return .draft(draft)
+            case .draft(let draft, let candidate): return .draft(draft, imageCandidate: candidate)
             case .notFound(let code): return .notFound(code: code)
             case .unavailable(let code, let message):
                 try store.queueBarcode(code, note: message)

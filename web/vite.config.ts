@@ -31,6 +31,19 @@ export default defineConfig({
         navigateFallback: '/index.html',
         navigateFallbackDenylist: [/^\/api\//],
         cleanupOutdatedCaches: true,
+        runtimeCaching: [
+          {
+            // Hash URLs are immutable, so CacheFirst never needs revalidation and images stay
+            // available offline. navigateFallbackDenylist already excludes /api/ from the SPA shell.
+            urlPattern: /\/api\/images\/[0-9a-f]{64}$/,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'carbbook-images',
+              expiration: { maxEntries: 500 },
+              cacheableResponse: { statuses: [200] },
+            },
+          },
+        ],
       },
     }),
   ],

@@ -22,8 +22,10 @@ struct MealEditorView: View {
     @State private var allPortions: [PortionData] = []
     @State private var allMeals: [MealData] = []
     @State private var allItems: [MealItemData] = []
+    @State private var imageId: String?
     @State private var showAdd = false
     @State private var showQuick = false
+    @State private var showImagePicker = false
     @State private var error: String?
     @State private var loaded = false
 
@@ -66,6 +68,7 @@ struct MealEditorView: View {
                 Button("Add component") { showAdd = true }
                 Button("+ Carbs") { showQuick = true }
             }
+            imageSection
             if let error { Section { Text(error).foregroundStyle(.red) } }
         }
         .navigationTitle(meal == nil ? "New meal" : "Edit meal")
@@ -79,7 +82,31 @@ struct MealEditorView: View {
         .sheet(isPresented: $showQuick) {
             QuickCarbsSheet { label, grams in addQuick(label: label, grams: grams) }
         }
+        .sheet(isPresented: $showImagePicker) {
+            // `name` is read live, so the picker's search box follows the name as typed — which for a
+            // new meal is the only name there is.
+            ImagePickerSheet(imageID: imageId, defaultQuery: name) { imageId = $0 }
+        }
         .onAppear(perform: load)
+    }
+
+    /// An optional picture, saved as `meal.image_id` by the ordinary save path below — never by a
+    /// separate write, so it queues and resolves like every other field.
+    private var imageSection: some View {
+        Section("Image") {
+            Button { showImagePicker = true } label: {
+                HStack {
+                    ImageThumbView(imageID: imageId, size: 56)
+                    Text(imageId == nil ? "Add an image" : "Change image")
+                    Spacer()
+                }
+            }
+            // Attribution lives on the synced `image` row, not on the meal, so it is read back here;
+            // it appears once that row has been pulled.
+            if let attribution = imageId.flatMap({ try? app.store.image(id: $0) })?.attribution {
+                Text(attribution).font(.caption).foregroundStyle(.secondary)
+            }
+        }
     }
 
     @ViewBuilder
@@ -146,6 +173,7 @@ struct MealEditorView: View {
                 yieldText = NumberParsing.editText(meal.yieldServings)
                 weightText = NumberParsing.editText(meal.totalWeightG)
                 notes = meal.notes ?? ""
+                imageId = meal.imageId
                 items = try app.store.mealItems(mealId: meal.id)
             } else {
                 mealId = app.store.newId()
@@ -207,6 +235,7 @@ struct MealEditorView: View {
             saved.yieldServings = yield
             saved.totalWeightG = weight
             saved.notes = notes.isEmpty ? nil : notes
+            saved.imageId = imageId
             saved.deleted = nil
             var changes = [try SyncChange.encode("meal", saved)]
             for (index, item) in items.enumerated() {

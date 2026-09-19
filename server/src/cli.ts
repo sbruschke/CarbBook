@@ -3,6 +3,8 @@ import { pathToFileURL } from 'node:url';
 import { createUser, type Role, UserError } from './auth/users';
 import { type Env, loadConfig } from './config';
 import type { Db } from './db';
+import { deleteImages, findUnreferencedImages } from './images/gc';
+import { createImageStore, type ImageStore } from './images/store';
 import { initDatabase } from './init';
 import { buildUsdaBundles } from './usda/bundle';
 import { importUsda } from './usda/import';
@@ -14,12 +16,15 @@ export interface CliIo {
   readPassword: (prompt: string) => Promise<string>;
   /** Tests pass an in-memory database; otherwise DATABASE_PATH is opened. */
   db?: Db;
+  /** Tests pass a store over a temp directory; otherwise IMAGE_DIR is used. */
+  store?: ImageStore;
   now?: () => number;
 }
 
 const USAGE = `Usage:
   carbbook user add <username> [--role owner|viewer]   (password from CARBBOOK_PASSWORD or prompt)
-  carbbook import-usda <csv-dir> [<csv-dir>...]        (extracted FoodData Central CSV folders)`;
+  carbbook import-usda <csv-dir> [<csv-dir>...]        (extracted FoodData Central CSV folders)
+  carbbook images gc [--delete] [--min-age-days <n>]   report unreferenced images; --delete removes them`;
 
 function flag(args: string[], name: string): string | undefined {
   const index = args.indexOf(name);
@@ -68,6 +73,33 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
         return 1;
       }
       throw error;
+    } finally {
+      if (!io.db) db.close();
+    }
+  }
+  if (group === 'images' && command === 'gc') {
+    const wantsDelete = rest.includes('--delete');
+    const ageValue = flag(rest, '--min-age-days');
+    const minAgeDays = rest.includes('--min-age-days') ? Number(ageValue) : 30;
+    if (!Number.isInteger(minAgeDays) || minAgeDays < 1) {
+      io.stderr('--min-age-days must be a positive integer');
+      return 2;
+    }
+    const config = loadConfig(io.env);
+    const db = io.db ?? initDatabase(config.databasePath);
+    const store = io.store ?? createImageStore({ imageDir: config.imageDir });
+    const now = (io.now ?? Date.now)();
+    try {
+      const hashes = findUnreferencedImages(db, now, minAgeDays);
+      io.stdout(`${hashes.length} unreferenced image(s) older than ${minAgeDays} days`);
+      for (const hash of hashes) io.stdout(`  ${hash}`);
+      if (!wantsDelete) {
+        io.stdout('nothing deleted; re-run with --delete to remove them');
+        return 0;
+      }
+      await deleteImages(db, store, hashes, now);
+      io.stdout(`deleted ${hashes.length} image(s)`);
+      return 0;
     } finally {
       if (!io.db) db.close();
     }

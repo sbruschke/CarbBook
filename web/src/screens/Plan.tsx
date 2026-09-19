@@ -1,5 +1,5 @@
 import type { Catalog } from '@carbbook/core';
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { useCatalogData, useEligibleDoseVersions, usePlanData } from '../app/hooks';
 import { useServices } from '../app/services';
 import { buildCatalog } from '../db/catalog';
@@ -10,7 +10,8 @@ import { goalView } from '../plan/goal';
 import { SlotEditor } from '../plan/SlotEditor';
 import { buildSlots, dayCarbs, dayTotalText, type Slot, windowsFor } from '../plan/slots';
 import { dayKey, formatDayLabel, shiftDay, startOfWeek, weekDates } from '../ui/format';
-import { itemLabel } from '../ui/ItemEditor';
+import { ImageThumb } from '../ui/ImageThumb';
+import { itemLabel, itemRecord } from '../ui/ItemEditor';
 
 export function Plan() {
   const { now, store } = useServices();
@@ -217,13 +218,27 @@ function GoalReadout(props: { view: ReturnType<typeof goalView>; testId: string 
 function PlanCell(props: { slot: Slot; catalog: Catalog; onEdit: () => void }) {
   const { slot, catalog } = props;
   const view = goalView(slot.carbs, slot.goal);
-  const names = slot.items.map((i) => itemLabel(catalog, i)).join(', ');
+
   return (
     <div className="plan-cell" data-testid={`plan-cell-${slot.date}-${slot.windowName}`}>
       <h3>{slot.windowName}</h3>
       {slot.entry ? (
         <>
-          <p className="muted">{names || 'No items'}</p>
+          <p className="muted">
+            {slot.items.length === 0
+              ? 'No items'
+              : // Comma-separated as before, but each row carries its own thumbnail, so the
+                // names are spans rather than one joined string.
+                slot.items.map((item, index) => (
+                  <Fragment key={item.id}>
+                    {index > 0 ? ', ' : ''}
+                    <span className="plan-item">
+                      <ImageThumb imageId={itemRecord(catalog, item.ref_type, item.ref_id)?.image_id} alt="" size={20} />
+                      {itemLabel(catalog, item)}
+                    </span>
+                  </Fragment>
+                ))}
+          </p>
           <GoalReadout view={view} testId={`plan-carbs-${slot.date}-${slot.windowName}`} />
           <span className="tag">{STATUS_WORDS[slot.entry.status]}</span>
           <button type="button" aria-label={`Edit ${slot.windowName} on ${formatDayLabel(slot.date)}`} onClick={props.onEdit}>

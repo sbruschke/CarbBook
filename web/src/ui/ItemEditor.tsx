@@ -1,6 +1,7 @@
 import {
   type Catalog,
   type CarbResult,
+  type FoodData,
   foodUnits,
   isValidQuickCarbs,
   itemCarbs,
@@ -11,9 +12,11 @@ import {
   QUICK_UNIT,
   quickDisplayName,
   quickUnits,
+  type MealData,
   type RefType,
 } from '@carbbook/core';
 import { formatCarbs, parseAmount, parseNonNegative } from './format';
+import { ImageThumb } from './ImageThumb';
 import { UnitPicker } from './UnitPicker';
 
 /** An item being edited: amount is the raw text so half-typed numbers survive. */
@@ -29,11 +32,19 @@ export interface DraftItem {
 
 const INCOMPLETE: CarbResult = { carbs_g: 0, complete: false };
 
+/**
+ * The stored food or meal a row points at. Undefined for quick rows and — because the server does
+ * not enforce references — for a synced item whose food or meal has not arrived yet. Rows that
+ * need both the name and the image read this once rather than looking the row up twice.
+ */
+export function itemRecord(catalog: Catalog, refType: RefType, refId: string): FoodData | MealData | undefined {
+  if (refType === 'quick') return undefined;
+  return refType === 'food' ? catalog.food(refId) : catalog.meal(refId);
+}
+
 export function itemName(catalog: Catalog, refType: RefType, refId: string): string {
   if (refType === 'quick') return quickDisplayName(null);
-  const name = refType === 'food' ? catalog.food(refId)?.name : catalog.meal(refId)?.name;
-  // The server does not enforce references: a synced item can point at a row that has not arrived.
-  return name ?? '(missing item)';
+  return itemRecord(catalog, refType, refId)?.name ?? '(missing item)';
 }
 
 /** Display name for any stored or draft row; quick rows use their label (quick-carbs spec §2). */
@@ -169,11 +180,13 @@ export function ItemEditor(props: {
             </li>
           );
         }
-        const name = itemName(catalog, item.ref_type, item.ref_id);
+        const record = itemRecord(catalog, item.ref_type, item.ref_id);
+        const name = record?.name ?? '(missing item)';
         const amountMissing = draftAmount(item) === null;
         return (
           <li key={item.key} className="item-row" data-testid="item-row">
             <div className="item-name">
+              <ImageThumb imageId={record?.image_id} alt="" size={28} />
               {name}
               {!result.complete && <span className="flag">{amountMissing ? 'enter an amount' : 'missing data'}</span>}
             </div>
