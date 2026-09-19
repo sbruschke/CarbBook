@@ -166,7 +166,12 @@ export async function imageRoutes(app: FastifyInstance, ctx: AppContext): Promis
           additionalProperties: false,
           properties: {
             data_base64: { type: 'string', minLength: 1 },
-            mime: { type: 'string', enum: ['image/jpeg', 'image/png', 'image/heic', 'image/webp'] },
+            // No image/heic: the bundled libvips reports heif input for AVIF only
+            // (`sharp.format.heif.input.fileSuffix` is ['.avif'], and encoding with
+            // compression 'hevc' fails "Unsupported compression"), so an iPhone's native
+            // HEIC would sniff as an image and then die in the decoder. Both clients
+            // re-encode to JPEG before upload, so this is a fail-fast, not a limitation.
+            mime: { type: 'string', enum: ['image/jpeg', 'image/png', 'image/webp', 'image/avif'] },
           },
         },
       },

@@ -75,6 +75,35 @@ describe('POST /api/images/upload', () => {
     expect(db.prepare('SELECT count(*) AS n FROM image').get()).toEqual({ n: 1 });
   });
 
+  it('rejects image/heic, which the bundled libvips cannot decode', async () => {
+    // sharp.format.heif.input accepts AVIF only; HEVC-based HEIC fails in the decoder. Both
+    // clients re-encode to JPEG before upload, so rejecting at the schema is a clear fail-fast
+    // rather than a confusing "could not decode image" after a multi-megabyte upload.
+    const { app, authorization } = await authed();
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/images/upload',
+      headers: { authorization },
+      payload: { data_base64: (await png()).toString('base64'), mime: 'image/heic' },
+    });
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('accepts image/avif, which it can decode', async () => {
+    const avif = await sharp({ create: { width: 64, height: 48, channels: 3, background: '#00c' } })
+      .heif({ compression: 'av1' })
+      .toBuffer();
+    const { app, authorization } = await authed();
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/images/upload',
+      headers: { authorization },
+      payload: { data_base64: avif.toString('base64'), mime: 'image/avif' },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().mime).toBe('image/jpeg');
+  });
+
   it('requires authentication', async () => {
     const { app } = await makeTestApp({ env: { IMAGE_DIR: await tempImageDir() } });
     expect((await app.inject({ method: 'POST', url: '/api/images/upload', payload: { data_base64: 'aGk=', mime: 'image/jpeg' } })).statusCode).toBe(401);
