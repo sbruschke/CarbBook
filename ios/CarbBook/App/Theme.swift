@@ -6,6 +6,8 @@ import SwiftUI
 /// primary buttons, a large monospaced dose number and range-coloured glucose.
 enum Theme {
     static let fieldBackground = Color(.systemGray6)
+    /// The surface a grouped-list row is drawn on, used as the rim between overlapping stack photos.
+    static let rowBackground = Color(.secondarySystemGroupedBackground)
 
     static func glucoseColor(_ mgdl: Double) -> Color {
         switch mgdl {

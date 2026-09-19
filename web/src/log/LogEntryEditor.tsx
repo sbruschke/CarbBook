@@ -17,7 +17,8 @@ import { type Change, dataOf } from '../db/store';
 import { estimateFor } from '../dose/dose';
 import { DoseCard } from '../ui/DoseCard';
 import { formatCarbs, fromDateTimeLocal, parseNonNegative, parseWholeNumber, toDateTimeLocal, unitLabel } from '../ui/format';
-import { itemName } from '../ui/ItemEditor';
+import { ImageThumb } from '../ui/ImageThumb';
+import { itemName, itemRecord } from '../ui/ItemEditor';
 
 export function LogEntryEditor(props: { entryId: string; onDone: () => void }) {
   const { db } = useServices();
@@ -183,8 +184,12 @@ function EntryForm(props: {
       <ul className="list">
         {rows.map((row) => (
           <li key={row.id} data-testid="log-item" className="log-item">
-            <span>
-              {row.display_name} · {row.amount} {unitLabel(row.unit, data.portions.filter((p) => p.food_id === row.ref_id))}
+            <span className="log-item-name">
+              {/* Same single icon a meal component row carries; a quick row resolves to nothing. */}
+              <ImageThumb imageId={itemRecord(catalog, row.ref_type, row.ref_id)?.image_id} alt="" size={24} />
+              <span>
+                {row.display_name} · {row.amount} {unitLabel(row.unit, data.portions.filter((p) => p.food_id === row.ref_id))}
+              </span>
             </span>
             <span>{formatCarbs(row.carbs_g)}</span>
           </li>

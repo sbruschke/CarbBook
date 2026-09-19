@@ -70,7 +70,7 @@ export function ImagePicker(props: {
     <div className="image-picker">
       {props.imageId && (
         <div className="image-current">
-          <ImageThumb imageId={props.imageId} alt="Current image" size={120} />
+          <ImageThumb imageId={props.imageId} alt="Current image" size={120} shape="rounded" />
           {props.attribution && <p className="fineprint">{props.attribution}</p>}
           <div className="button-row">
             <button type="button" disabled={busy} onClick={() => setOpen(true)}>

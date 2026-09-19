@@ -79,6 +79,13 @@ final class VectorTests: XCTestCase {
         let valid_cases: [ValidCase]
     }
 
+    struct ImageStackVectors: Decodable {
+        struct Entry: Decodable { let image_id: String?; let carbs: Double? }
+        struct Expect: Decodable { let image_ids: [String]; let overflow: Int }
+        struct Case: Decodable { let name: String; let entries: [Entry]; let max: Int?; let expect: Expect }
+        let cases: [Case]
+    }
+
     private func load<T: Decodable>(_ name: String, as type: T.Type) throws -> T {
         let url = try XCTUnwrap(Bundle.module.url(forResource: name, withExtension: "json", subdirectory: "Resources"))
         return try JSONDecoder().decode(T.self, from: Data(contentsOf: url))
@@ -176,6 +183,19 @@ final class VectorTests: XCTestCase {
         }
         for c in g.valid_cases {
             XCTAssertEqual(c.goal?.isValid ?? false, c.expect, "goal validity: \(c.name)")
+        }
+    }
+
+    func testImageStackVectors() throws {
+        let s = try load("image-stack-vectors", as: ImageStackVectors.self)
+        XCTAssertFalse(s.cases.isEmpty)
+        XCTAssertTrue(s.cases.contains { $0.max != nil }, "an explicit max is exercised")
+        XCTAssertEqual(ImageStack.max, 3)
+        for c in s.cases {
+            let entries = c.entries.map { StackEntry(imageId: $0.image_id, carbs: $0.carbs) }
+            let layout = c.max == nil ? imageStackLayout(entries) : imageStackLayout(entries, max: c.max!)
+            XCTAssertEqual(layout.imageIds, c.expect.image_ids, "stack: \(c.name)")
+            XCTAssertEqual(layout.overflow, c.expect.overflow, "stack overflow: \(c.name)")
         }
     }
 }

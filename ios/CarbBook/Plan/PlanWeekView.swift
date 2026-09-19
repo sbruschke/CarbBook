@@ -97,7 +97,12 @@ struct PlanWeekView: View {
                     }
                 }
                 if !slot.isEmpty {
-                    Text(itemsText(slot)).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                    HStack(spacing: 6) {
+                        // The slot as a whole, carb-ordered. The names stay one joined caption beside
+                        // it; a thumbnail per name would draw every picture twice in one cell.
+                        ImageStackView(entries: itemStackEntries(slot.items, catalog: model.catalog), size: 24)
+                        Text(itemsText(slot)).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                    }
                 }
             }
         }

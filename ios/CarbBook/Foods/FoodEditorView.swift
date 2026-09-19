@@ -64,7 +64,7 @@ struct FoodEditorView: View {
         Section("Image") {
             Button { showImagePicker = true } label: {
                 HStack {
-                    ImageThumbView(imageID: form.imageId, size: 56)
+                    ImageThumbView(imageID: form.imageId, size: 56, shape: .rounded)
                     Text(form.imageId == nil ? "Add an image" : "Change image")
                     Spacer()
                 }

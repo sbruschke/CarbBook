@@ -1,0 +1,109 @@
+{
+  "cases": [
+    {
+      "name": "empty group draws nothing",
+      "entries": [],
+      "expect": { "image_ids": [], "overflow": 0 }
+    },
+    {
+      "name": "single entry with an image",
+      "entries": [{ "image_id": "img-rice", "carbs": 48 }],
+      "expect": { "image_ids": ["img-rice"], "overflow": 0 }
+    },
+    {
+      "name": "three entries order by carbs descending",
+      "entries": [
+        { "image_id": "img-milk", "carbs": 12 },
+        { "image_id": "img-rice", "carbs": 48 },
+        { "image_id": "img-bread", "carbs": 24 }
+      ],
+      "expect": { "image_ids": ["img-rice", "img-bread", "img-milk"], "overflow": 0 }
+    },
+    {
+      "name": "five entries cap at three photos with two in overflow",
+      "entries": [
+        { "image_id": "img-milk", "carbs": 12 },
+        { "image_id": "img-rice", "carbs": 48 },
+        { "image_id": "img-bread", "carbs": 24 },
+        { "image_id": "img-apple", "carbs": 19 },
+        { "image_id": "img-butter", "carbs": 0 }
+      ],
+      "expect": { "image_ids": ["img-rice", "img-bread", "img-apple"], "overflow": 2 }
+    },
+    {
+      "name": "entries without an image are counted but not drawn",
+      "entries": [
+        { "image_id": null, "carbs": 90 },
+        { "image_id": "img-rice", "carbs": 48 },
+        { "image_id": "", "carbs": 30 },
+        { "image_id": "   ", "carbs": 20 },
+        { "carbs": 10 },
+        { "image_id": "img-bread", "carbs": 5 }
+      ],
+      "expect": { "image_ids": ["img-rice", "img-bread"], "overflow": 4 }
+    },
+    {
+      "name": "nothing in the group has an image",
+      "entries": [
+        { "image_id": null, "carbs": 30 },
+        { "image_id": "  ", "carbs": 12 },
+        { "carbs": null }
+      ],
+      "expect": { "image_ids": [], "overflow": 3 }
+    },
+    {
+      "name": "unknown carbs sort behind every known number",
+      "entries": [
+        { "image_id": "img-mystery", "carbs": null },
+        { "image_id": "img-bread", "carbs": 24 },
+        { "image_id": "img-rice", "carbs": 48 }
+      ],
+      "expect": { "image_ids": ["img-rice", "img-bread", "img-mystery"], "overflow": 0 }
+    },
+    {
+      "name": "a tie on carbs keeps the original order",
+      "entries": [
+        { "image_id": "img-first", "carbs": 20 },
+        { "image_id": "img-second", "carbs": 20 }
+      ],
+      "expect": { "image_ids": ["img-first", "img-second"], "overflow": 0 }
+    },
+    {
+      "name": "two unknown carbs keep the original order",
+      "entries": [
+        { "image_id": "img-first", "carbs": null },
+        { "image_id": "img-second", "carbs": null }
+      ],
+      "expect": { "image_ids": ["img-first", "img-second"], "overflow": 0 }
+    },
+    {
+      "name": "two servings of the same food are two layers",
+      "entries": [
+        { "image_id": "img-rice", "carbs": 48 },
+        { "image_id": "img-rice", "carbs": 24 }
+      ],
+      "expect": { "image_ids": ["img-rice", "img-rice"], "overflow": 0 }
+    },
+    {
+      "name": "explicit max of one shows only the biggest contributor",
+      "entries": [
+        { "image_id": "img-milk", "carbs": 12 },
+        { "image_id": "img-rice", "carbs": 48 },
+        { "image_id": "img-bread", "carbs": 24 }
+      ],
+      "max": 1,
+      "expect": { "image_ids": ["img-rice"], "overflow": 2 }
+    },
+    {
+      "name": "explicit max above the group size leaves no overflow",
+      "entries": [
+        { "image_id": "img-milk", "carbs": 12 },
+        { "image_id": "img-rice", "carbs": 48 },
+        { "image_id": "img-bread", "carbs": 24 },
+        { "image_id": "img-apple", "carbs": 19 }
+      ],
+      "max": 6,
+      "expect": { "image_ids": ["img-rice", "img-bread", "img-apple", "img-milk"], "overflow": 0 }
+    }
+  ]
+}

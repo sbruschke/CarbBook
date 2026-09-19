@@ -56,6 +56,18 @@ extension LocalStore {
         try records("log_item", "WHERE deleted = 0 AND log_entry_id = ? ORDER BY rowid", [entryId])
     }
 
+    /// Items of the given entries, grouped by `log_entry_id`, so the Log list resolves every row's
+    /// photos from one query instead of one per row. Entries with no items have no key in the result.
+    public func logItems(entryIds: [Id]) throws -> [Id: [LogItemData]] {
+        guard !entryIds.isEmpty else { return [:] }
+        let placeholders = entryIds.map { _ in "?" }.joined(separator: ", ")
+        let items: [LogItemData] = try records(
+            "log_item",
+            "WHERE deleted = 0 AND log_entry_id IN (\(placeholders)) ORDER BY rowid",
+            StatementArguments(entryIds))
+        return Dictionary(grouping: items, by: \.logEntryId)
+    }
+
     /// Unpushed local changes (Settings → Sync).
     public func pendingCount() throws -> Int {
         try dbQueue.read { db in try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_pending") ?? 0 }

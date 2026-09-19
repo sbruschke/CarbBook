@@ -22,6 +22,8 @@ struct LogEntryView: View {
     @State private var loadedTakenText = ""
     @State private var notes = ""
     @State private var items: [LogItemData] = []
+    /// Resolves each item's reference to its food's or meal's photo, read once with the items.
+    @State private var catalog = InMemoryCatalog()
     @State private var draft: LogEntryData?
     @State private var message: String?
     @State private var loaded = false
@@ -57,6 +59,10 @@ struct LogEntryView: View {
             Section("Items") {
                 ForEach(items, id: \.id) { item in
                     HStack {
+                        // The single icon a meal component row carries; a quick-carbs row resolves
+                        // to nothing. The collapsed entry row in the Log list shows the stack — an
+                        // expanded row shows one photo per item, never both on one surface.
+                        ImageThumbView(imageID: itemImageId(item.refType, item.refId, catalog: catalog), size: 28)
                         VStack(alignment: .leading) {
                             Text(item.displayName)
                             Text("\(formatNumber(item.amount, digits: 2)) \(item.unit.hasPrefix(Units.portionPrefix) ? "portion" : unitLabel(item.unit, portions: []))")
@@ -92,6 +98,7 @@ struct LogEntryView: View {
         loadedTakenText = taken
         notes = entry.notes ?? ""
         items = (try? app.store.logItems(entryId: entry.id)) ?? []
+        catalog = (try? app.store.catalog()) ?? InMemoryCatalog()
     }
 
     private func recalculate() {

@@ -17,8 +17,15 @@ struct MealsView: View {
                     } label: {
                         let perServing = itemCarbs(catalog, .meal, meal.id, 1, Units.serving)
                         HStack {
-                            // The row already has the meal, so its image needs no second lookup.
-                            ImageThumbView(imageID: meal.imageId)
+                            // An explicit choice beats a derived one, so the meal's own photo wins —
+                            // the row already has it, so it needs no second lookup. Most meals will
+                            // never get one, and then their components stand in for it; the catalog
+                            // is already in memory, so that costs no query either.
+                            if let imageId = meal.imageId {
+                                ImageThumbView(imageID: imageId)
+                            } else {
+                                ImageStackView(entries: itemStackEntries(catalog.mealItems(meal.id), catalog: catalog))
+                            }
                             VStack(alignment: .leading) {
                                 Text(meal.name)
                                 Text(perServing.complete
