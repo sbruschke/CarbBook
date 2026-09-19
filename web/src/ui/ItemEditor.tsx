@@ -12,6 +12,7 @@ import {
   QUICK_UNIT,
   quickDisplayName,
   quickUnits,
+  type StackEntry,
   type MealData,
   type RefType,
 } from '@carbbook/core';
@@ -50,6 +51,25 @@ export function itemName(catalog: Catalog, refType: RefType, refId: string): str
 /** Display name for any stored or draft row; quick rows use their label (quick-carbs spec §2). */
 export function itemLabel(catalog: Catalog, item: { ref_type: RefType; ref_id: string; label?: string | null }): string {
   return item.ref_type === 'quick' ? quickDisplayName(item.label) : itemName(catalog, item.ref_type, item.ref_id);
+}
+
+/**
+ * Stack entries for a group of stored rows whose carbs are computed live (meal components, plan
+ * items). One catalog lookup per row and no further queries — the image and the carbs both come
+ * out of the catalog the screen already holds. Incomplete carbs count as unknown rather than zero,
+ * so such a row sorts last but keeps its photo.
+ */
+export function itemStackEntries(
+  catalog: Catalog,
+  items: { ref_type: RefType; ref_id: string; amount: number; unit: string }[],
+): StackEntry[] {
+  return items.map((item) => {
+    const carbs = itemCarbs(catalog, item.ref_type, item.ref_id, item.amount, item.unit);
+    return {
+      imageId: itemRecord(catalog, item.ref_type, item.ref_id)?.image_id ?? null,
+      carbs: carbs.complete ? carbs.carbs_g : null,
+    };
+  });
 }
 
 export function unitsFor(catalog: Catalog, refType: RefType, refId: string): string[] {

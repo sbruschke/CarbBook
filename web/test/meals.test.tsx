@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it } from 'vitest';
 import { Meals } from '../src/screens/Meals';
@@ -129,5 +129,41 @@ describe('quick carbs components', () => {
     await user.click(screen.getByRole('button', { name: 'Save' }));
     await waitFor(async () => expect((await services.db.meal_item.get('i-salsa'))?.amount).toBe(8));
     expect(await services.db.meal_item.get('i-salsa')).toMatchObject({ label: 'Salsa', ref_id: 'i-salsa', unit: 'carbs' });
+  });
+
+  it('shows its own image when it has one, and a stack of its components when it does not', async () => {
+    const user = await setup();
+    const hash = (seed: string) => seed.repeat(64).slice(0, 64);
+    const own = hash('a');
+    await services.db.food.bulkPut([
+      synced(foodData({ id: 'tortilla', name: 'Tortilla', carbs_per_100g: 48, image_id: hash('b') })),
+      synced(foodData({ id: 'beans', name: 'Beans', carbs_per_100g: 20, image_id: hash('c') })),
+    ]);
+    await services.db.meal.bulkPut([
+      synced(mealData({ id: 'chili', name: 'Chili' })),
+      synced(mealData({ id: 'wrap', name: 'Wrap', image_id: own })),
+    ]);
+    await services.db.meal_item.bulkPut([
+      synced(mealItemData({ id: 'c-tortilla', meal_id: 'chili', ref_id: 'tortilla', position: 0 })),
+      synced(mealItemData({ id: 'c-beans', meal_id: 'chili', ref_id: 'beans', position: 1 })),
+      synced(mealItemData({ id: 'w-tortilla', meal_id: 'wrap', ref_id: 'tortilla', position: 0 })),
+    ]);
+    renderWith(<Meals />, services);
+
+    // An explicit choice wins: the meal with its own photo shows that and derives nothing.
+    const wrap = await screen.findByRole('button', { name: /Wrap/ });
+    expect([...wrap.querySelectorAll('img')].map((img) => img.getAttribute('src'))).toEqual([`/api/images/${own}`]);
+    expect(wrap.querySelector('.image-stack')).toBeNull();
+
+    // Without one, the components stand in — tortilla (48 g) ahead of beans (20 g).
+    const chili = screen.getByRole('button', { name: /Chili/ });
+    expect([...chili.querySelectorAll('.image-stack img')].map((img) => img.getAttribute('src'))).toEqual([
+      `/api/images/${hash('b')}`,
+      `/api/images/${hash('c')}`,
+    ]);
+    expect(within(chili).getByLabelText('2 items')).toBeInTheDocument();
+    // Still the ordinary row: opening it is unaffected.
+    await user.click(chili);
+    expect(screen.getByLabelText('Name')).toHaveValue('Chili');
   });
 });

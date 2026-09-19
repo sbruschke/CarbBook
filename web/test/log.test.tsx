@@ -46,6 +46,30 @@ describe('Log', () => {
     expect(screen.getByTestId('day-totals')).toHaveTextContent('10 g carbs · 0 u taken');
   });
 
+  it('shows a carb-ordered stack of the entry\u2019s items, quick rows counted in the badge', async () => {
+    await setup();
+    const hash = (seed: string) => seed.repeat(64).slice(0, 64);
+    await services.db.food.bulkPut([
+      synced(foodData({ id: 'tortilla', name: 'Tortilla', carbs_per_100g: 48, image_id: hash('a') })),
+      synced(foodData({ id: 'beans', name: 'Beans', carbs_per_100g: 20, image_id: hash('b') })),
+    ]);
+    await services.db.log_item.bulkPut([
+      item({ id: 'li-beans', log_entry_id: 'today', ref_id: 'beans', display_name: 'Beans', carbs_g: 12 }),
+      item({ id: 'li-quick', log_entry_id: 'today', ref_type: 'quick', ref_id: 'li-quick', display_name: 'Salsa', unit: 'carbs', carbs_g: 6 }),
+    ]);
+    renderWith(<Log />, services);
+
+    const row = await screen.findByRole('button', { name: /11:00 Lunch/ });
+    // The 30 g tortilla leads the 12 g beans; the quick row has no food, so it only adds to "+1".
+    expect([...row.querySelectorAll('.image-stack img')].map((img) => img.getAttribute('src'))).toEqual([
+      `/api/images/${hash('a')}`,
+      `/api/images/${hash('b')}`,
+    ]);
+    expect(row.querySelector('.image-stack')).toHaveTextContent('+1');
+    // Names stay in the row's own order; only the photos are reordered by carbs.
+    expect(row).toHaveTextContent('Beans, Salsa, Old tortilla');
+  });
+
   it('never shows a day-level goal colour or goal text on the day header, even when a window has a goal', async () => {
     const user = await setup();
     const current = (await services.db.dose_settings.toArray())[0]!;

@@ -10,8 +10,9 @@ import { goalView } from '../plan/goal';
 import { SlotEditor } from '../plan/SlotEditor';
 import { buildSlots, dayCarbs, dayTotalText, type Slot, windowsFor } from '../plan/slots';
 import { dayKey, formatDayLabel, shiftDay, startOfWeek, weekDates } from '../ui/format';
+import { ImageStack } from '../ui/ImageStack';
 import { ImageThumb } from '../ui/ImageThumb';
-import { itemLabel, itemRecord } from '../ui/ItemEditor';
+import { itemLabel, itemRecord, itemStackEntries } from '../ui/ItemEditor';
 
 export function Plan() {
   const { now, store } = useServices();
@@ -224,6 +225,8 @@ function PlanCell(props: { slot: Slot; catalog: Catalog; onEdit: () => void }) {
       <h3>{slot.windowName}</h3>
       {slot.entry ? (
         <>
+          {/* The slot as a whole, carb-ordered; the item rows below keep their own icons. */}
+          <ImageStack entries={itemStackEntries(catalog, slot.items)} size={28} />
           <p className="muted">
             {slot.items.length === 0
               ? 'No items'

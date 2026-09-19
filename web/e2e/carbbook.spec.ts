@@ -336,3 +336,58 @@ test('a provider that fails to answer is named in the picker (images spec)', asy
   await expect(page.getByText('No response from wikimedia.')).toBeVisible();
   await expect(page.getByText('No images found.')).toBeVisible();
 });
+
+test('a logged entry shows an overlapping stack of its items\u2019 photos on the log row (image stacks spec)', async ({
+  page,
+  baseURL,
+}) => {
+  const rice = 'e'.repeat(64);
+  const beans = 'f'.repeat(64);
+  for (const hash of [rice, beans]) {
+    await page.route(`**/api/images/${hash}`, (route) => route.fulfill({ path: 'public/icon-192.png' }));
+  }
+
+  // "dana", not "brett": the other specs use up brett's five logins per 15 minutes.
+  await page.goto('/');
+  await page.getByLabel('Username').fill('dana');
+  await page.getByLabel('Password').fill(PASSWORD);
+  await page.getByRole('button', { name: 'Sign in' }).click();
+  await expect(page.getByRole('heading', { name: 'Calculator' })).toBeVisible();
+
+  // Two foods that already carry photos, pushed through the API as another device would. The
+  // `image` rows themselves are not needed: the id is only a URL path, and the bytes are stubbed.
+  const meta = { updated_at: Date.now(), updated_by: 'e2e-seed', deleted: 0 };
+  const seeded = await page.request.post(`${baseURL}/api/sync/push`, {
+    data: {
+      changes: [
+        { table: 'food', record: { id: 'e2e-stack-rice', name: 'Stackrice', source: 'custom', carbs_per_100g: 28, image_id: rice, ...meta } },
+        { table: 'food', record: { id: 'e2e-stack-beans', name: 'Stackbeans', source: 'custom', carbs_per_100g: 20, image_id: beans, ...meta } },
+      ],
+    },
+  });
+  expect(((await seeded.json()) as { results: { status: string }[] }).results.map((r) => r.status)).toEqual(['accepted', 'accepted']);
+
+  await page.getByRole('link', { name: 'Settings' }).click();
+  await page.getByRole('button', { name: 'Sync now' }).click();
+  await expect(page.getByTestId('pending-count')).toHaveText('0 pending changes');
+
+  // Log both, plus a quick row that has no food and so contributes no photo.
+  await page.getByRole('link', { name: 'Calculator' }).click();
+  await page.getByLabel('Search foods and meals').fill('stackrice');
+  await page.getByRole('button', { name: /Stackrice/ }).click();
+  await page.getByLabel('Search foods and meals').fill('stackbeans');
+  await page.getByRole('button', { name: /Stackbeans/ }).click();
+  await page.getByRole('button', { name: '+ Carbs' }).click();
+  await page.getByLabel('Label for carbs row 1').fill('Salsa');
+  await page.getByLabel('Grams of carbs for carbs row 1').fill('5');
+  await page.getByRole('button', { name: 'Log it' }).click();
+  await expect(page.getByRole('status')).toContainText('Logged');
+
+  // The log row carries the stack: both photos, the bigger carb contribution in front, and a
+  // badge for the quick row.
+  await page.getByRole('link', { name: 'Log' }).click();
+  const stack = page.locator('.list-item .image-stack').first();
+  await expect(stack.locator('img')).toHaveCount(2);
+  await expect(stack.locator('img').first()).toHaveAttribute('src', `/api/images/${rice}`);
+  await expect(stack).toContainText('+1');
+});
