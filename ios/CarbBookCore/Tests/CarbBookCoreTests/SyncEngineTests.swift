@@ -268,4 +268,12 @@ final class SyncEngineTests: XCTestCase {
         XCTAssertEqual(pending, ["food/f1"])
         XCTAssertNil(lastSynced)
     }
+
+    /// The table list the FakeServer above guards on, and the order the real server pulls in.
+    func testSyncTablesMatchesServerPullOrder() {
+        XCTAssertEqual(SyncTables.all, [
+            "food", "portion", "barcode", "meal", "meal_item", "log_entry", "log_item",
+            "dose_settings", "plan_entry", "plan_item", "image",
+        ])
+    }
 }

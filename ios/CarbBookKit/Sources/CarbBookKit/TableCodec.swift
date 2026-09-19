@@ -6,10 +6,10 @@ import GRDB
 enum TableCodec {
     static let dataColumns: [String: [String]] = [
         "food": ["name", "brand", "source", "source_ref", "derived_from", "carbs_per_100g", "carbs_per_100ml", "fiber_per_100g",
-                 "density_g_per_ml", "notes"],
+                 "density_g_per_ml", "notes", "image_id"],
         "portion": ["food_id", "label", "kind", "quantity", "grams", "carbs_g"],
         "barcode": ["code", "food_id"],
-        "meal": ["name", "yield_servings", "total_weight_g", "notes"],
+        "meal": ["name", "yield_servings", "total_weight_g", "notes", "image_id"],
         "meal_item": ["meal_id", "ref_type", "ref_id", "amount", "unit", "position", "label"],
         "log_entry": ["eaten_at", "window_name", "bg_mgdl", "bg_source", "bg_trend", "total_carbs_g", "suggested_units",
                       "taken_units", "settings_version_id", "notes"],
@@ -17,16 +17,19 @@ enum TableCodec {
         "dose_settings": ["effective_from", "windows", "correction", "rounding"],
         "plan_entry": ["date", "window_name", "status", "note", "log_entry_id"],
         "plan_item": ["plan_entry_id", "ref_type", "ref_id", "amount", "unit", "position", "label"],
+        "image": ["mime", "width", "height", "source", "source_url", "license", "attribution"],
     ]
     /// Stored as JSON text, sent as JSON objects/arrays on the wire. Explicit nulls inside them
     /// (e.g. `rounding.round_down_below_bg`) are preserved: `JSONValue.null` encodes as `null`.
-    /// Columns added by later migrations (`Schema.v2AnyUnitFoods`, `Schema.v4QuickCarbs`). Omitted from
+    /// Columns added by later migrations (`Schema.v2AnyUnitFoods`, `Schema.v4QuickCarbs`, `Schema.v5Images`). Omitted from
     /// the push of a row that was pending before its table gained them, so the server keeps its values.
     static let legacyColumns: [String: [String]] = [
-        "food": ["carbs_per_100ml"], "portion": ["carbs_g"], "meal_item": ["label"], "plan_item": ["label"],
+        "food": ["carbs_per_100ml", "image_id"], "portion": ["carbs_g"], "meal": ["image_id"],
+        "meal_item": ["label"], "plan_item": ["label"],
     ]
     static let jsonColumns: Set<String> = ["windows", "correction", "rounding"]
-    static let integerColumns: Set<String> = ["eaten_at", "effective_from", "position", "updated_at", "deleted", "server_seq"]
+    static let integerColumns: Set<String> = ["eaten_at", "effective_from", "position", "updated_at", "deleted", "server_seq",
+                                              "width", "height"]
 
     enum CodecError: Error, Equatable {
         case unknownTable(String)

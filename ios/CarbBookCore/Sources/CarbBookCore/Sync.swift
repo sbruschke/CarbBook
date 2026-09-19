@@ -31,8 +31,12 @@ public func shouldApplyPulled(incoming: RecordVersion, local: RecordVersion?, lo
 }
 
 public enum SyncTables {
-    /// Synced tables, in the server's pull order.
-    public static let all = ["food", "portion", "barcode", "meal", "meal_item", "log_entry", "log_item", "dose_settings"]
+    /// Synced tables, in the server's pull order. `plan_entry`/`plan_item` were missing here while
+    /// PlanEditing.swift was already writing them (fixed with the images spec); `image` is new.
+    public static let all = [
+        "food", "portion", "barcode", "meal", "meal_item", "log_entry", "log_item",
+        "dose_settings", "plan_entry", "plan_item", "image",
+    ]
 }
 
 public struct SyncChange: Codable, Equatable, Sendable {
