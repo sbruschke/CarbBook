@@ -25,6 +25,8 @@ export interface FoodData {
   fiber_per_100g?: number | null;
   density_g_per_ml?: number | null;
   notes?: string | null;
+  /** Optional image, referencing image.id (images spec 2026-09-18). Dangling ids render as no image. */
+  image_id?: string | null;
 }
 
 export type PortionKind = 'volume' | 'count' | 'serving';
@@ -54,6 +56,8 @@ export interface MealData {
   yield_servings: number;
   total_weight_g?: number | null;
   notes?: string | null;
+  /** Optional image, referencing image.id (images spec 2026-09-18). Dangling ids render as no image. */
+  image_id?: string | null;
 }
 
 /** `quick` = a carbs-only row with no food (quick-carbs spec §2): amount is grams of carbs, unit `carbs`. */
