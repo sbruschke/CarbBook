@@ -49,8 +49,18 @@ struct ImageThumbView: View {
     var body: some View {
         // The frame is claimed only once there is something to draw, so a row without an image keeps
         // its old layout rather than reserving an empty square.
+        //
+        // The zero-sized `Color.clear` is load-bearing, not decoration: SwiftUI does not run `.task`
+        // on a view whose body resolves to empty, so a `Group` holding only a false `if` never fires
+        // the fetch below — the view renders nothing, therefore never loads an image, therefore goes
+        // on rendering nothing. Keeping a real (if invisible, zero-sized) view in the else branch
+        // guarantees the task runs while leaving every row's layout exactly as it was.
         Group {
-            if let image { shaped(image) }
+            if let image {
+                shaped(image)
+            } else {
+                Color.clear.frame(width: 0, height: 0)
+            }
         }
         .task(id: imageID) {
             image = nil
