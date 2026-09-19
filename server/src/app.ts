@@ -18,6 +18,7 @@ import { createOffClient } from './off/client';
 import { loginRoutes, sessionRoutes } from './routes/auth';
 import { barcodeRoutes } from './routes/barcode';
 import { bgRoutes } from './routes/bg';
+import { imageRoutes } from './routes/images';
 import { searchRoutes } from './routes/search';
 import { syncRoutes } from './routes/sync';
 import { usdaRoutes } from './routes/usda';
@@ -91,6 +92,7 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
     await api.register(usdaRoutes, ctx);
     await api.register(searchRoutes, ctx);
     await api.register(barcodeRoutes, ctx);
+    await api.register(imageRoutes, ctx);
   });
 
   await registerWebApp(app, options.config.webDir);
