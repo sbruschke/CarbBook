@@ -21,7 +21,7 @@ sync_one() {
   fi
 }
 
-for name in units-vectors.json dose-vectors.json goal-vectors.json; do
+for name in units-vectors.json dose-vectors.json goal-vectors.json image-stack-vectors.json; do
   sync_one "$name" "$core_dest" "${1:-}"
 done
 for name in number-parse-vectors.json; do
