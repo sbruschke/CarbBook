@@ -146,4 +146,44 @@ export async function imageRoutes(app: FastifyInstance, ctx: AppContext): Promis
       });
     },
   );
+
+  /**
+   * Base64 JSON rather than multipart: it needs no @fastify/multipart, and it satisfies the CSRF
+   * guard (src/csrf.ts:29-38), which requires application/json on any cookie-authenticated
+   * mutating request — a multipart upload from the web client would be a 415.
+   *
+   * The global 5MB body limit (src/app.ts:57) bounds this; base64 inflates by 4/3, so the ceiling
+   * is ~3.7MB of image. Clients downscale first so a phone photo never reaches it, but that is an
+   * optimisation, not a trust boundary: the bytes are re-encoded here regardless.
+   */
+  app.post<{ Body: { data_base64: string; mime: string } }>(
+    '/api/images/upload',
+    {
+      schema: {
+        body: {
+          type: 'object',
+          required: ['data_base64', 'mime'],
+          additionalProperties: false,
+          properties: {
+            data_base64: { type: 'string', minLength: 1 },
+            mime: { type: 'string', enum: ['image/jpeg', 'image/png', 'image/heic', 'image/webp'] },
+          },
+        },
+      },
+    },
+    async (request) => {
+      const bytes = Buffer.from(request.body.data_base64, 'base64');
+      if (bytes.byteLength === 0) throw new ApiError(400, 'image_rejected', 'data_base64 did not decode to any bytes');
+
+      let stored;
+      try {
+        stored = await ctx.deps.images.put(bytes);
+      } catch (error) {
+        if (error instanceof ImageRejectedError) throw new ApiError(400, 'image_rejected', error.message);
+        throw error;
+      }
+      // The declared mime is advisory only; sniffing and re-encoding decide what is stored.
+      return upsertImageRow(ctx, stored, { source: 'upload', source_url: null, license: null, attribution: null });
+    },
+  );
 }
