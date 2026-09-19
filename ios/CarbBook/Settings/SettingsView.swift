@@ -8,6 +8,7 @@ struct SettingsView: View {
     @State private var rejectedIds: Set<Id> = []
     @State private var pending = 0
     @State private var lastSynced: Int64?
+    @State private var imageStatus = "Checking…"
 
     /// The same shared filter Calculator and the Log editor use before picking an active version
     /// (`eligibleDoseSettingsVersions`, keyed on `LocalStore.rejectedDoseSettingsIds()`), so "in
@@ -51,12 +52,27 @@ struct SettingsView: View {
                     Text(app.usdaStatus)
                     Button("Check for update") { Task { await app.updateUsda() } }
                 }
+                // Thumbnails fail silently by design — an empty slot is quieter than a broken one —
+                // which leaves nothing to go on when they do not appear. This says why.
+                Section("Images") {
+                    Text(imageStatus)
+                    Button("Recheck") { Task { await loadImageStatus() } }
+                }
             }
             .navigationTitle("Settings")
             .onAppear(perform: load)
+            .task { await loadImageStatus() }
             .onChange(of: app.revision) { load() }
             .onChange(of: app.syncPhase) { load() }
         }
+    }
+
+    /// Reads the cache's own tally. `failures == 0` with images visible means all is well; a reason
+    /// here is the first thing to look at when a thumbnail is missing.
+    private func loadImageStatus() async {
+        let failures = await app.images.failures
+        let reason = await app.images.lastFailure
+        imageStatus = failures == 0 ? "No image errors" : "\(failures) failed — \(reason ?? "unknown")"
     }
 
     private func load() {

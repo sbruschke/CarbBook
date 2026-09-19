@@ -8,12 +8,19 @@ import Foundation
 public actor ImageCache {
     public enum CacheError: Error, Equatable {
         case notAnImageHash(String)
+        case emptyResponse(String)
     }
 
     private let directory: URL
     private let fetch: @Sendable (String) async throws -> Data
     /// Coalesces concurrent requests for the same hash into one download.
     private var inFlight: [String: Task<URL, Error>] = [:]
+
+    /// Why the last fetch failed, and how many have. A thumbnail is deliberately silent when it
+    /// cannot load — which also makes it undiagnosable on a device we cannot attach to, so the
+    /// reason is kept here and surfaced in Settings rather than only thrown away by a `try?`.
+    public private(set) var failures = 0
+    public private(set) var lastFailure: String?
 
     public init(directory: URL, fetch: @escaping @Sendable (String) async throws -> Data) {
         self.directory = directory
@@ -31,13 +38,17 @@ public actor ImageCache {
     /// the server validates but which may be anything after a bad pull — can never name a path
     /// outside the cache.
     public func fileURL(for hash: String) async throws -> URL {
-        guard Self.isImageHash(hash) else { throw CacheError.notAnImageHash(hash) }
+        guard Self.isImageHash(hash) else {
+            note("not a hash: \(hash.prefix(12))…")
+            throw CacheError.notAnImageHash(hash)
+        }
         let target = directory.appendingPathComponent("\(hash).jpg")
         if FileManager.default.fileExists(atPath: target.path) { return target }
 
         if let existing = inFlight[hash] { return try await existing.value }
         let task = Task<URL, Error> { [fetch, directory] in
             let data = try await fetch(hash)
+            if data.isEmpty { throw CacheError.emptyResponse(hash) }
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             // `.atomic` writes a temporary file and renames it into place, so a cancelled or failed
             // download never leaves a truncated file at the content-addressed path, where it would
@@ -47,6 +58,16 @@ public actor ImageCache {
         }
         inFlight[hash] = task
         defer { inFlight[hash] = nil }
-        return try await task.value
+        do {
+            return try await task.value
+        } catch {
+            note("\(hash.prefix(8))…: \(error)")
+            throw error
+        }
+    }
+
+    private func note(_ reason: String) {
+        failures += 1
+        lastFailure = reason
     }
 }
