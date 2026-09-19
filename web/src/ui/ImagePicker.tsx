@@ -21,7 +21,12 @@ export function ImagePicker(props: {
 }) {
   const { api } = useServices();
   const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState(props.defaultQuery);
+  // null means "follow the food or meal's name". Holding the typed value separately, rather than
+  // seeding state once at mount, matters for a NEW food: the picker mounts with the form, when the
+  // name is still empty, so a mount-time seed would leave the box blank and Search disabled until
+  // the user retyped the name they had just entered.
+  const [typed, setTyped] = useState<string | null>(null);
+  const query = typed ?? props.defaultQuery;
   const [result, setResult] = useState<ImageSearchResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -87,7 +92,7 @@ export function ImagePicker(props: {
         <div className="image-search">
           <label>
             Search for an image
-            <input type="search" value={query} onChange={(e) => setQuery(e.target.value)} />
+            <input type="search" value={query} onChange={(e) => setTyped(e.target.value)} />
           </label>
           <div className="button-row">
             <button type="button" className="primary" disabled={busy || query.trim() === ''} onClick={search}>
