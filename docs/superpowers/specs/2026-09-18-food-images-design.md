@@ -154,7 +154,7 @@ reuses the `AbortSignal.timeout(config.httpTimeoutMs)` pattern from
 
 | provider | key needed | good for | notes |
 | --- | --- | --- | --- |
-| `openverse` | none | general dish and ingredient terms | ~700M CC images; quality varies, so candidates only. Anonymous requests are rate-limited; treat 429 as unavailable. |
+| `openverse` | none | general dish and ingredient terms | ~700M CC images; quality varies, so candidates only. Anonymous requests are rate-limited; treat 429 as unavailable. Adopt `thumbnail` **with `?full_size=true`** — measured, the plain proxy serves 600x399, under the 800px cap, while `full_size=true` returns the original (1024x681 for the same image) and stays on the allowlisted host. |
 | `wikimedia` | none | ingredients, recognisable named dishes | Commons API. Attribution and licence are reliable here. |
 | `themealdb` | none (public test key `1`) | prepared dishes and recipes | Small catalogue, high relevance when it hits. |
 | `off` | none | packaged products, by barcode | Not a text search; see below. |
@@ -309,6 +309,27 @@ A `carbbook images gc` CLI subcommand (alongside the existing `user add` and `im
 2. **SSRF via `adopt`.** This spec introduces the first route where a client hands the server
    a URL to fetch. The allowlist plus redirect and address-range checks are the mitigation,
    and they are the most important tests in the suite.
+
+   Two findings from implementation, recorded here because they outlived the tasks that found them:
+
+   - The first version of `isPublicAddress` judged IPv6 by string prefix and only recognised
+     IPv4-mapped addresses in dotted form, so hex spellings of private addresses passed as public
+     (`::ffff:7f00:1`, `::ffff:a00:1`) along with NAT64 `64:ff9b::/96`, 6to4 `2002::/16` and
+     Teredo `2001:0::/32` embedding private v4. The last three are not merely latent: no resolver
+     prints those in dotted form, and this deployment already hits NAT64 synthesis on cellular.
+     Fixed by parsing to 16 bytes and judging numerically (`15e7dc6`). Lesson worth keeping:
+     normalise addresses, never pattern-match their spellings.
+   - **TOCTOU / DNS rebinding between guard and fetch is an accepted risk.** `assertAdoptableUrl`
+     resolves the hostname, then `fetch` resolves it again independently, so a short-TTL record
+     could answer public to the guard and private to the fetch. Closing it properly means pinning
+     the validated address onto a custom undici agent. Not built, because exploiting it requires an
+     authenticated user on this server who *also* controls DNS for `api.openverse.org`,
+     `upload.wikimedia.org`, `www.themealdb.com` or `images.openfoodfacts.org`. Revisit if this app
+     ever serves untrusted users. The redirect rule below is the related mitigation that *is* built.
+
+   Adoption rejects redirects outright (`redirect: 'manual'`) rather than following them: a 302
+   from an allowlisted host would otherwise defeat both gates, and all four allowlisted hosts serve
+   final URLs for the URLs we adopt.
 3. **Provider churn.** Free no-key APIs change or disappear. The provider interface is
    deliberately one function so losing one is a deletion, not a refactor.
 4. **Licence display.** CC-BY requires credit. Attribution is stored and shown in the editor;
