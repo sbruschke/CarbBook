@@ -3,7 +3,7 @@ import Foundation
 import XCTest
 
 final class ImageCacheTests: XCTestCase {
-    private let hash = String(repeating: "a", count: 64)
+    private let imageHash = String(repeating: "a", count: 64)
 
     private func makeCache(fetch: @escaping (String) async throws -> Data) throws -> (ImageCache, URL) {
         let dir = try temporaryDirectory().appendingPathComponent("images")
@@ -16,8 +16,8 @@ final class ImageCacheTests: XCTestCase {
             await counter.increment()
             return Data([0xFF, 0xD8, 0xFF, 0xE0])
         }
-        let first = try await cache.fileURL(for: hash)
-        let second = try await cache.fileURL(for: hash)
+        let first = try await cache.fileURL(for: imageHash)
+        let second = try await cache.fileURL(for: imageHash)
         XCTAssertEqual(first, second)
         let calls = await counter.value
         XCTAssertEqual(calls, 1)
@@ -30,10 +30,10 @@ final class ImageCacheTests: XCTestCase {
             await counter.increment()
             return Data([0xFF, 0xD8, 0xFF, 0xE0])
         }
-        let url = try await cache.fileURL(for: hash)
+        let url = try await cache.fileURL(for: imageHash)
         // The OS can purge Caches at any time; a miss must refetch, not throw.
         try FileManager.default.removeItem(at: url)
-        _ = try await cache.fileURL(for: hash)
+        _ = try await cache.fileURL(for: imageHash)
         let calls = await counter.value
         XCTAssertEqual(calls, 2)
     }
@@ -57,7 +57,7 @@ final class ImageCacheTests: XCTestCase {
     func testPropagatesAFetchFailure() async throws {
         let (cache, _) = try makeCache { _ in throw URLError(.notConnectedToInternet) }
         do {
-            _ = try await cache.fileURL(for: hash)
+            _ = try await cache.fileURL(for: imageHash)
             XCTFail("expected a rejection")
         } catch {}
     }
@@ -70,8 +70,8 @@ final class ImageCacheTests: XCTestCase {
             try? await Task.sleep(nanoseconds: 20_000_000)
             return Data([0xFF, 0xD8, 0xFF, 0xE0])
         }
-        async let a = cache.fileURL(for: hash)
-        async let b = cache.fileURL(for: hash)
+        async let a = cache.fileURL(for: imageHash)
+        async let b = cache.fileURL(for: imageHash)
         _ = try await (a, b)
         let calls = await counter.value
         XCTAssertEqual(calls, 1)

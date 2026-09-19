@@ -6,7 +6,7 @@ import XCTest
 
 /// Images spec: the `image` table, `food.image_id`/`meal.image_id`, and their codec registration.
 final class ImagesKitTests: XCTestCase {
-    private let hash = String(repeating: "a", count: 64)
+    private let imageHash = String(repeating: "a", count: 64)
 
     func testCodecKnowsTheImageTableColumns() throws {
         XCTAssertEqual(try TableCodec.columns("image"), [
@@ -32,20 +32,20 @@ final class ImagesKitTests: XCTestCase {
     func testImageRowRoundTripsWithIntegerDimensions() async throws {
         let store = try LocalStore(path: nil, now: { 1_000 })
         let record: [String: JSONValue] = [
-            "id": .string(hash), "mime": .string("image/jpeg"), "width": .number(800), "height": .number(600),
+            "id": .string(imageHash), "mime": .string("image/jpeg"), "width": .number(800), "height": .number(600),
             "source": .string("openverse"), "source_url": .string("https://example.test/p"),
             "license": .string("CC0"), "attribution": .null,
         ]
         try store.save([SyncChange(table: "image", record: record)])
 
         let stored = try await store.dbQueue.read { db in
-            try Row.fetchOne(db, sql: "SELECT width, height FROM image WHERE id = ?", arguments: [self.hash])
+            try Row.fetchOne(db, sql: "SELECT width, height FROM image WHERE id = ?", arguments: [self.imageHash])
         }
         XCTAssertEqual(stored?["width"] as DatabaseValue?, Int64(800).databaseValue)
         XCTAssertEqual(stored?["height"] as DatabaseValue?, Int64(600).databaseValue)
 
         let pending = try await store.pendingChanges(limit: 10)
-        XCTAssertEqual(pending.map(\.key), ["image/\(hash)"])
+        XCTAssertEqual(pending.map(\.key), ["image/\(imageHash)"])
         XCTAssertEqual(pending[0].record["width"], .number(800))
         XCTAssertEqual(pending[0].record["height"], .number(600))
         XCTAssertEqual(pending[0].record["source"], .string("openverse"))
@@ -115,11 +115,11 @@ extension ImagesKitTests {
         let store = try LocalStore(path: nil, now: clock.now)
         try await pulled("food", [
             "id": .string("f1"), "name": .string("Rice"), "source": .string("custom"),
-            "carbs_per_100g": .number(28.2), "image_id": .string(hash),
+            "carbs_per_100g": .number(28.2), "image_id": .string(imageHash),
         ], into: store)
 
         var food = try XCTUnwrap(store.foods().first)
-        XCTAssertEqual(food.imageId, hash, "a pulled image_id must decode onto the struct")
+        XCTAssertEqual(food.imageId, imageHash, "a pulled image_id must decode onto the struct")
         food.name = "Jasmine rice"
         clock.ms = 3_000
         try store.save("food", food)
@@ -127,7 +127,7 @@ extension ImagesKitTests {
         let pending = try await store.pendingChanges(limit: 10)
         XCTAssertEqual(pending.map(\.key), ["food/f1"])
         XCTAssertEqual(pending[0].record["name"], .string("Jasmine rice"))
-        XCTAssertEqual(pending[0].record["image_id"], .string(hash), "editing the name must not wipe the image")
+        XCTAssertEqual(pending[0].record["image_id"], .string(imageHash), "editing the name must not wipe the image")
     }
 
     func testEditingAPulledMealKeepsItsImage() async throws {
@@ -135,30 +135,30 @@ extension ImagesKitTests {
         let store = try LocalStore(path: nil, now: clock.now)
         try await pulled("meal", [
             "id": .string("m1"), "name": .string("Chilli"), "yield_servings": .number(4),
-            "image_id": .string(hash),
+            "image_id": .string(imageHash),
         ], into: store)
 
         var meal = try XCTUnwrap(store.meals().first)
-        XCTAssertEqual(meal.imageId, hash, "a pulled image_id must decode onto the struct")
+        XCTAssertEqual(meal.imageId, imageHash, "a pulled image_id must decode onto the struct")
         meal.name = "Chilli con carne"
         clock.ms = 3_000
         try store.save("meal", meal)
 
         let pending = try await store.pendingChanges(limit: 10)
         XCTAssertEqual(pending.map(\.key), ["meal/m1"])
-        XCTAssertEqual(pending[0].record["image_id"], .string(hash), "editing the name must not wipe the image")
+        XCTAssertEqual(pending[0].record["image_id"], .string(imageHash), "editing the name must not wipe the image")
     }
 }
 
 /// The row thumbnails read the image off the catalog record the row already resolves for its name.
 final class ItemImageIdTests: XCTestCase {
-    private let hash = String(repeating: "c", count: 64)
+    private let imageHash = String(repeating: "c", count: 64)
 
     func testFoodAndMealImagesAreFoundAndQuickRowsHaveNone() {
         let catalog = InMemoryCatalog(
-            foods: [FoodData(id: "f1", name: "Rice", source: "custom", carbsPer100g: 28, imageId: hash)],
+            foods: [FoodData(id: "f1", name: "Rice", source: "custom", carbsPer100g: 28, imageId: imageHash)],
             meals: [MealData(id: "m1", name: "Chilli", yieldServings: 4)])
-        XCTAssertEqual(itemImageId(.food, "f1", catalog: catalog), hash)
+        XCTAssertEqual(itemImageId(.food, "f1", catalog: catalog), imageHash)
         XCTAssertNil(itemImageId(.meal, "m1", catalog: catalog), "a meal with no image has none")
         XCTAssertNil(itemImageId(.quick, "q1", catalog: catalog), "quick carbs rows have no record at all")
     }
