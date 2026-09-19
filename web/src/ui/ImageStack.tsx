@@ -29,7 +29,9 @@ export function ImageStack({
   if (imageIds.length === 0) return null;
 
   return (
-    <span className="image-stack" aria-label={label ?? `${entries.length} items`}>
+    // role="img" so the label is actually exposed: an aria-label on a bare span is not
+    // reliably announced. The photos themselves stay hidden — the row names its contents in text.
+    <span className="image-stack" role="img" aria-label={label ?? `${entries.length} items`}>
       {imageIds.map((imageId, index) => (
         <span
           key={`${index}-${imageId}`}

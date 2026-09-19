@@ -1,5 +1,5 @@
 import type { Catalog } from '@carbbook/core';
-import { Fragment, useState } from 'react';
+import { useState } from 'react';
 import { useCatalogData, useEligibleDoseVersions, usePlanData } from '../app/hooks';
 import { useServices } from '../app/services';
 import { buildCatalog } from '../db/catalog';
@@ -11,7 +11,6 @@ import { SlotEditor } from '../plan/SlotEditor';
 import { buildSlots, dayCarbs, dayTotalText, type Slot, windowsFor } from '../plan/slots';
 import { dayKey, formatDayLabel, shiftDay, startOfWeek, weekDates } from '../ui/format';
 import { ImageStack } from '../ui/ImageStack';
-import { ImageThumb } from '../ui/ImageThumb';
 import { itemLabel, itemRecord, itemStackEntries } from '../ui/ItemEditor';
 
 export function Plan() {
@@ -230,17 +229,9 @@ function PlanCell(props: { slot: Slot; catalog: Catalog; onEdit: () => void }) {
           <p className="muted">
             {slot.items.length === 0
               ? 'No items'
-              : // Comma-separated as before, but each row carries its own thumbnail, so the
-                // names are spans rather than one joined string.
-                slot.items.map((item, index) => (
-                  <Fragment key={item.id}>
-                    {index > 0 ? ', ' : ''}
-                    <span className="plan-item">
-                      <ImageThumb imageId={itemRecord(catalog, item.ref_type, item.ref_id)?.image_id} alt="" size={20} />
-                      {itemLabel(catalog, item)}
-                    </span>
-                  </Fragment>
-                ))}
+              : // Names only. The slot's stack above already shows these items' photos, so a
+                // per-name thumbnail here would draw every picture twice in one cell.
+                slot.items.map((item) => itemLabel(catalog, item)).join(', ')}
           </p>
           <GoalReadout view={view} testId={`plan-carbs-${slot.date}-${slot.windowName}`} />
           <span className="tag">{STATUS_WORDS[slot.entry.status]}</span>
