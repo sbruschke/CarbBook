@@ -1,5 +1,9 @@
 import {
   DOSE_LIMITS,
+  IMAGE_ATTRIBUTION_MAX,
+  IMAGE_MIME_TYPES,
+  IMAGE_SOURCES,
+  isImageHash,
   isValidCarbGoal,
   isValidQuickCarbs,
   isVolumeUnit,
@@ -22,6 +26,7 @@ export const SYNC_TABLES = [
   'dose_settings',
   'plan_entry',
   'plan_item',
+  'image',
 ] as const;
 
 export type SyncTable = (typeof SYNC_TABLES)[number];
@@ -135,6 +140,9 @@ const optionalText = (max = 200): FieldSpec => ({ type: 'text', nullable: true, 
  */
 const REF_TYPES = ['food', 'meal', 'quick'] as const;
 
+/** Nullable reference to image.id. Not a foreign key; a dangling id renders as no image. */
+const imageId: FieldSpec = { type: 'text', nullable: true, max: 64 };
+
 /** meal_item.label / plan_item.label: optional, quick rows only (quick-carbs spec §2). */
 const itemLabel: FieldSpec = { type: 'text', nullable: true, max: QUICK_LABEL_MAX, trim: true };
 
@@ -167,6 +175,9 @@ export function isValidPlanDate(value: unknown): boolean {
   return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
 }
 
+const checkImageId = (r: Record<string, unknown>): string | null =>
+  r.image_id == null || isImageHash(r.image_id) ? null : 'image_id must be a lowercase sha256 hex digest';
+
 export const TABLE_SPECS: Record<SyncTable, TableSpec> = {
   food: {
     name: 'food',
@@ -181,7 +192,9 @@ export const TABLE_SPECS: Record<SyncTable, TableSpec> = {
       fiber_per_100g: { type: 'number', nullable: true, min: 0, max: 100 },
       density_g_per_ml: { type: 'number', nullable: true, positive: true },
       notes: optionalText(4000),
+      image_id: imageId,
     },
+    check: checkImageId,
   },
   portion: {
     name: 'portion',
@@ -215,7 +228,9 @@ export const TABLE_SPECS: Record<SyncTable, TableSpec> = {
       yield_servings: { type: 'number', positive: true },
       total_weight_g: { type: 'number', nullable: true, positive: true },
       notes: optionalText(4000),
+      image_id: imageId,
     },
+    check: checkImageId,
   },
   meal_item: {
     name: 'meal_item',
@@ -295,6 +310,20 @@ export const TABLE_SPECS: Record<SyncTable, TableSpec> = {
       label: itemLabel,
     },
     check: (r) => checkItemKind(r, { labels: true, snapshotCarbs: false }),
+  },
+  image: {
+    name: 'image',
+    fields: {
+      mime: { type: 'enum', values: IMAGE_MIME_TYPES },
+      width: { type: 'number', integer: true, positive: true },
+      height: { type: 'number', integer: true, positive: true },
+      source: { type: 'enum', values: IMAGE_SOURCES },
+      source_url: optionalText(2048),
+      license: optionalText(120),
+      attribution: optionalText(IMAGE_ATTRIBUTION_MAX),
+    },
+    // id is the content hash, so it is validated as a field would be, not as a free-form id.
+    check: (r) => (isImageHash(r.id) ? null : 'image id must be a lowercase sha256 hex digest'),
   },
 };
 

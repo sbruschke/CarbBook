@@ -24,6 +24,7 @@ describe('validateRecord', () => {
         fiber_per_100g: 3,
         density_g_per_ml: null,
         notes: null,
+        image_id: null,
       },
     });
   });
