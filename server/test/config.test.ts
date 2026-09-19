@@ -10,6 +10,7 @@ describe('loadConfig', () => {
       databasePath: '/data/carbbook.db',
       webDir: null,
       usdaDir: '/data/usda',
+      imageDir: '/data/images',
       dexcomApiUrl: 'http://dexcom-api:8000',
       dexcomApiToken: null,
       offBaseUrl: 'https://world.openfoodfacts.org',

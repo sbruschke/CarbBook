@@ -6,6 +6,8 @@ export interface Config {
   webDir: string | null;
   /** Where USDA bundle files and manifest.json are written and served from. */
   usdaDir: string;
+  /** Where normalised image bytes are stored, content-addressed. */
+  imageDir: string;
   dexcomApiUrl: string;
   dexcomApiToken: string | null;
   offBaseUrl: string;
@@ -60,6 +62,7 @@ export function loadConfig(env: Env = process.env): Config {
     databasePath: text(env, 'DATABASE_PATH', '/data/carbbook.db'),
     webDir: optionalText(env, 'WEB_DIR'),
     usdaDir: text(env, 'USDA_DIR', '/data/usda'),
+    imageDir: text(env, 'IMAGE_DIR', '/data/images'),
     dexcomApiUrl: absoluteUrl(env, 'DEXCOM_API_URL', 'http://dexcom-api:8000'),
     dexcomApiToken: optionalText(env, 'DEXCOM_API_TOKEN'),
     offBaseUrl: absoluteUrl(env, 'OFF_BASE_URL', 'https://world.openfoodfacts.org'),
