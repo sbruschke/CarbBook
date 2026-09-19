@@ -1,3 +1,5 @@
+import type { ImageCandidate } from '../images/providers/types';
+import { isProviderHost } from '../images/urlguard';
 import type { OffProduct } from './client';
 
 export interface FoodDraft {
@@ -53,6 +55,27 @@ export function normalizeOffProduct(product: OffProduct, scannedCode: string): F
         : [],
     barcode: code,
     serving_size: product.serving_size?.trim() || null,
+  };
+}
+
+/**
+ * OFF photos are contributed under CC-BY-SA; the credit line is the project itself.
+ * Returns null unless the URL is on an OFF-owned host, so a candidate that could never be
+ * adopted (urlguard would reject it) never reaches the scan-confirm screen.
+ */
+export function offImageCandidate(product: OffProduct): ImageCandidate | null {
+  const full = product.image_front_url?.trim();
+  if (!full || !isProviderHost(full, 'off')) return null;
+  const small = product.image_front_small_url?.trim();
+  return {
+    provider: 'off',
+    thumb_url: small && isProviderHost(small, 'off') ? small : full,
+    full_url: full,
+    width: null,
+    height: null,
+    license: 'CC-BY-SA-3.0',
+    attribution: 'Open Food Facts',
+    title: product.product_name ?? null,
   };
 }
 

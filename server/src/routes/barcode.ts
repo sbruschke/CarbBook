@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { AppContext } from '../context';
 import { OffUnavailableError } from '../off/client';
-import { barcodeCandidates, normalizeOffProduct } from '../off/normalize';
+import { barcodeCandidates, normalizeOffProduct, offImageCandidate } from '../off/normalize';
 import { TABLE_SPECS } from '../sync/tables';
 import { decodeRow } from '../sync/validate';
 
@@ -41,7 +41,10 @@ export async function barcodeRoutes(app: FastifyInstance, ctx: AppContext): Prom
       try {
         const product = await ctx.deps.off.lookup(code);
         if (!product) return { status: 'not_found' as const, code };
-        return { status: 'draft' as const, draft: normalizeOffProduct(product, code) };
+        const draft = normalizeOffProduct(product, code);
+        // Only present when OFF actually has a photo, so the draft shape is unchanged otherwise.
+        const image_candidate = offImageCandidate(product);
+        return { status: 'draft' as const, draft, ...(image_candidate ? { image_candidate } : {}) };
       } catch (error) {
         if (error instanceof OffUnavailableError) {
           request.log.warn({ err: error, code }, 'Open Food Facts lookup failed');
