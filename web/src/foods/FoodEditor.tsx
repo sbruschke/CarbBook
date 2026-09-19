@@ -11,11 +11,14 @@ import {
   VOLUME_UNITS,
   type VolumeUnit,
 } from '@carbbook/core';
+import { useLiveQuery } from 'dexie-react-hooks';
 import { useState } from 'react';
 import { useServices } from '../app/services';
 import type { Change } from '../db/store';
 import { uuidv7 } from '../lib/ids';
+import { adoptImage } from '../lib/images';
 import { parseAmount, parseNonNegative, unitLabel } from '../ui/format';
+import { ImagePicker } from '../ui/ImagePicker';
 import { labelBasisFromEntry, servingCarbs, type FoodPrefill, type LabelPortionPatch, type LabelUnit } from './label';
 
 interface PortionDraft {
@@ -167,7 +170,7 @@ export function FoodEditor(props: {
   /** Called with the saved food id, or null when cancelled or deleted. */
   onDone: (foodId: string | null) => void;
 }) {
-  const { store, now } = useServices();
+  const { api, db, store, now } = useServices();
   const base = props.existing?.food;
   const prefill = props.prefill ?? {};
   const isUsda = base?.source === 'usda';
@@ -185,6 +188,11 @@ export function FoodEditor(props: {
   const [fiberText, setFiberText] = useState(numText(base ? base.fiber_per_100g : prefill.fiber_per_100g));
   const [densityText, setDensityText] = useState(numText(base?.density_g_per_ml));
   const [notes, setNotes] = useState(base?.notes ?? '');
+  const [imageId, setImageId] = useState<string | null>(base?.image_id ?? null);
+  // Offered by a barcode scan; only adopted on save, and only when the box is ticked.
+  const [useScannedPhoto, setUseScannedPhoto] = useState(false);
+  // Attribution lives on the synced `image` row, not on the food, so it is read back here.
+  const image = useLiveQuery(async () => (imageId ? await db.image.get(imageId) : undefined), [db, imageId]);
   const [portions, setPortions] = useState<PortionDraft[]>(() =>
     (props.existing?.portions ?? prefill.portions ?? []).map((p) => ({
       key: uuidv7(),
@@ -352,6 +360,19 @@ export function FoodEditor(props: {
     setErrors(problems);
     if (problems.length > 0) return;
 
+    // The scanned photo is fetched and stored only now, at the moment the user commits the food.
+    // A failure here stops the save rather than quietly dropping the photo: nothing is written
+    // yet, so the user can untick the box and save again.
+    let savedImageId = imageId;
+    if (useScannedPhoto && prefill.image_candidate && savedImageId === null) {
+      try {
+        savedImageId = (await adoptImage(api, prefill.image_candidate)).id;
+      } catch (error) {
+        setErrors([`Could not save the photo (${error instanceof Error ? error.message : String(error)}). Untick it to save without one.`]);
+        return;
+      }
+    }
+
     // Editing a USDA food makes a custom copy; the original stays untouched (spec §3).
     const keepId = base !== undefined && !isUsda;
     const foodId = keepId ? base.id : uuidv7(now());
@@ -367,6 +388,7 @@ export function FoodEditor(props: {
       fiber_per_100g: fiber,
       density_g_per_ml: density,
       notes: notes.trim() || null,
+      image_id: savedImageId,
     };
     const kept = new Set<string>();
     const changes: Change[] = [{ table: 'food', data: food }];
@@ -594,6 +616,20 @@ export function FoodEditor(props: {
         >
           Add portion
         </button>
+      </fieldset>
+      <fieldset>
+        <legend>Image</legend>
+        {prefill.image_candidate && imageId === null && (
+          <div className="image-offer">
+            <img src={prefill.image_candidate.thumb_url} alt={prefill.image_candidate.title ?? 'Product photo'} width={120} height={120} />
+            <label className="inline">
+              <input type="checkbox" checked={useScannedPhoto} onChange={(e) => setUseScannedPhoto(e.target.checked)} />
+              Use this photo
+            </label>
+            <p className="fineprint">{prefill.image_candidate.attribution ?? 'Open Food Facts'}</p>
+          </div>
+        )}
+        <ImagePicker imageId={imageId} defaultQuery={name} attribution={image?.attribution ?? null} onChange={setImageId} />
       </fieldset>
       <label>
         Notes

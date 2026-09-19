@@ -1,4 +1,5 @@
 import { itemCarbs, type MealData, wouldCreateCycle } from '@carbbook/core';
+import { useLiveQuery } from 'dexie-react-hooks';
 import { useState } from 'react';
 import { useUsdaPicks } from '../app/hooks';
 import { useServices } from '../app/services';
@@ -6,13 +7,14 @@ import { buildCatalog, type CatalogData } from '../db/catalog';
 import { parseUsdaFoodId, uuidv7 } from '../lib/ids';
 import type { SearchResult } from '../search/search';
 import { formatCarbs, parseAmount, parseNonNegative } from '../ui/format';
+import { ImagePicker } from '../ui/ImagePicker';
 import { type DraftItem, draftAmount, ItemEditor, newDraftItem, newQuickItem } from '../ui/ItemEditor';
 import { SearchPanel } from '../ui/SearchPanel';
 import { saveMeal, withDraftMeal } from './saveMeal';
 
 export function MealEditor(props: { data: CatalogData; mealId: string | null; onDone: () => void }) {
   const { data, mealId } = props;
-  const { store, now } = useServices();
+  const { db, store, now } = useServices();
   const usda = useUsdaPicks();
   const existing = mealId ? data.meals.find((m) => m.id === mealId) : undefined;
   const [id] = useState(() => mealId ?? uuidv7(now()));
@@ -21,6 +23,9 @@ export function MealEditor(props: { data: CatalogData; mealId: string | null; on
   const [yieldText, setYieldText] = useState(String(existing?.yield_servings ?? 1));
   const [weightText, setWeightText] = useState(existing?.total_weight_g == null ? '' : String(existing.total_weight_g));
   const [notes, setNotes] = useState(existing?.notes ?? '');
+  const [imageId, setImageId] = useState<string | null>(existing?.image_id ?? null);
+  // Attribution lives on the synced `image` row, not on the meal, so it is read back here.
+  const image = useLiveQuery(async () => (imageId ? await db.image.get(imageId) : undefined), [db, imageId]);
   const [items, setItems] = useState<DraftItem[]>(() =>
     data.meal_items
       .filter((i) => i.meal_id === mealId)
@@ -37,6 +42,7 @@ export function MealEditor(props: { data: CatalogData; mealId: string | null; on
     yield_servings: parseAmount(yieldText) ?? Number.NaN,
     total_weight_g: weightText.trim() === '' ? null : (parseNonNegative(weightText) ?? Number.NaN),
     notes: notes.trim() || null,
+    image_id: imageId,
   };
   const catalog = buildCatalog(withDraftMeal(data, meal, items), usda.entries);
   const perServing = itemCarbs(catalog, 'meal', id, 1, 'serving');
@@ -108,6 +114,10 @@ export function MealEditor(props: { data: CatalogData; mealId: string | null; on
         {perServing.complete ? `${formatCarbs(perServing.carbs_g)} carbs per serving` : 'Incomplete carb data'}
         {per100g?.complete ? ` · ${formatCarbs(per100g.carbs_g)} per 100 g` : ''}
       </p>
+      <fieldset>
+        <legend>Image</legend>
+        <ImagePicker imageId={imageId} defaultQuery={name} attribution={image?.attribution ?? null} onChange={setImageId} />
+      </fieldset>
       <label>
         Notes
         <textarea value={notes} onChange={(e) => setNotes(e.target.value)} />

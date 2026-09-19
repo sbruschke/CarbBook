@@ -7,7 +7,7 @@ const KALE = 'Kale, raw';
 
 type Record = { [field: string]: unknown };
 
-test('log, save and edit a meal, then log offline and sync on reconnect (spec §10)', async ({ page, context, playwright, baseURL }) => {
+test('log, save and edit a meal, then log offline and sync on reconnect (spec §10)', async ({ page, context, baseURL }) => {
   // Login
   await page.goto('/');
   await page.getByLabel('Username').fill(USERNAME);
@@ -69,9 +69,11 @@ test('log, save and edit a meal, then log offline and sync on reconnect (spec §
   await expect(page.getByTestId('pending-count')).toHaveText('0 pending changes', { timeout: 15_000 });
 
   // Verify server state through the API
-  const api = await playwright.request.newContext({ baseURL });
-  expect((await api.post('/api/auth/login', { data: { username: USERNAME, password: PASSWORD } })).ok()).toBe(true);
-  const pull = (await (await api.get('/api/sync/pull?since=0&limit=1000')).json()) as { changes: { table: string; record: Record }[] };
+  // The page's own request context (its cookies) rather than a fresh login: the server allows
+  // only 5 logins per 15 minutes per user, and the suite as a whole must stay inside that.
+  const pull = (await (await page.request.get(`${baseURL}/api/sync/pull?since=0&limit=1000`)).json()) as {
+    changes: { table: string; record: Record }[];
+  };
   const rows = (table: string) => pull.changes.filter((c) => c.table === table).map((c) => c.record);
 
   expect(rows('log_entry').map((e) => e.bg_mgdl).sort()).toEqual([120, 180]);
@@ -79,15 +81,9 @@ test('log, save and edit a meal, then log offline and sync on reconnect (spec §
   expect(rows('meal_item').find((i) => i.ref_id === 'usda-323505')).toMatchObject({ amount: 200, unit: 'g' });
   expect(rows('food').map((f) => f.id).sort()).toEqual(['usda-323505', 'usda-324860']);
   expect(rows('log_item').find((i) => i.ref_type === 'meal')).toMatchObject({ display_name: 'PB kale bowl', amount: 1, unit: 'serving' });
-  await api.dispose();
 });
 
-test('plan a slot, copy the day, load it in the Calculator and log offline, then sync (spec §7)', async ({
-  page,
-  context,
-  playwright,
-  baseURL,
-}) => {
+test('plan a slot, copy the day, load it in the Calculator and log offline, then sync (spec §7)', async ({ page, context, baseURL }) => {
   await page.goto('/');
   await page.getByLabel('Username').fill(USERNAME);
   await page.getByLabel('Password').fill(PASSWORD);
@@ -142,9 +138,11 @@ test('plan a slot, copy the day, load it in the Calculator and log offline, then
   await expect(page.getByTestId('pending-count')).toHaveText('0 pending changes', { timeout: 15_000 });
 
   // The server has the plan rows, the link and the copy.
-  const api = await playwright.request.newContext({ baseURL });
-  expect((await api.post('/api/auth/login', { data: { username: USERNAME, password: PASSWORD } })).ok()).toBe(true);
-  const pull = (await (await api.get('/api/sync/pull?since=0&limit=1000')).json()) as { changes: { table: string; record: Record }[] };
+  // The page's own request context (its cookies) rather than a fresh login: the server allows
+  // only 5 logins per 15 minutes per user, and the suite as a whole must stay inside that.
+  const pull = (await (await page.request.get(`${baseURL}/api/sync/pull?since=0&limit=1000`)).json()) as {
+    changes: { table: string; record: Record }[];
+  };
   const rows = (table: string) => pull.changes.filter((c) => c.table === table).map((c) => c.record);
 
   const planned = rows('plan_entry').filter((e) => e.deleted === 0);
@@ -154,7 +152,6 @@ test('plan a slot, copy the day, load it in the Calculator and log offline, then
   expect(rows('log_entry').some((e) => e.id === loggedSlot.log_entry_id)).toBe(true);
   expect(planned.filter((e) => e.date !== today && e.window_name === 'Lunch')).toHaveLength(1);
   expect(rows('plan_item').filter((i) => i.deleted === 0).length).toBeGreaterThanOrEqual(2);
-  await api.dispose();
 });
 
 test('quick carbs: plan 4 taquitos + 7 g, load, log 75 g, slot logged with both rows (quick-carbs spec §5)', async ({ page, baseURL }) => {
@@ -258,4 +255,84 @@ test('quick carbs: plan 4 taquitos + 7 g, load, log 75 g, slot logged with both 
     ['food', 4, null],
     ['quick', 7, 'Ranch & salad'],
   ]);
+});
+
+/**
+ * Stubs the provider fan-out, the adopt round-trip and the stored bytes, so an image test never
+ * leaves the machine. `candidates` is what the fake search answers with.
+ */
+async function stubImages(page: import('@playwright/test').Page, hash: string, result: unknown): Promise<void> {
+  await page.route('**/api/images/search*', (route) => route.fulfill({ json: result }));
+  await page.route('**/api/images/adopt', (route) =>
+    route.fulfill({
+      json: { id: hash, mime: 'image/jpeg', width: 800, height: 600, source: 'openverse', attribution: 'CC0-1.0' },
+    }),
+  );
+  await page.route(`**/api/images/${hash}`, (route) => route.fulfill({ path: 'public/icon-192.png' }));
+}
+
+test('a food can be given an image from a search, and it shows in the Foods list (images spec)', async ({ page }) => {
+  const hash = 'a'.repeat(64);
+  await stubImages(page, hash, {
+    candidates: [
+      {
+        provider: 'openverse',
+        thumb_url: '/icon-192.png',
+        full_url: 'https://api.openverse.org/v1/images/x/thumb/?full_size=true',
+        width: 800,
+        height: 600,
+        license: 'CC0-1.0',
+        attribution: 'CC0-1.0',
+        title: 'Soup',
+      },
+    ],
+    providers_failed: [],
+  });
+
+  await page.goto('/');
+  await page.getByLabel('Username').fill(USERNAME);
+  await page.getByLabel('Password').fill(PASSWORD);
+  await page.getByRole('button', { name: 'Sign in' }).click();
+  await expect(page.getByRole('heading', { name: 'Calculator' })).toBeVisible();
+
+  // Save the food first, then reopen it: the picker prefills its search box from the name the
+  // editor mounted with, so an existing food needs nothing typed into it.
+  await page.getByRole('link', { name: 'Foods' }).click();
+  await page.getByRole('button', { name: 'New food' }).click();
+  await page.getByLabel('Name', { exact: true }).fill('Tomato soup');
+  await page.getByLabel('Carbs per 100 g').fill('7');
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await page.getByRole('button', { name: /Tomato soup/ }).click();
+
+  await page.getByRole('button', { name: 'Find image' }).click();
+  await expect(page.getByLabel('Search for an image')).toHaveValue('Tomato soup');
+  await page.getByRole('button', { name: 'Search', exact: true }).click();
+  await page.getByRole('button').filter({ has: page.getByAltText('Soup') }).click();
+  // The chosen image shows in the editor straight away; its attribution only appears once the
+  // adopted `image` row has synced back, which a stubbed adopt never produces.
+  await expect(page.locator(`img[src="/api/images/${hash}"]`)).toBeVisible();
+
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(page.getByRole('button', { name: /Tomato soup/ })).toBeVisible();
+  await expect(page.locator(`img[src="/api/images/${hash}"]`).first()).toBeVisible();
+});
+
+test('a provider that fails to answer is named in the picker (images spec)', async ({ page }) => {
+  await stubImages(page, 'b'.repeat(64), { candidates: [], providers_failed: ['wikimedia'] });
+
+  await page.goto('/');
+  await page.getByLabel('Username').fill(USERNAME);
+  await page.getByLabel('Password').fill(PASSWORD);
+  await page.getByRole('button', { name: 'Sign in' }).click();
+  await expect(page.getByRole('heading', { name: 'Calculator' })).toBeVisible();
+
+  await page.getByRole('link', { name: 'Meals' }).click();
+  await page.getByRole('button', { name: 'New meal' }).click();
+  await page.getByLabel('Name', { exact: true }).fill('Chilli');
+  await page.getByRole('button', { name: 'Find image' }).click();
+  // A new meal has no name yet when the picker mounts, so the query is typed here.
+  await page.getByLabel('Search for an image').fill('chilli');
+  await page.getByRole('button', { name: 'Search', exact: true }).click();
+  await expect(page.getByText('No response from wikimedia.')).toBeVisible();
+  await expect(page.getByText('No images found.')).toBeVisible();
 });

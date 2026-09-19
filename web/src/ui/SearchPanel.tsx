@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useSearchIndex } from '../app/hooks';
 import type { SearchResult } from '../search/search';
 import { formatCarbs } from './format';
+import { ImageThumb } from './ImageThumb';
 
 const SOURCE_LABELS = { custom: 'My food', off: 'Open Food Facts', usda: 'USDA' } as const;
 
@@ -58,6 +59,7 @@ export function SearchPanel(props: {
                 setQuery('');
               }}
             >
+              <ImageThumb imageId={result.image_id} alt="" />
               <span className="result-name">{result.name}</span>
               <span className="result-meta">{describe(result)}</span>
             </button>

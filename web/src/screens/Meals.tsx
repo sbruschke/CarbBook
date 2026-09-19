@@ -4,6 +4,7 @@ import { useCatalogData } from '../app/hooks';
 import { buildCatalog } from '../db/catalog';
 import { MealEditor } from '../meals/MealEditor';
 import { formatCarbs } from '../ui/format';
+import { ImageThumb } from '../ui/ImageThumb';
 
 export function Meals() {
   const data = useCatalogData();
@@ -27,6 +28,7 @@ export function Meals() {
           return (
             <li key={meal.id}>
               <button type="button" className="list-item" onClick={() => setEditing(meal.id)}>
+                <ImageThumb imageId={meal.image_id} alt="" />
                 <span>{meal.name}</span>
                 <span className="muted">{perServing.complete ? `${formatCarbs(perServing.carbs_g)} per serving` : 'incomplete carb data'}</span>
               </button>

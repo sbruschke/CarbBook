@@ -86,7 +86,8 @@ export interface FoodDraft {
 
 export type BarcodeResponse =
   | { status: 'known'; food: Synced<FoodData>; portions: Synced<PortionData>[] }
-  | { status: 'draft'; draft: FoodDraft }
+  /** `image_candidate` is only present when Open Food Facts actually has a photo. */
+  | { status: 'draft'; draft: FoodDraft; image_candidate?: ImageCandidate }
   | { status: 'not_found'; code: string }
   | { status: 'unavailable'; code: string; message: string };
 

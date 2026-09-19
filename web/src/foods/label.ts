@@ -12,7 +12,7 @@ import {
   type PortionKind,
   type VolumeUnit,
 } from '@carbbook/core';
-import type { FoodDraft } from '../lib/wire';
+import type { FoodDraft, ImageCandidate } from '../lib/wire';
 
 const trim2 = (n: number) => String(Number(n.toFixed(2)));
 
@@ -111,6 +111,12 @@ export interface FoodPrefill {
   note?: string | null;
   /** Opens the editor in "From label" mode with these fields (a new food only). */
   label?: { unit: LabelUnit; amount: string; carbs: string; weight: string; name: string };
+  /**
+   * The product photo Open Food Facts had for a scanned barcode. Offered, never taken: adopting
+   * an image stores bytes on the server, which is a deliberate act rather than a side effect of
+   * scanning — so the editor shows it with an unchecked box.
+   */
+  image_candidate?: ImageCandidate;
 }
 
 /** Portion name used when a scanned draft is entered per serving. */
