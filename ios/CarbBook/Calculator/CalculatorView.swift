@@ -97,7 +97,8 @@ struct CalculatorView: View {
                                   amount: $line.amount, carbs: model.carbs(for: line))
                 } else {
                     LineRow(line: $line, units: model.units(for: line), portions: model.catalog.portions(line.refId),
-                            carbs: model.carbs(for: line))
+                            carbs: model.carbs(for: line),
+                            imageID: itemImageId(line.refType, line.refId, catalog: model.catalog))
                 }
             }
             .onDelete { model.lines.remove(atOffsets: $0) }
@@ -212,21 +213,25 @@ struct LineRow: View {
     let units: [String]
     let portions: [PortionData]
     let carbs: CarbResult
+    /// The food or meal's image, resolved by the caller from the catalog it already holds.
+    let imageID: String?
     /// String-backed and strictly parsed (`AmountInput`); invalid or empty text sets the amount to NaN
     /// so core refuses, rather than keeping a previous value the field no longer shows.
     @State private var amountText: String
 
-    init(line: Binding<CalculatorLine>, units: [String], portions: [PortionData], carbs: CarbResult) {
+    init(line: Binding<CalculatorLine>, units: [String], portions: [PortionData], carbs: CarbResult, imageID: String?) {
         _line = line
         self.units = units
         self.portions = portions
         self.carbs = carbs
+        self.imageID = imageID
         _amountText = State(initialValue: AmountInput.text(for: line.wrappedValue.amount))
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
+                ImageThumbView(imageID: imageID, size: 28)
                 Text(line.displayName).lineLimit(2)
                 Spacer()
                 Text(carbs.complete ? "\(formatNumber(carbs.carbsG))g" : "missing data")

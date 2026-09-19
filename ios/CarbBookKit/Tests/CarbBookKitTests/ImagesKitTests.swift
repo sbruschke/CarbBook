@@ -149,3 +149,22 @@ extension ImagesKitTests {
         XCTAssertEqual(pending[0].record["image_id"], .string(hash), "editing the name must not wipe the image")
     }
 }
+
+/// The row thumbnails read the image off the catalog record the row already resolves for its name.
+final class ItemImageIdTests: XCTestCase {
+    private let hash = String(repeating: "c", count: 64)
+
+    func testFoodAndMealImagesAreFoundAndQuickRowsHaveNone() {
+        let catalog = InMemoryCatalog(
+            foods: [FoodData(id: "f1", name: "Rice", source: "custom", carbsPer100g: 28, imageId: hash)],
+            meals: [MealData(id: "m1", name: "Chilli", yieldServings: 4)])
+        XCTAssertEqual(itemImageId(.food, "f1", catalog: catalog), hash)
+        XCTAssertNil(itemImageId(.meal, "m1", catalog: catalog), "a meal with no image has none")
+        XCTAssertNil(itemImageId(.quick, "q1", catalog: catalog), "quick carbs rows have no record at all")
+    }
+
+    /// A reference that has not synced yet reads as no image, the same way its name reads "Unknown item".
+    func testUnresolvedReferenceHasNoImage() {
+        XCTAssertNil(itemImageId(.food, "missing", catalog: InMemoryCatalog()))
+    }
+}

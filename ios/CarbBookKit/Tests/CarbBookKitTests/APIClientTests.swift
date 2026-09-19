@@ -148,7 +148,7 @@ final class APIClientTests: XCTestCase {
             }
         }
         let api = APIClient(baseURL: base, transport: stub, token: { "t" })
-        guard case .draft(let draft) = try await api.barcode("0737628064502") else { return XCTFail("expected a draft") }
+        guard case .draft(let draft, _) = try await api.barcode("0737628064502") else { return XCTFail("expected a draft") }
         XCTAssertEqual(draft.food.carbsPer100g, 64)
         let unavailable = try await api.barcode("123456")
         XCTAssertEqual(unavailable, .unavailable(code: "123456", message: "Open Food Facts timed out"))
@@ -172,12 +172,86 @@ final class APIClientTests: XCTestCase {
             }
         }
         let api = APIClient(baseURL: base, transport: stub, token: { "t" })
-        guard case .draft(let draft) = try await api.barcode("111111") else { return XCTFail("expected a draft") }
+        guard case .draft(let draft, _) = try await api.barcode("111111") else { return XCTFail("expected a draft") }
         XCTAssertNil(draft.food.carbsPer100g)
         guard case .known(let food, let portions) = try await api.barcode("222222") else { return XCTFail("expected known") }
         XCTAssertEqual(food.id, "f9")
         XCTAssertNil(food.carbsPer100g)
         XCTAssertEqual(portions, [])
+    }
+
+    func testImageSearchDecodesCandidatesAndFailedProviders() async throws {
+        let body = #"{"candidates":[{"provider":"openverse","thumb_url":"https://t/1","full_url":"https://f/1","width":900,"height":600,"license":"CC0","attribution":"Someone","title":"Rice"}],"providers_failed":["wikimedia"]}"#
+        let stub = StubTransport { _ in (200, json(body)) }
+        let api = APIClient(baseURL: base, transport: stub, token: { "tok" })
+        let result = await api.searchImages(query: "jasmine rice", limit: 12)
+        XCTAssertEqual(result.providersFailed, ["wikimedia"])
+        XCTAssertEqual(result.candidates.count, 1)
+        XCTAssertEqual(result.candidates[0].thumbUrl, "https://t/1")
+        XCTAssertEqual(result.candidates[0].fullUrl, "https://f/1")
+        XCTAssertEqual(result.candidates[0].width, 900)
+        let request = try XCTUnwrap(stub.requests.first)
+        XCTAssertEqual(request.url?.path, "/api/images/search")
+        XCTAssertEqual(request.url?.query, "q=jasmine%20rice&limit=12")
+    }
+
+    /// A dead search must degrade the picker, never break the editor, so it reports the same shape a
+    /// dead provider does rather than throwing.
+    func testImageSearchReportsAServerFailureAsAFailedProvider() async throws {
+        let stub = StubTransport { _ in (500, json(#"{"error":"boom","message":"nope"}"#)) }
+        let api = APIClient(baseURL: base, transport: stub, token: { "tok" })
+        let result = await api.searchImages(query: "rice")
+        XCTAssertEqual(result.candidates, [])
+        XCTAssertEqual(result.providersFailed, ["server"])
+    }
+
+    /// The adopt schema rejects unknown and null properties, so nils are omitted, not sent as null,
+    /// and nothing but the four keys it names is sent.
+    func testAdoptImageSendsOnlyTheKeysTheSchemaAllows() async throws {
+        let stub = StubTransport { _ in
+            (200, json(#"{"id":"aa","mime":"image/jpeg","width":800,"height":600,"source":"openverse","source_url":"https://f/1","license":"CC0","attribution":"Someone"}"#))
+        }
+        let api = APIClient(baseURL: base, transport: stub, token: { "tok" })
+        let candidate = ImageCandidate(provider: "openverse", thumbUrl: "https://t/1", fullUrl: "https://f/1",
+                                       width: 900, height: 600, license: "CC0", attribution: nil, title: "Rice")
+        let image = try await api.adoptImage(candidate)
+        XCTAssertEqual(image.width, 800)
+        XCTAssertEqual(image.sourceUrl, "https://f/1")
+        XCTAssertEqual(image.attribution, "Someone")
+        let request = try XCTUnwrap(stub.requests.first)
+        XCTAssertEqual(request.url?.path, "/api/images/adopt")
+        XCTAssertEqual(try bodyObject(request), [
+            "url": .string("https://f/1"), "source": .string("openverse"), "license": .string("CC0"),
+        ])
+    }
+
+    /// Always JPEG: the server's libvips cannot decode HEVC-based HEIC.
+    func testUploadImageSendsJpegBase64() async throws {
+        let stub = StubTransport { _ in
+            (200, json(#"{"id":"bb","mime":"image/jpeg","width":800,"height":800,"source":"upload","source_url":null,"license":null,"attribution":null}"#))
+        }
+        let api = APIClient(baseURL: base, transport: stub, token: { "tok" })
+        let image = try await api.uploadImage(dataBase64: "Zm9v")
+        XCTAssertEqual(image.source, "upload")
+        XCTAssertNil(image.attribution)
+        let request = try XCTUnwrap(stub.requests.first)
+        XCTAssertEqual(request.url?.path, "/api/images/upload")
+        XCTAssertEqual(try bodyObject(request), ["data_base64": .string("Zm9v"), "mime": .string("image/jpeg")])
+    }
+
+    /// Open Food Facts offers a photo alongside a draft; it must survive the lookup so the confirm
+    /// screen can offer it.
+    func testBarcodeDraftCarriesTheOffImageCandidate() async throws {
+        let withPhoto = #"{"status":"draft","draft":{"food":{"name":"Granola","brand":null,"source":"off","source_ref":"1","carbs_per_100g":64,"fiber_per_100g":7},"portions":[],"barcode":"1","serving_size":null},"image_candidate":{"provider":"off","thumb_url":"https://off/t.jpg","full_url":"https://off/f.jpg","width":null,"height":null,"license":null,"attribution":"Open Food Facts","title":"Granola"}}"#
+        let withoutPhoto = #"{"status":"draft","draft":{"food":{"name":"Granola","brand":null,"source":"off","source_ref":"2","carbs_per_100g":64,"fiber_per_100g":7},"portions":[],"barcode":"2","serving_size":null}}"#
+        let stub = StubTransport { request in (200, json(request.url!.path.hasSuffix("111111") ? withPhoto : withoutPhoto)) }
+        let api = APIClient(baseURL: base, transport: stub, token: { "tok" })
+        guard case .draft(_, let candidate) = try await api.barcode("111111") else { return XCTFail("expected a draft") }
+        XCTAssertEqual(candidate?.provider, "off")
+        XCTAssertEqual(candidate?.fullUrl, "https://off/f.jpg")
+        XCTAssertEqual(candidate?.attribution, "Open Food Facts")
+        guard case .draft(_, let none) = try await api.barcode("222222") else { return XCTFail("expected a draft") }
+        XCTAssertNil(none)
     }
 
     func testImageBytesGetsTheHashPathWithTheToken() async throws {

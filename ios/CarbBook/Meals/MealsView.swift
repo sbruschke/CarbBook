@@ -16,13 +16,17 @@ struct MealsView: View {
                         MealEditorView(meal: meal)
                     } label: {
                         let perServing = itemCarbs(catalog, .meal, meal.id, 1, Units.serving)
-                        VStack(alignment: .leading) {
-                            Text(meal.name)
-                            Text(perServing.complete
-                                 ? "\(formatNumber(perServing.carbsG))g per serving · yields \(formatNumber(meal.yieldServings))"
-                                 : "incomplete carb data")
-                                .font(.caption)
-                                .foregroundStyle(perServing.complete ? Color.secondary : Color.orange)
+                        HStack {
+                            // The row already has the meal, so its image needs no second lookup.
+                            ImageThumbView(imageID: meal.imageId)
+                            VStack(alignment: .leading) {
+                                Text(meal.name)
+                                Text(perServing.complete
+                                     ? "\(formatNumber(perServing.carbsG))g per serving · yields \(formatNumber(meal.yieldServings))"
+                                     : "incomplete carb data")
+                                    .font(.caption)
+                                    .foregroundStyle(perServing.complete ? Color.secondary : Color.orange)
+                            }
                         }
                     }
                 }

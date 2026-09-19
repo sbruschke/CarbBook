@@ -127,6 +127,34 @@ public struct MealData: Codable, Equatable, Sendable {
     }
 }
 
+/// One stored image (images spec). Metadata syncs; the bytes are fetched by hash and cached on disk.
+/// `id` is the SHA-256 of the normalised bytes, so the same image dedups to one row.
+public struct ImageData: Codable, Equatable, Sendable {
+    public var id: Id
+    /// Always "image/jpeg" in this version: every adopt and upload is re-encoded.
+    public var mime: String
+    public var width: Int
+    public var height: Int
+    /// "off" | "openverse" | "wikimedia" | "themealdb" | "upload"
+    public var source: String
+    public var sourceUrl: String?
+    public var license: String?
+    /// Shown verbatim under the image, so it stays short enough to render.
+    public var attribution: String?
+    public var deleted: Int?
+
+    public init(id: Id, mime: String, width: Int, height: Int, source: String, sourceUrl: String? = nil,
+                license: String? = nil, attribution: String? = nil, deleted: Int? = nil) {
+        self.id = id; self.mime = mime; self.width = width; self.height = height; self.source = source
+        self.sourceUrl = sourceUrl; self.license = license; self.attribution = attribution; self.deleted = deleted
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id, mime, width, height, source, license, attribution, deleted
+        case sourceUrl = "source_url"
+    }
+}
+
 public enum RefType: String, Codable, Sendable {
     /// `quick`: a carbs-only row with no food (quick-carbs spec §2) — amount is grams of carbs, unit "carbs".
     case food, meal, quick

@@ -19,3 +19,14 @@ public func itemUnits(_ refType: RefType, _ refId: Id, currentUnit: String, cata
     case .quick: quickUnits()
     }
 }
+
+/// The image of the food or meal a row points at, for a row's leading thumbnail. Quick-carbs rows
+/// have no record and so never have one, and an unresolved reference reads as no image rather than
+/// as an error — the same rule as `itemDisplayName`'s "Unknown item".
+public func itemImageId(_ refType: RefType, _ refId: Id, catalog: Catalog) -> Id? {
+    switch refType {
+    case .food: catalog.food(refId)?.imageId
+    case .meal: catalog.meal(refId)?.imageId
+    case .quick: nil
+    }
+}

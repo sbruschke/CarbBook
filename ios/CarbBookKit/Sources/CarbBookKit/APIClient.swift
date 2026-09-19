@@ -106,11 +106,63 @@ public struct UsdaManifest: Codable, Equatable, Sendable {
     }
 }
 
+/// One image-search hit (server `images/providers/types.ts`). Nothing is stored until it is adopted,
+/// so this type never reaches the database — only `POST /api/images/adopt` sees it.
+public struct ImageCandidate: Codable, Equatable, Sendable, Identifiable {
+    /// "openverse" | "wikimedia" | "themealdb" | "off"
+    public var provider: String
+    /// Small image for the picker grid, loaded straight from the provider.
+    public var thumbUrl: String
+    /// What `POST /api/images/adopt` fetches and stores.
+    public var fullUrl: String
+    /// The provider's own claim, shown pre-adopt only; stored dimensions come from the bytes.
+    public var width: Int?
+    /// See `width`.
+    public var height: Int?
+    public var license: String?
+    public var attribution: String?
+    public var title: String?
+
+    /// Stable within one result set, which is all a `LazyVGrid` needs.
+    public var id: String { "\(provider):\(fullUrl)" }
+
+    public init(provider: String, thumbUrl: String, fullUrl: String, width: Int? = nil, height: Int? = nil,
+                license: String? = nil, attribution: String? = nil, title: String? = nil) {
+        self.provider = provider; self.thumbUrl = thumbUrl; self.fullUrl = fullUrl
+        self.width = width; self.height = height
+        self.license = license; self.attribution = attribution; self.title = title
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case provider, width, height, license, attribution, title
+        case thumbUrl = "thumb_url"
+        case fullUrl = "full_url"
+    }
+}
+
+/// `GET /api/images/search`. `providersFailed` names the services that did not answer: the search
+/// itself never fails because one provider did.
+public struct ImageSearchResult: Codable, Equatable, Sendable {
+    public var candidates: [ImageCandidate]
+    public var providersFailed: [String]
+
+    public init(candidates: [ImageCandidate] = [], providersFailed: [String] = []) {
+        self.candidates = candidates
+        self.providersFailed = providersFailed
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case candidates
+        case providersFailed = "providers_failed"
+    }
+}
+
 /// `GET /api/barcode/:code`. Foods and drafts may have nil carbs (Open Food Facts had no data):
 /// that is "missing data", not an error.
 public enum BarcodeLookup: Equatable, Sendable {
     case known(FoodData, [PortionData])
-    case draft(OffDraft)
+    /// `imageCandidate` is set only when Open Food Facts actually has a product photo.
+    case draft(OffDraft, imageCandidate: ImageCandidate?)
     case notFound(code: String)
     case unavailable(code: String, message: String)
 }
@@ -215,6 +267,7 @@ public final class APIClient: @unchecked Sendable {
             let draft: OffDraft?
             let code: String?
             let message: String?
+            let image_candidate: ImageCandidate?
         }
         let escaped = code.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? code
         let body = try decode(Body.self, try await send(makeRequest("GET", "/api/barcode/\(escaped)")))
@@ -224,7 +277,7 @@ public final class APIClient: @unchecked Sendable {
             return .known(food, body.portions ?? [])
         case "draft":
             guard let draft = body.draft else { throw APIError.decoding("draft barcode without draft") }
-            return .draft(draft)
+            return .draft(draft, imageCandidate: body.image_candidate)
         case "not_found":
             return .notFound(code: body.code ?? code)
         default:
@@ -247,6 +300,38 @@ public final class APIClient: @unchecked Sendable {
         var request = makeRequest("GET", "/api/images/\(hash)")
         request.setValue("image/jpeg", forHTTPHeaderField: "Accept")
         return try await send(request)
+    }
+
+    /// Never throws: an unreachable search degrades the picker, it must not break the editor. A
+    /// failure is reported the way the server reports a dead provider — a name in `providersFailed` —
+    /// so the picker has only one thing to render.
+    public func searchImages(query: String, limit: Int = 24) async -> ImageSearchResult {
+        let request = makeRequest("GET", "/api/images/search",
+                                  query: [URLQueryItem(name: "q", value: query), URLQueryItem(name: "limit", value: String(limit))])
+        do {
+            return try decode(ImageSearchResult.self, try await send(request))
+        } catch {
+            return ImageSearchResult(candidates: [], providersFailed: ["server"])
+        }
+    }
+
+    /// Stores the candidate's bytes server-side and returns the `image` row. It does *not* attach the
+    /// image to anything: the caller writes `food.image_id` / `meal.image_id` through the ordinary sync
+    /// push, so that edit queues offline and resolves by last-write-wins like every other field.
+    public func adoptImage(_ candidate: ImageCandidate) async throws -> ImageData {
+        // The adopt schema rejects unknown and null properties, so only the keys it names are sent,
+        // and nils are omitted rather than sent as null.
+        var body: [String: String] = ["url": candidate.fullUrl, "source": candidate.provider]
+        if let license = candidate.license { body["license"] = license }
+        if let attribution = candidate.attribution { body["attribution"] = attribution }
+        return try decode(ImageData.self, try await send(makeRequest("POST", "/api/images/adopt", body: json(body))))
+    }
+
+    /// Stores the user's own photo. Always JPEG: the server's libvips cannot decode HEVC-based HEIC.
+    public func uploadImage(dataBase64: String) async throws -> ImageData {
+        struct Body: Encodable { let data_base64: String; let mime: String }
+        let body = json(Body(data_base64: dataBase64, mime: "image/jpeg"))
+        return try decode(ImageData.self, try await send(makeRequest("POST", "/api/images/upload", body: body)))
     }
 
     /// Raw bytes of a server path such as a manifest's `sqlite_url`.

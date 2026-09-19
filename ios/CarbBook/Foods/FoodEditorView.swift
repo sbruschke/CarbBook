@@ -17,6 +17,7 @@ struct FoodEditorView: View {
     @State private var form = FoodForm(food: nil, portions: [])
     @State private var errors: [String] = []
     @State private var loaded = false
+    @State private var showImagePicker = false
 
     var body: some View {
         Form {
@@ -38,6 +39,7 @@ struct FoodEditorView: View {
                 TextField("Notes", text: $form.notes, axis: .vertical)
             }
             portionsSection
+            imageSection
             if !errors.isEmpty {
                 Section {
                     ForEach(errors, id: \.self) { Text($0).foregroundStyle(.red) }
@@ -49,6 +51,35 @@ struct FoodEditorView: View {
             ToolbarItem(placement: .confirmationAction) { Button("Save") { save() } }
         }
         .onAppear(perform: load)
+        .sheet(isPresented: $showImagePicker) {
+            // `form.name` is read live, so the picker's search box follows the name as typed — which
+            // for a new food is the only name there is.
+            ImagePickerSheet(imageID: form.imageId, defaultQuery: form.name) { form.imageId = $0 }
+        }
+    }
+
+    /// An optional picture, saved as `food.image_id` by the ordinary save path below — never by a
+    /// separate write, so it queues and resolves like every other field.
+    private var imageSection: some View {
+        Section("Image") {
+            Button { showImagePicker = true } label: {
+                HStack {
+                    ImageThumbView(imageID: form.imageId, size: 56)
+                    Text(form.imageId == nil ? "Add an image" : "Change image")
+                    Spacer()
+                }
+            }
+            // Attribution lives on the synced `image` row, not on the food, so it is read back here;
+            // it appears once that row has been pulled.
+            if let attribution = imageAttribution {
+                Text(attribution).font(.caption).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var imageAttribution: String? {
+        guard let id = form.imageId else { return nil }
+        return (try? app.store.image(id: id))?.attribution
     }
 
     /// "48 g carbs per cup" for the stored food (edit only).
