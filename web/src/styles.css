@@ -480,3 +480,47 @@ fieldset {
     width: 100%;
   }
 }
+
+.image-thumb {
+  object-fit: cover;
+  border-radius: 8px;
+  flex-shrink: 0;
+  background: var(--accent-soft);
+}
+
+.image-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.image-search {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.image-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 8px;
+}
+
+.image-grid button {
+  width: 100%;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--card);
+}
+
+.image-grid img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+}

@@ -89,3 +89,25 @@ export type BarcodeResponse =
   | { status: 'draft'; draft: FoodDraft }
   | { status: 'not_found'; code: string }
   | { status: 'unavailable'; code: string; message: string };
+
+/** One image-search hit (server `images/providers/types.ts`). Nothing is stored until it is adopted. */
+export interface ImageCandidate {
+  provider: 'openverse' | 'wikimedia' | 'themealdb' | 'off';
+  /** Small image for the picker grid, loaded straight from the provider. */
+  thumb_url: string;
+  /** What POST /api/images/adopt fetches and stores. */
+  full_url: string;
+  /** The provider's own claim, shown pre-adopt only; stored dimensions come from the bytes. */
+  width: number | null;
+  /** See `width`. */
+  height: number | null;
+  license: string | null;
+  attribution: string | null;
+  title: string | null;
+}
+
+/** A provider that failed is named, not fatal: the search is still a 200 with whatever else came back. */
+export interface ImageSearchResult {
+  candidates: ImageCandidate[];
+  providers_failed: string[];
+}
