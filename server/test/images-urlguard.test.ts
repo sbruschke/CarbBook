@@ -27,8 +27,41 @@ describe('isPublicAddress', () => {
     }
   });
 
+  it('rejects private IPv4 addresses hidden in every IPv6 spelling', () => {
+    // A resolver may hand back any legal encoding; judging spellings rather than the address
+    // itself is what let these through before.
+    for (const address of [
+      '::ffff:7f00:1',           // IPv4-mapped 127.0.0.1, hex halves
+      '0:0:0:0:0:ffff:7f00:1',   // the same, uncompressed
+      '::ffff:a00:1',            // IPv4-mapped 10.0.0.1
+      '::ffff:0:127.0.0.1',      // IPv4-translated ::ffff:0:0/96
+      '::ffff:0:7f00:1',         // IPv4-translated, hex halves
+      '::127.0.0.1',             // deprecated IPv4-compatible
+      '::7f00:1',                // IPv4-compatible, hex halves
+      '64:ff9b::7f00:1',         // NAT64 of 127.0.0.1
+      '64:ff9b::a00:1',          // NAT64 of 10.0.0.1
+      '64:ff9b::192.168.1.210',  // NAT64 of the Pi itself
+      '2002:c0a8:1ca::1',        // 6to4 of 192.168.1.210
+      '2001:0:c0a8:1ca::1',      // Teredo of 192.168.1.210
+      '::',                      // unspecified
+      'ff02::1',                 // multicast
+    ]) {
+      expect(isPublicAddress(address), address).toBe(false);
+    }
+  });
+
+  it('rejects anything it cannot parse, including the empty string', () => {
+    for (const address of ['', '   ', 'not-an-address', ':::1', '1:2:3:4:5:6:7:8:9', 'gggg::1', '::ffff:999.1.1.1']) {
+      expect(isPublicAddress(address), JSON.stringify(address)).toBe(false);
+    }
+  });
+
   it('accepts ordinary public addresses', () => {
-    for (const address of ['93.184.216.34', '1.1.1.1', '172.32.0.1', '2606:4700::1111']) {
+    for (const address of [
+      '93.184.216.34', '1.1.1.1', '172.32.0.1', '2606:4700::1111',
+      '2001:4860:4860::8888',    // Google DNS: 2001:4860:, not Teredo's 2001:0:
+      '2a02:ec80:600:ed1a::1',   // Wikimedia
+    ]) {
       expect(isPublicAddress(address), address).toBe(true);
     }
   });
