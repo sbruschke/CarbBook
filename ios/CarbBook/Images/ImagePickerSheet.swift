@@ -35,7 +35,7 @@ struct ImagePickerSheet: View {
             Form {
                 if imageID != nil {
                     Section {
-                        ImageThumbView(imageID: imageID, size: 120)
+                        ImageThumbView(imageID: imageID, size: 120, shape: .rounded)
                         // Removing only clears this record's reference; the stored image row is
                         // shared with anything else pointing at it and is left alone.
                         Button("Remove image", role: .destructive) { choose(nil) }

@@ -7,6 +7,10 @@ struct LogView: View {
     @State private var day = Date()
     @State private var entries: [LogEntryData] = []
     @State private var windows: [DoseWindow] = []
+    /// The day's items grouped by entry, and the catalog that turns an item's reference into its
+    /// food's or meal's photo. Both are read once per load — never once per row.
+    @State private var itemsByEntry: [Id: [LogItemData]] = [:]
+    @State private var catalog = InMemoryCatalog()
 
     /// The goal of the window an entry was logged in, if that window still has one.
     private func goal(for entry: LogEntryData) -> CarbGoal? {
@@ -54,23 +58,30 @@ struct LogView: View {
     }
 
     private func row(_ entry: LogEntryData) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack {
-                Text(date(ms: entry.eatenAt).formatted(date: .omitted, time: .shortened))
-                Text(entry.windowName ?? "").foregroundStyle(.secondary)
-                Spacer()
-                GoalBadge(style: goalStyle(CarbResult(carbsG: entry.totalCarbsG, complete: true), goal(for: entry)),
-                          font: .body)
-            }
-            HStack {
-                if let bg = entry.bgMgdl {
-                    Text("BG \(formatNumber(bg, digits: 0))").foregroundStyle(Theme.glucoseColor(bg))
+        let items = itemsByEntry[entry.id] ?? []
+        return HStack {
+            // The log is where recognising what was eaten at a glance matters most, so the entry's
+            // items show as a carb-ordered stack. The carbs are the logged snapshot already on each
+            // item row, so nothing is recomputed here.
+            ImageStackView(entries: loggedStackEntries(items, catalog: catalog), size: 28)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack {
+                    Text(date(ms: entry.eatenAt).formatted(date: .omitted, time: .shortened))
+                    Text(entry.windowName ?? "").foregroundStyle(.secondary)
+                    Spacer()
+                    GoalBadge(style: goalStyle(CarbResult(carbsG: entry.totalCarbsG, complete: true), goal(for: entry)),
+                              font: .body)
                 }
-                Spacer()
-                Text("suggested \(entry.suggestedUnits.map { formatNumber($0, digits: 2) } ?? "—") · taken \(entry.takenUnits.map { formatNumber($0, digits: 2) } ?? "—")")
-                    .foregroundStyle(.secondary)
+                HStack {
+                    if let bg = entry.bgMgdl {
+                        Text("BG \(formatNumber(bg, digits: 0))").foregroundStyle(Theme.glucoseColor(bg))
+                    }
+                    Spacer()
+                    Text("suggested \(entry.suggestedUnits.map { formatNumber($0, digits: 2) } ?? "—") · taken \(entry.takenUnits.map { formatNumber($0, digits: 2) } ?? "—")")
+                        .foregroundStyle(.secondary)
+                }
+                .font(.caption)
             }
-            .font(.caption)
         }
     }
 
@@ -78,6 +89,8 @@ struct LogView: View {
         let start = Calendar.current.startOfDay(for: day)
         let end = Calendar.current.date(byAdding: .day, value: 1, to: start)!
         entries = (try? app.store.logEntries(from: ms(start), to: ms(end))) ?? []
+        itemsByEntry = (try? app.store.logItems(entryIds: entries.map(\.id))) ?? [:]
+        catalog = (try? app.store.catalog()) ?? InMemoryCatalog()
         let versions = (try? app.store.doseSettingsVersions()) ?? []
         let usable = eligibleDoseSettingsVersions(versions, rejectedIds: (try? app.store.rejectedDoseSettingsIds()) ?? [])
         windows = activeSettings(usable, ms(day))?.windows ?? []

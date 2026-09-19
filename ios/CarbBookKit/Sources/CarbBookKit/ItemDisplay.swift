@@ -30,3 +30,38 @@ public func itemImageId(_ refType: RefType, _ refId: Id, catalog: Catalog) -> Id
     case .quick: nil
     }
 }
+
+/// The parts of an item row a stack needs. Meal components and plan items share them, and both
+/// compute their carbs live, so one function serves both; conformance is declared here rather than
+/// in core because this is the only thing that wants it.
+public protocol StackableItem {
+    var refType: RefType { get }
+    var refId: Id { get }
+    var amount: Double { get }
+    var unit: String { get }
+}
+
+extension MealItemData: StackableItem {}
+extension PlanItemData: StackableItem {}
+
+/// Stack entries for rows whose carbs are computed live (meal components, plan items). The image and
+/// the carbs both come out of the catalog the screen already holds, so this costs no query. Carbs
+/// that cannot be worked out count as unknown rather than zero, so such a row sorts to the back of
+/// the stack but keeps its photo.
+public func itemStackEntries(_ items: [some StackableItem], catalog: Catalog) -> [StackEntry] {
+    items.map { item in
+        let carbs = itemCarbs(catalog, item.refType, item.refId, item.amount, item.unit)
+        return StackEntry(imageId: itemImageId(item.refType, item.refId, catalog: catalog),
+                          carbs: carbs.complete ? carbs.carbsG : nil)
+    }
+}
+
+/// Stack entries for logged rows. Unlike a plan or a meal, a log entry is a snapshot: `carbs_g` is
+/// what was actually counted at the time, so it is used as stored and never recomputed. Only the
+/// photo needs the catalog, and a quick-carbs row has none — it still counts towards the badge.
+public func loggedStackEntries(_ items: [LogItemData], catalog: Catalog) -> [StackEntry] {
+    items.map { item in
+        StackEntry(imageId: itemImageId(item.refType, item.refId, catalog: catalog),
+                   carbs: item.carbsG.isFinite ? item.carbsG : nil)
+    }
+}

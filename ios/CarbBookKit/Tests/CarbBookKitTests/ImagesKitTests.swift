@@ -168,3 +168,117 @@ final class ItemImageIdTests: XCTestCase {
         XCTAssertNil(itemImageId(.food, "missing", catalog: InMemoryCatalog()))
     }
 }
+
+/// Stack entries: what the overlapping photo cluster on a collapsed row is built from. The ordering
+/// itself belongs to core `imageStackLayout` and is covered by the shared vectors; these tests only
+/// check that each surface hands it the right image and the right carbs.
+final class StackEntriesTests: XCTestCase {
+    private let riceImage = String(repeating: "d", count: 64)
+    private let sauceImage = String(repeating: "e", count: 64)
+
+    private func catalog() -> InMemoryCatalog {
+        InMemoryCatalog(
+            foods: [
+                FoodData(id: "rice", name: "Rice", source: "custom", carbsPer100g: 28, imageId: riceImage),
+                FoodData(id: "sauce", name: "Sauce", source: "custom", carbsPer100g: 5, imageId: sauceImage),
+                FoodData(id: "water", name: "Water", source: "custom", carbsPer100g: 0),
+            ],
+            meals: [MealData(id: "m1", name: "Rice bowl", yieldServings: 2)],
+            mealItems: [
+                MealItemData(id: "mi1", mealId: "m1", refType: .food, refId: "sauce", amount: 50, unit: "g", position: 0),
+                MealItemData(id: "mi2", mealId: "m1", refType: .food, refId: "rice", amount: 200, unit: "g", position: 1),
+            ])
+    }
+
+    /// Meal components and plan items compute their carbs live, from the catalog the screen holds.
+    func testLiveRowsTakeTheirImageAndComputedCarbsFromTheCatalog() {
+        let entries = itemStackEntries(catalog().mealItems("m1"), catalog: catalog())
+        XCTAssertEqual(entries.map(\.imageId), [sauceImage, riceImage])
+        XCTAssertEqual(entries.map(\.carbs), [2.5, 56])
+        // Ordering is core's: the bigger contribution comes frontmost, whatever order the rows are in.
+        XCTAssertEqual(imageStackLayout(entries).imageIds, [riceImage, sauceImage])
+    }
+
+    /// A row whose carbs cannot be worked out keeps its photo but sorts to the back, rather than
+    /// being counted as zero carbs or hidden.
+    func testARowWithUnknownCarbsHasNilCarbsAndKeepsItsImage() {
+        let items = [PlanItemData(id: "i1", planEntryId: "p1", refType: .food, refId: "rice",
+                                  amount: 1, unit: "not-a-unit", position: 0)]
+        let entries = itemStackEntries(items, catalog: catalog())
+        XCTAssertEqual(entries.map(\.imageId), [riceImage])
+        XCTAssertNil(entries[0].carbs)
+    }
+
+    /// A log entry is a snapshot: `carbs_g` as logged is used verbatim, never recomputed against a
+    /// food whose carbs may since have been edited.
+    func testLoggedRowsUseTheStoredCarbsAndCountQuickRowsIntoTheOverflow() {
+        let items = [
+            LogItemData(id: "l1", logEntryId: "e1", refType: .food, refId: "rice", displayName: "Rice",
+                        amount: 200, unit: "g", carbsG: 12),
+            LogItemData(id: "l2", logEntryId: "e1", refType: .food, refId: "sauce", displayName: "Sauce",
+                        amount: 50, unit: "g", carbsG: 40),
+            LogItemData(id: "l3", logEntryId: "e1", refType: .quick, refId: "", displayName: "Juice",
+                        amount: 15, unit: Units.quick, carbsG: 15),
+        ]
+        let entries = loggedStackEntries(items, catalog: catalog())
+        XCTAssertEqual(entries.map(\.carbs), [12, 40, 15], "the logged snapshot, not 56 g of rice")
+        XCTAssertNil(entries[2].imageId, "a quick-carbs row references no food, so it has no photo")
+
+        let layout = imageStackLayout(entries)
+        XCTAssertEqual(layout.imageIds, [sauceImage, riceImage])
+        XCTAssertEqual(layout.overflow, 1, "the quick row is still one of the three items")
+    }
+
+    /// A food with no photo of its own contributes nothing to draw, so an entry of plain rows
+    /// renders no stack at all rather than an empty ring.
+    func testRowsWithNoPhotosProduceNothingToDraw() {
+        let items = [LogItemData(id: "l1", logEntryId: "e1", refType: .food, refId: "water",
+                                 displayName: "Water", amount: 1, unit: "g", carbsG: 0)]
+        let layout = imageStackLayout(loggedStackEntries(items, catalog: catalog()))
+        XCTAssertTrue(layout.imageIds.isEmpty)
+        XCTAssertEqual(layout.overflow, 1)
+    }
+}
+
+/// The Log list resolves every row's photos from one grouped query, never one query per row.
+final class LogItemsByEntryTests: XCTestCase {
+    private func seed(_ store: LocalStore) throws {
+        try store.save("log_entry", LogEntryData(id: "e1", eatenAt: 1_000, windowName: "Lunch", bgMgdl: nil,
+                                                 bgSource: "none", bgTrend: nil, totalCarbsG: 30,
+                                                 suggestedUnits: nil, takenUnits: nil, settingsVersionId: nil,
+                                                 notes: nil))
+        try store.save("log_entry", LogEntryData(id: "e2", eatenAt: 2_000, windowName: "Dinner", bgMgdl: nil,
+                                                 bgSource: "none", bgTrend: nil, totalCarbsG: 10,
+                                                 suggestedUnits: nil, takenUnits: nil, settingsVersionId: nil,
+                                                 notes: nil))
+        try store.save("log_item", LogItemData(id: "l1", logEntryId: "e1", refType: .food, refId: "rice",
+                                               displayName: "Rice", amount: 100, unit: "g", carbsG: 28))
+        try store.save("log_item", LogItemData(id: "l2", logEntryId: "e1", refType: .quick, refId: "",
+                                               displayName: "Juice", amount: 2, unit: Units.quick, carbsG: 2))
+        try store.save("log_item", LogItemData(id: "l3", logEntryId: "e2", refType: .food, refId: "rice",
+                                               displayName: "Rice", amount: 40, unit: "g", carbsG: 10))
+    }
+
+    func testItemsAreGroupedByEntry() throws {
+        let store = try LocalStore(path: nil, now: { 1_000 })
+        try seed(store)
+        let grouped = try store.logItems(entryIds: ["e1", "e2"])
+        XCTAssertEqual(grouped["e1"]?.map(\.id), ["l1", "l2"])
+        XCTAssertEqual(grouped["e2"]?.map(\.id), ["l3"])
+    }
+
+    /// An entry with no items simply has no key, and asking for nothing reads nothing.
+    func testUnknownAndEmptyRequestsReadNothing() throws {
+        let store = try LocalStore(path: nil, now: { 1_000 })
+        try seed(store)
+        XCTAssertNil(try store.logItems(entryIds: ["e3"])["e3"])
+        XCTAssertTrue(try store.logItems(entryIds: []).isEmpty)
+    }
+
+    func testDeletedItemsAreNotReturned() throws {
+        let store = try LocalStore(path: nil, now: { 1_000 })
+        try seed(store)
+        try store.softDelete("log_item", id: "l1")
+        XCTAssertEqual(try store.logItems(entryIds: ["e1"])["e1"]?.map(\.id), ["l2"])
+    }
+}
