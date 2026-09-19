@@ -8,6 +8,12 @@ import type { AppContext, AppDeps } from './context';
 import { csrfContentTypeGuard } from './csrf';
 import type { Db } from './db';
 import { errorHandler } from './errors';
+import { fetchImageBytes } from './images/fetch';
+import { createOpenverseProvider } from './images/providers/openverse';
+import { createMealDbProvider } from './images/providers/themealdb';
+import type { ProviderOptions } from './images/providers/types';
+import { createWikimediaProvider } from './images/providers/wikimedia';
+import { createImageStore } from './images/store';
 import { createOffClient } from './off/client';
 import { loginRoutes, sessionRoutes } from './routes/auth';
 import { barcodeRoutes } from './routes/barcode';
@@ -22,6 +28,11 @@ export interface BuildAppOptions {
   config: Config;
   deps?: Partial<AppDeps>;
   logger?: boolean;
+}
+
+/** Providers share the timeout and user-agent knobs with the existing OFF and BG clients. */
+function providerOptions(config: Config, baseUrl: string): ProviderOptions {
+  return { baseUrl, timeoutMs: config.httpTimeoutMs, userAgent: config.offUserAgent, fetch: globalThis.fetch };
 }
 
 export function defaultDeps(config: Config): AppDeps {
@@ -39,6 +50,13 @@ export function defaultDeps(config: Config): AppDeps {
       timeoutMs: config.httpTimeoutMs,
       fetch: globalThis.fetch,
     }),
+    images: createImageStore({ imageDir: config.imageDir }),
+    imageProviders: [
+      createOpenverseProvider(providerOptions(config, config.openverseBaseUrl)),
+      createWikimediaProvider(providerOptions(config, config.wikimediaBaseUrl)),
+      createMealDbProvider(providerOptions(config, config.mealDbBaseUrl)),
+    ],
+    fetchImage: (url) => fetchImageBytes(url, config.httpTimeoutMs, config.offUserAgent),
   };
 }
 

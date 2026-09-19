@@ -12,6 +12,9 @@ export interface Config {
   dexcomApiToken: string | null;
   offBaseUrl: string;
   offUserAgent: string;
+  openverseBaseUrl: string;
+  wikimediaBaseUrl: string;
+  mealDbBaseUrl: string;
   httpTimeoutMs: number;
   cookieSecure: boolean;
   trustProxy: boolean;
@@ -67,6 +70,9 @@ export function loadConfig(env: Env = process.env): Config {
     dexcomApiToken: optionalText(env, 'DEXCOM_API_TOKEN'),
     offBaseUrl: absoluteUrl(env, 'OFF_BASE_URL', 'https://world.openfoodfacts.org'),
     offUserAgent: text(env, 'OFF_USER_AGENT', 'CarbBook/0.1 (https://recipes.dxshdw.dev)'),
+    openverseBaseUrl: absoluteUrl(env, 'OPENVERSE_BASE_URL', 'https://api.openverse.org'),
+    wikimediaBaseUrl: absoluteUrl(env, 'WIKIMEDIA_BASE_URL', 'https://commons.wikimedia.org'),
+    mealDbBaseUrl: absoluteUrl(env, 'MEALDB_BASE_URL', 'https://www.themealdb.com'),
     httpTimeoutMs: integer(env, 'HTTP_TIMEOUT_MS', 5000, 100, 60000),
     cookieSecure: boolean(env, 'COOKIE_SECURE', true),
     trustProxy: boolean(env, 'TRUST_PROXY', false),
