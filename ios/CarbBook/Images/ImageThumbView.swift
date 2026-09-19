@@ -24,27 +24,33 @@ struct ImageThumbView: View {
 
     @State private var image: UIImage?
 
-    private var clipShape: AnyInsettableShape {
+    /// Clipping and the rim are applied against one concrete shape per case rather than a
+    /// type-erased `AnyInsettableShape`, which needs iOS 18 — this app targets 17.
+    @ViewBuilder
+    private func shaped(_ image: UIImage) -> some View {
+        let picture = Image(uiImage: image)
+            .resizable()
+            .aspectRatio(contentMode: .fill)
+            .frame(width: size, height: size)
         switch shape {
-        case .circle: AnyInsettableShape(Circle())
-        case .rounded: AnyInsettableShape(RoundedRectangle(cornerRadius: size / 6, style: .continuous))
+        case .circle:
+            picture.clipShape(Circle()).overlay { rimBorder(Circle()) }
+        case .rounded:
+            let box = RoundedRectangle(cornerRadius: size / 6, style: .continuous)
+            picture.clipShape(box).overlay { rimBorder(box) }
         }
+    }
+
+    @ViewBuilder
+    private func rimBorder<S: InsettableShape>(_ shape: S) -> some View {
+        if let rim { shape.strokeBorder(rim, lineWidth: 2) }
     }
 
     var body: some View {
         // The frame is claimed only once there is something to draw, so a row without an image keeps
         // its old layout rather than reserving an empty square.
         Group {
-            if let image {
-                Image(uiImage: image)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-                    .frame(width: size, height: size)
-                    .clipShape(clipShape)
-                    .overlay {
-                        if let rim { clipShape.strokeBorder(rim, lineWidth: 2) }
-                    }
-            }
+            if let image { shaped(image) }
         }
         .task(id: imageID) {
             image = nil
