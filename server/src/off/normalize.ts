@@ -63,6 +63,20 @@ export function normalizeOffProduct(product: OffProduct, scannedCode: string): F
  * Returns null unless the URL is on an OFF-owned host, so a candidate that could never be
  * adopted (urlguard would reject it) never reaches the scan-confirm screen.
  */
+/**
+ * OFF serves each photo at several sizes, encoded in the filename as
+ * `front_<lang>.<revision>.<size>.jpg` where size is 100, 200, 400 or `full`.
+ * `image_front_url` is the 400 variant, which measures about 289x400 — well under our 800px
+ * cap, and visibly soft in a 120px editor slot on a retina screen. Promote it to `full`
+ * (measured 1311x1812 for the same product) so the stored image is worth the round trip.
+ *
+ * Only an exact match of that pattern is rewritten; anything else is left alone, so an OFF
+ * URL shaped differently degrades to the 400 variant rather than a guessed 404.
+ */
+function preferFullSize(url: string): string {
+  return url.replace(/(\/front_[a-z]{2,3}\.\d+)\.(?:100|200|400)\.jpg$/i, '$1.full.jpg');
+}
+
 export function offImageCandidate(product: OffProduct): ImageCandidate | null {
   const full = product.image_front_url?.trim();
   if (!full || !isProviderHost(full, 'off')) return null;
@@ -70,7 +84,7 @@ export function offImageCandidate(product: OffProduct): ImageCandidate | null {
   return {
     provider: 'off',
     thumb_url: small && isProviderHost(small, 'off') ? small : full,
-    full_url: full,
+    full_url: preferFullSize(full),
     width: null,
     height: null,
     license: 'CC-BY-SA-3.0',

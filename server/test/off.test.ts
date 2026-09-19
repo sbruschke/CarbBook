@@ -174,13 +174,34 @@ describe('OFF image candidate', () => {
     expect(candidate).toEqual({
       provider: 'off',
       thumb_url: 'https://images.openfoodfacts.org/images/products/073/762/806/4502/front_en.4.200.jpg',
-      full_url: 'https://images.openfoodfacts.org/images/products/073/762/806/4502/front_en.4.400.jpg',
+      // Promoted from the .400 variant OFF reports; see preferFullSize.
+      full_url: 'https://images.openfoodfacts.org/images/products/073/762/806/4502/front_en.4.full.jpg',
       width: null,
       height: null,
       license: 'CC-BY-SA-3.0',
       attribution: 'Open Food Facts',
       title: 'Thai peanut noodle kit',
     });
+  });
+
+  it('promotes the 400 variant to full size, leaving the thumbnail small', () => {
+    const candidate = offImageCandidate({
+      code: '1',
+      image_front_url: 'https://images.openfoodfacts.org/images/products/073/762/806/4502/front_en.6.400.jpg',
+      image_front_small_url: 'https://images.openfoodfacts.org/images/products/073/762/806/4502/front_en.6.200.jpg',
+    });
+    // Measured: the .400 variant is 289x400, the .full one 1311x1812.
+    expect(candidate?.full_url).toBe(
+      'https://images.openfoodfacts.org/images/products/073/762/806/4502/front_en.6.full.jpg',
+    );
+    expect(candidate?.thumb_url).toBe(
+      'https://images.openfoodfacts.org/images/products/073/762/806/4502/front_en.6.200.jpg',
+    );
+  });
+
+  it('leaves an unrecognised OFF url shape alone rather than guessing a 404', () => {
+    const odd = 'https://images.openfoodfacts.org/images/products/1/front.jpg';
+    expect(offImageCandidate({ code: '1', image_front_url: odd })?.full_url).toBe(odd);
   });
 
   it('falls back to the full url when no small variant is offered', () => {
