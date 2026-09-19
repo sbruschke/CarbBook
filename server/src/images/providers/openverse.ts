@@ -1,4 +1,4 @@
-import { PROVIDER_HOSTS } from '../urlguard';
+import { isProviderHost } from '../urlguard';
 import { getJson, type ImageCandidate, type ImageSearchProvider, type ProviderOptions } from './types';
 
 /**
@@ -7,7 +7,11 @@ import { getJson, type ImageCandidate, type ImageSearchProvider, type ProviderOp
  *
  * We deliberately adopt the Openverse-proxied `thumbnail` URL rather than `url`, the original
  * on an arbitrary third-party host. That keeps every adoptable URL on api.openverse.org, which
- * is what makes the urlguard allowlist short. The proxy image is large enough for our 800px cap.
+ * is what makes the urlguard allowlist short.
+ *
+ * The plain proxy (used for thumb_url) is fine for a picker grid but too small to store: measured
+ * at 600x399 (25768B), under our 800px cap. Appending full_size=true, still on api.openverse.org,
+ * returns the original — measured at 1024x681 (96610B) for the same image — so full_url adds it.
  */
 interface OpenverseResult {
   id?: string;
@@ -40,7 +44,6 @@ function attributionOf(result: OpenverseResult, license: string | null): string 
 }
 
 export function createOpenverseProvider(options: ProviderOptions): ImageSearchProvider {
-  const allowedHost = PROVIDER_HOSTS.openverse[0]!;
   return {
     name: 'openverse',
     async search(query, limit) {
@@ -59,12 +62,14 @@ export function createOpenverseProvider(options: ProviderOptions): ImageSearchPr
         const thumb = result.thumbnail?.trim();
         // Defence in depth: urlguard would reject a foreign host at adopt time anyway, but a
         // candidate we know is unadoptable should never reach the picker.
-        if (!thumb || !URL.canParse(thumb) || new URL(thumb).hostname.toLowerCase() !== allowedHost) return [];
+        if (!thumb || !isProviderHost(thumb, 'openverse')) return [];
+        const fullUrl = new URL(thumb);
+        fullUrl.searchParams.set('full_size', 'true');
         const license = licenseOf(result);
         const candidate: ImageCandidate = {
           provider: 'openverse',
           thumb_url: thumb,
-          full_url: thumb,
+          full_url: fullUrl.toString(),
           width: result.width ?? null,
           height: result.height ?? null,
           license,

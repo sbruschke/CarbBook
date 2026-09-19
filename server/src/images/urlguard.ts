@@ -29,6 +29,21 @@ export const PROVIDER_HOSTS: Record<AdoptProvider, string[]> = {
   off: ['images.openfoodfacts.org', 'static.openfoodfacts.org'],
 };
 
+/**
+ * Is this URL on a host the given provider serves image bytes from?
+ *
+ * Providers use this to drop candidates they know could never be adopted, so an unadoptable
+ * result never reaches the picker. It is NOT a substitute for assertAdoptableUrl, which also
+ * checks the scheme, credentials, port and resolved addresses — this is only the host gate.
+ */
+export function isProviderHost(url: string, provider: AdoptProvider): boolean {
+  if (!URL.canParse(url)) return false;
+  const hosts = PROVIDER_HOSTS[provider];
+  if (!hosts) return false;
+  const hostname = new URL(url).hostname.toLowerCase();
+  return hosts.includes(hostname);
+}
+
 type LookupResult = { address: string; family: number };
 export interface UrlGuardOptions {
   /** Injected so tests never touch real DNS. */

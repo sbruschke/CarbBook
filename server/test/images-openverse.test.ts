@@ -65,9 +65,9 @@ describe('openverse provider', () => {
     expect(candidates[0]).toEqual({
       provider: 'openverse',
       thumb_url: 'https://api.openverse.org/v1/images/11111111-1111-1111-1111-111111111111/thumb/',
-      // Deliberately the same Openverse-proxied URL: urlguard only allows api.openverse.org,
-      // and that proxy serves an image large enough for our 800px cap.
-      full_url: 'https://api.openverse.org/v1/images/11111111-1111-1111-1111-111111111111/thumb/',
+      // full_size=true upgrades the plain proxy (600x399) to the original (1024x681, measured),
+      // while staying on api.openverse.org so urlguard's allowlist still covers it.
+      full_url: 'https://api.openverse.org/v1/images/11111111-1111-1111-1111-111111111111/thumb/?full_size=true',
       width: 2400,
       height: 1600,
       license: 'CC-BY-4.0',
@@ -83,6 +83,23 @@ describe('openverse provider', () => {
     expect(candidates[1]!.attribution).toBe('CC0-1.0');
     expect(candidates[1]!.width).toBeNull();
     expect(candidates[1]!.title).toBeNull();
+  });
+
+  it('appends full_size to a thumbnail URL that already carries a query string', async () => {
+    const { fetch } = stubFetch(() =>
+      json({
+        results: [
+          {
+            ...RESPONSE.results[0],
+            thumbnail: 'https://api.openverse.org/v1/images/11111111-1111-1111-1111-111111111111/thumb/?compressed=false',
+          },
+        ],
+      }),
+    );
+    const candidates = await createOpenverseProvider(options(fetch)).search('x', 10);
+    expect(candidates[0]!.full_url).toBe(
+      'https://api.openverse.org/v1/images/11111111-1111-1111-1111-111111111111/thumb/?compressed=false&full_size=true',
+    );
   });
 
   it('drops a result with no Openverse thumbnail rather than adopting a foreign host', async () => {

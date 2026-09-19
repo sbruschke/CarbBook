@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { assertAdoptableUrl, isPublicAddress, PROVIDER_HOSTS, UrlRejectedError } from '../src/images/urlguard';
+import { assertAdoptableUrl, isProviderHost, isPublicAddress, PROVIDER_HOSTS, UrlRejectedError } from '../src/images/urlguard';
 
 /** Resolver stub: the guard never does real DNS in tests. */
 const resolvesTo = (address: string) => async () => [{ address, family: address.includes(':') ? 6 : 4 }];
@@ -13,6 +13,34 @@ describe('PROVIDER_HOSTS', () => {
       themealdb: ['www.themealdb.com'],
       off: ['images.openfoodfacts.org', 'static.openfoodfacts.org'],
     });
+  });
+});
+
+describe('isProviderHost', () => {
+  it('matches a host the provider serves images from', () => {
+    expect(isProviderHost('https://api.openverse.org/v1/images/x/thumb/', 'openverse')).toBe(true);
+  });
+
+  it('rejects a host that belongs to a different provider', () => {
+    expect(isProviderHost('https://upload.wikimedia.org/x.jpg', 'openverse')).toBe(false);
+  });
+
+  it('matches every host of a multi-host provider, not just the first', () => {
+    // off has two hosts; [0] alone would have broken the second one.
+    expect(isProviderHost('https://images.openfoodfacts.org/x.jpg', 'off')).toBe(true);
+    expect(isProviderHost('https://static.openfoodfacts.org/x.jpg', 'off')).toBe(true);
+  });
+
+  it('compares hostnames case-insensitively', () => {
+    expect(isProviderHost('https://API.OPENVERSE.ORG/x.jpg', 'openverse')).toBe(true);
+  });
+
+  it('returns false for an unparseable URL', () => {
+    expect(isProviderHost('not a url', 'openverse')).toBe(false);
+  });
+
+  it('returns false for an unknown provider', () => {
+    expect(isProviderHost('https://api.openverse.org/x.jpg', 'bogus' as never)).toBe(false);
   });
 });
 
