@@ -25,4 +25,19 @@ final class SearchTests: XCTestCase {
         try store.softDelete("food", id: "f1")
         XCTAssertEqual(try store.search("tortilla", limit: 10, usda: nil), [])
     }
+
+    /// A result row shows the food or meal's photo, so the picker must carry the image id: the
+    /// sheet has nothing else to look it up with.
+    func testSearchCarriesTheImageId() throws {
+        let store = try LocalStore(path: nil, now: { 1_000 })
+        let foodImage = String(repeating: "a", count: 64)
+        let mealImage = String(repeating: "b", count: 64)
+        try store.save("food", FoodData(id: "f1", name: "Tortilla", source: "custom", carbsPer100g: 48, imageId: foodImage))
+        try store.save("food", FoodData(id: "f2", name: "Tortilla chips", source: "custom", carbsPer100g: 60))
+        try store.save("meal", MealData(id: "m1", name: "Tortilla soup", yieldServings: 4, imageId: mealImage))
+        let byId = Dictionary(uniqueKeysWithValues: try store.search("tort", limit: 10, usda: nil).map { ($0.id, $0) })
+        XCTAssertEqual(byId["f1"]?.imageId, foodImage)
+        XCTAssertEqual(byId["m1"]?.imageId, mealImage)
+        XCTAssertNil(byId["f2"]?.imageId)
+    }
 }
