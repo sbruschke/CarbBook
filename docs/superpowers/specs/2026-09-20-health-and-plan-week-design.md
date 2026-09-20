@@ -108,8 +108,9 @@ the user to a new device and would leave the platforms free to disagree again.
 
 ## Testing
 
-- `healthSamples(for:)`: shared JSON vectors — carbs only, carbs + bolus, blank taken dose, zero
-  carbs, correction-only entry.
+- `healthSamples(for:)`: Swift unit tests in `CarbBookKit` — carbs only, carbs + bolus, blank taken
+  dose, zero carbs, correction-only entry. Not shared JSON vectors: this feature has no web
+  counterpart, so there is nothing for a second implementation to agree with.
 - Week start: shared JSON vectors over all 7 week-start values, including year boundaries and DST
   days, asserting web and iOS produce identical weeks.
 - Web: a Plan test that "Today" snaps to the right week and that the current day is marked.
