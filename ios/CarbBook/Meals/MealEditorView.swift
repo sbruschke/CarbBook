@@ -133,6 +133,7 @@ struct MealEditorView: View {
             })
         return VStack(alignment: .leading) {
             HStack {
+                ImageThumbView(imageID: itemImageId(value.refType, value.refId, catalog: catalog), size: 28)
                 Text(itemDisplayName(value.refType, value.refId, label: nil, catalog: catalog))
                 Spacer()
                 Text(carbs.complete ? "\(formatNumber(carbs.carbsG))g" : "missing data")

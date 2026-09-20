@@ -15,11 +15,14 @@ public struct SearchHit: Equatable, Sendable, Identifiable {
     public var carbsPer100ml: Double?
     /// True when a count/serving portion carries valid carbs (a piece-only food).
     public var hasPortionCarbs: Bool
+    /// The row's own image, carried here so a result row needs no second lookup to show a
+    /// thumbnail. Always nil for USDA library hits, which have no photo.
+    public var imageId: String?
 
     public init(kind: Kind, id: String, name: String, brand: String?, source: String?, carbsPer100g: Double?,
-                carbsPer100ml: Double? = nil, hasPortionCarbs: Bool = false) {
+                carbsPer100ml: Double? = nil, hasPortionCarbs: Bool = false, imageId: String? = nil) {
         self.kind = kind; self.id = id; self.name = name; self.brand = brand; self.source = source; self.carbsPer100g = carbsPer100g
-        self.carbsPer100ml = carbsPer100ml; self.hasPortionCarbs = hasPortionCarbs
+        self.carbsPer100ml = carbsPer100ml; self.hasPortionCarbs = hasPortionCarbs; self.imageId = imageId
     }
 
     /// Short carb basis for a result row: "28.2 g/100 g", "48 g/cup", "per piece", or nil (no carb data).
@@ -45,7 +48,7 @@ extension LocalStore {
                 sql: """
                 SELECT catalog_fts.kind AS kind, catalog_fts.ref_id AS id, catalog_fts.name AS name,
                        nullif(catalog_fts.brand, '') AS brand, food.source AS source, food.carbs_per_100g AS carbs,
-                       food.carbs_per_100ml AS carbs_ml,
+                       food.carbs_per_100ml AS carbs_ml, coalesce(food.image_id, meal.image_id) AS image_id,
                        EXISTS (SELECT 1 FROM portion p WHERE p.food_id = catalog_fts.ref_id AND p.deleted = 0 AND p.kind != 'volume'
                                   AND p.carbs_g >= 0 AND p.carbs_g <= 500) AS portion_carbs,
                        CASE WHEN catalog_fts.kind = 'meal' OR food.source = 'custom' THEN 0 ELSE 1 END AS tier,
@@ -55,6 +58,7 @@ extension LocalStore {
                        ) AS last_logged
                   FROM catalog_fts
                   LEFT JOIN food ON catalog_fts.kind = 'food' AND food.id = catalog_fts.ref_id
+                  LEFT JOIN meal ON catalog_fts.kind = 'meal' AND meal.id = catalog_fts.ref_id
                  WHERE catalog_fts MATCH ?
                  ORDER BY tier, last_logged DESC NULLS LAST, bm25(catalog_fts)
                  LIMIT ?
@@ -64,7 +68,8 @@ extension LocalStore {
                 let kind: String = row["kind"]
                 return SearchHit(kind: kind == "meal" ? .meal : .food, id: row["id"], name: row["name"],
                                  brand: row["brand"], source: row["source"], carbsPer100g: row["carbs"],
-                                 carbsPer100ml: row["carbs_ml"], hasPortionCarbs: row["portion_carbs"])
+                                 carbsPer100ml: row["carbs_ml"], hasPortionCarbs: row["portion_carbs"],
+                                 imageId: row["image_id"])
             }
         }
         let remaining = limit - userHits.count

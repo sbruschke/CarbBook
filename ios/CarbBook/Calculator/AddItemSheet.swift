@@ -29,9 +29,16 @@ struct AddItemSheet: View {
                         dismiss()
                     } label: {
                         HStack {
-                            Image(systemName: icon(hit.kind))
-                                .foregroundStyle(.secondary)
-                                .frame(width: 24)
+                            // The photo when the row has one, the kind's symbol when it does not:
+                            // `ImageThumbView` draws nothing (and claims no width) for a missing or
+                            // dangling image, so the symbol is what keeps such a row aligned.
+                            if hit.imageId == nil {
+                                Image(systemName: icon(hit.kind))
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: 24)
+                            } else {
+                                ImageThumbView(imageID: hit.imageId, size: 28)
+                            }
                             VStack(alignment: .leading) {
                                 Text(hit.name).foregroundStyle(.primary)
                                 if let brand = hit.brand { Text(brand).font(.caption).foregroundStyle(.secondary) }
