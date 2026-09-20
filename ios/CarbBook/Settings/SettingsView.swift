@@ -9,6 +9,7 @@ struct SettingsView: View {
     @State private var pending = 0
     @State private var lastSynced: Int64?
     @State private var imageStatus = "Checking…"
+    @State private var probeResult = ""
 
     /// The same shared filter Calculator and the Log editor use before picking an active version
     /// (`eligibleDoseSettingsVersions`, keyed on `LocalStore.rejectedDoseSettingsIds()`), so "in
@@ -57,6 +58,12 @@ struct SettingsView: View {
                 Section("Images") {
                     Text(imageStatus)
                     Button("Recheck") { Task { await loadImageStatus() } }
+                }
+                Section("Health probe (temporary)") {
+                    Button("Run Health probe") {
+                        Task { probeResult = await HealthProbe.run() }
+                    }
+                    if !probeResult.isEmpty { Text(probeResult).font(.footnote).foregroundStyle(.secondary) }
                 }
             }
             .navigationTitle("Settings")
