@@ -6,4 +6,5 @@ export * from './units';
 export * from './carbs';
 export * from './dose';
 export * from './goal';
+export * from './accountability';
 export * from './sync';

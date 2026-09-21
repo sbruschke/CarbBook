@@ -186,6 +186,22 @@ final class VectorTests: XCTestCase {
         }
     }
 
+    struct AccountabilityVectors: Decodable {
+        struct Input: Decodable { let when: String; let bg_mgdl: Double?; let carbs_g: Double; let units: Double? }
+        struct Case: Decodable { let name: String; let input: Input; let expect: String }
+        let cases: [Case]
+    }
+
+    func testAccountabilityVectors() throws {
+        let a = try load("accountability-vectors", as: AccountabilityVectors.self)
+        XCTAssertFalse(a.cases.isEmpty)
+        for c in a.cases {
+            let text = accountabilityText(
+                AccountabilityInput(when: c.input.when, bgMgdl: c.input.bg_mgdl, carbsG: c.input.carbs_g, units: c.input.units))
+            XCTAssertEqual(text, c.expect, "accountability: \(c.name)")
+        }
+    }
+
     func testImageStackVectors() throws {
         let s = try load("image-stack-vectors", as: ImageStackVectors.self)
         XCTAssertFalse(s.cases.isEmpty)

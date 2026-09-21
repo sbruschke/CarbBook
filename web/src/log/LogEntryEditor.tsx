@@ -15,6 +15,7 @@ import { buildCatalog, type CatalogData } from '../db/catalog';
 import { isLive } from '../db/db';
 import { type Change, dataOf } from '../db/store';
 import { estimateFor } from '../dose/dose';
+import { AccountabilityText } from '../ui/AccountabilityText';
 import { DoseCard } from '../ui/DoseCard';
 import { formatCarbs, fromDateTimeLocal, parseNonNegative, parseWholeNumber, toDateTimeLocal, unitLabel } from '../ui/format';
 import { ImageThumb } from '../ui/ImageThumb';
@@ -217,6 +218,14 @@ function EntryForm(props: {
         Notes
         <textarea value={notes} onChange={(e) => setNotes(e.target.value)} />
       </label>
+      {/* Below the dose so it reads from what is entered above it: the text restates this entry,
+          including edits not yet saved. */}
+      <AccountabilityText
+        eatenAt={eatenAt}
+        bg={bg === null || Number.isNaN(bg) ? null : bg}
+        carbs={total}
+        units={parseNonNegative(takenText)}
+      />
       {errors.length > 0 && (
         <ul role="alert" className="errors">
           {errors.map((error) => (

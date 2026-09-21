@@ -74,6 +74,15 @@ struct LogEntryView: View {
                 }
                 Button("Recalculate from current meal") { recalculate() }
             }
+            // Reads from what is entered above it, including edits not yet saved: BG and the taken
+            // dose come from the fields when they have been edited, from the entry otherwise —
+            // the same precedence `save()` uses, so the text never claims a value that would not
+            // be saved.
+            AccountabilitySection(
+                eatenAt: eatenAt,
+                bgMgdl: bgEdited ? parseWholeNumber(bg) : current.bgMgdl,
+                carbsG: current.totalCarbsG,
+                units: takenEdited ? parseNumber(taken) : current.takenUnits)
             if let message { Section { Text(message).foregroundStyle(.secondary) } }
         }
         .navigationTitle("Log entry")
