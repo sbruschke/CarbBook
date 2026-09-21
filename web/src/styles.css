@@ -603,3 +603,19 @@ fieldset {
   border-radius: 8px;
   object-fit: cover;
 }
+
+/* The accountability text is read as prose and copied whole, so it gets its own card and a
+   comfortable line height rather than looking like another editable field. */
+.accountability {
+  margin-top: 16px;
+}
+
+.accountability textarea {
+  line-height: 1.5;
+  background: var(--card);
+}
+
+.accountability .button-row {
+  align-items: center;
+  margin-top: 8px;
+}

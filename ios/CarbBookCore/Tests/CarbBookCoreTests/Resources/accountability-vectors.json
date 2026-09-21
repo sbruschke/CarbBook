@@ -1,0 +1,45 @@
+{
+  "description": "Shared cases for core accountabilityText: the copy-pasteable log-entry message. `when` is already-formatted local time, so both cores produce identical strings.",
+  "cases": [
+    {
+      "name": "the wording the user asked for",
+      "input": { "when": "9/20/26, 12:24:58 PM CDT", "bg_mgdl": 170, "carbs_g": 59, "units": 7 },
+      "expect": "As of 9/20/26, 12:24:58 PM CDT my blood sugar is 170. I am eating something with 59 carbs and so am giving myself 7 units of fast acting insulin."
+    },
+    {
+      "name": "one unit is singular",
+      "input": { "when": "1/2/26, 8:00:00 AM CST", "bg_mgdl": 96, "carbs_g": 15, "units": 1 },
+      "expect": "As of 1/2/26, 8:00:00 AM CST my blood sugar is 96. I am eating something with 15 carbs and so am giving myself 1 unit of fast acting insulin."
+    },
+    {
+      "name": "fractional dose and carbs keep their decimals, trailing zeros do not",
+      "input": { "when": "3/4/26, 6:15:00 PM CST", "bg_mgdl": 210, "carbs_g": 42.5, "units": 0.5 },
+      "expect": "As of 3/4/26, 6:15:00 PM CST my blood sugar is 210. I am eating something with 42.5 carbs and so am giving myself 0.5 units of fast acting insulin."
+    },
+    {
+      "name": "carbs round to one decimal",
+      "input": { "when": "3/4/26, 6:15:00 PM CST", "bg_mgdl": 120, "carbs_g": 58.96, "units": 6.25 },
+      "expect": "As of 3/4/26, 6:15:00 PM CST my blood sugar is 120. I am eating something with 59 carbs and so am giving myself 6.25 units of fast acting insulin."
+    },
+    {
+      "name": "a zero dose is stated, never dropped",
+      "input": { "when": "5/1/26, 9:30:00 AM CDT", "bg_mgdl": 88, "carbs_g": 12, "units": 0 },
+      "expect": "As of 5/1/26, 9:30:00 AM CDT my blood sugar is 88. I am eating something with 12 carbs and so am not giving myself any fast acting insulin."
+    },
+    {
+      "name": "no dose recorded yet",
+      "input": { "when": "5/1/26, 9:30:00 AM CDT", "bg_mgdl": 140, "carbs_g": 30, "units": null },
+      "expect": "As of 5/1/26, 9:30:00 AM CDT my blood sugar is 140. I am eating something with 30 carbs and have not recorded a dose yet."
+    },
+    {
+      "name": "no BG on the entry",
+      "input": { "when": "5/1/26, 9:30:00 AM CDT", "bg_mgdl": null, "carbs_g": 30, "units": 3 },
+      "expect": "As of 5/1/26, 9:30:00 AM CDT I do not have a blood sugar reading. I am eating something with 30 carbs and so am giving myself 3 units of fast acting insulin."
+    },
+    {
+      "name": "nothing recorded but the time",
+      "input": { "when": "5/1/26, 9:30:00 AM CDT", "bg_mgdl": null, "carbs_g": 0, "units": null },
+      "expect": "As of 5/1/26, 9:30:00 AM CDT I do not have a blood sugar reading. I am eating something with 0 carbs and have not recorded a dose yet."
+    }
+  ]
+}

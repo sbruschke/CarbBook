@@ -207,3 +207,12 @@ export function parseAmount(text: string): number | null {
 
   return null;
 }
+
+/**
+ * A timestamp for prose rather than a field: "9/20/26, 12:24:58 PM CDT" in en-US. The zone name
+ * is part of it on purpose — the accountability text is sent to someone else, who has no reason
+ * to assume the sender's timezone.
+ */
+export function formatStamp(ms: number): string {
+  return new Date(ms).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'long' });
+}

@@ -1,9 +1,10 @@
 import type { LogEntryData, LogItemData } from '@carbbook/core';
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { REFUSAL_MESSAGES } from '../src/dose/dose';
 import { Log } from '../src/screens/Log';
+import { formatStamp } from '../src/ui/format';
 import { foodData, synced } from './helpers';
 import { makeServices, NOW, renderWith, SEED_SETTINGS, seedSettings, type TestServices } from './render';
 
@@ -242,5 +243,37 @@ describe('quick carbs rows in the log', () => {
 
     await waitFor(async () => expect((await services.db.log_entry.get('today'))?.total_carbs_g).toBe(55));
     expect(await services.db.log_item.get('li-quick')).toMatchObject({ display_name: 'Ranch & salad', amount: 7, carbs_g: 7 });
+  });
+});
+
+describe('accountability text', () => {
+  it('reads back the entry and copies to the clipboard', async () => {
+    const user = await setup();
+    const writeText = vi.fn(async () => {});
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    await services.db.log_entry.put(entry({ id: 'today', eaten_at: NOW - HOUR, bg_mgdl: 170, total_carbs_g: 59, taken_units: 7 }));
+    // The editor's carb total is the live sum of the entry's items, not the entry snapshot.
+    await services.db.log_item.put(item({ id: 'li-today', log_entry_id: 'today', display_name: 'Old tortilla', carbs_g: 59 }));
+
+    renderWith(<LogEntryEditor entryId="today" onDone={() => {}} />, services);
+    const box = (await screen.findByTestId('accountability-text')) as HTMLTextAreaElement;
+    // The timestamp is the platform's local formatting, so assert the sentence around it.
+    expect(box.value).toContain(formatStamp(NOW - HOUR));
+    expect(box.value).toContain('my blood sugar is 170. I am eating something with 59 carbs and so am giving myself 7 units of fast acting insulin.');
+
+    await user.click(screen.getByRole('button', { name: 'Copy text' }));
+    expect(writeText).toHaveBeenCalledWith(box.value);
+    expect(await screen.findByText('Copied.')).toBeInTheDocument();
+  });
+
+  it('follows unsaved edits and says plainly when a dose is not recorded', async () => {
+    const user = await setup();
+    await services.db.log_entry.put(entry({ id: 'today', eaten_at: NOW - HOUR, bg_mgdl: 170, total_carbs_g: 30 }));
+
+    renderWith(<LogEntryEditor entryId="today" onDone={() => {}} />, services);
+    const box = (await screen.findByTestId('accountability-text')) as HTMLTextAreaElement;
+    expect(box.value).toContain('and have not recorded a dose yet.');
+    await user.type(screen.getByLabelText('Taken dose (u)'), '3.5');
+    await waitFor(() => expect((screen.getByTestId('accountability-text') as HTMLTextAreaElement).value).toContain('giving myself 3.5 units'));
   });
 });
