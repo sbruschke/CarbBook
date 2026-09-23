@@ -98,7 +98,7 @@ struct WebhookSettingsView: View {
             try await WebhookSender().send(content, to: url.trimmingCharacters(in: .whitespacesAndNewlines))
             message = "Test message sent."
         } catch {
-            message = error.message
+            message = (error as? WebhookError)?.message ?? "The webhook could not be posted to."
         }
     }
 }

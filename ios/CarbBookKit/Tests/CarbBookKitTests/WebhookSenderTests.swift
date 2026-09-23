@@ -31,8 +31,8 @@ final class WebhookSenderTests: XCTestCase {
             try await WebhookSender(transport: stub).send("hi", to: hook)
             XCTFail("expected a failure")
         } catch {
-            XCTAssertEqual(error, .badWebhook)
-            XCTAssertTrue(error.message.contains("wrong or has been deleted"))
+            XCTAssertEqual(error as? WebhookError, .badWebhook)
+            XCTAssertTrue((error as? WebhookError)?.message.contains("wrong or has been deleted") ?? false)
         }
     }
 
@@ -42,7 +42,7 @@ final class WebhookSenderTests: XCTestCase {
             try await WebhookSender(transport: stub).send("hi", to: hook)
             XCTFail("expected a failure")
         } catch {
-            XCTAssertEqual(error, .rejected(status: 500))
+            XCTAssertEqual(error as? WebhookError, .rejected(status: 500))
         }
     }
 
@@ -52,7 +52,7 @@ final class WebhookSenderTests: XCTestCase {
             try await WebhookSender(transport: stub).send("hi", to: "http://discord.com/api/webhooks/1/abc")
             XCTFail("expected a failure")
         } catch {
-            XCTAssertEqual(error, .invalidUrl("The webhook URL must start with https://."))
+            XCTAssertEqual(error as? WebhookError, .invalidUrl("The webhook URL must start with https://."))
             XCTAssertTrue(stub.requests.isEmpty, "nothing may be sent over http")
         }
     }

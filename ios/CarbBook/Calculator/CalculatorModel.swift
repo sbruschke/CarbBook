@@ -300,7 +300,8 @@ final class CalculatorModel {
             } catch {
                 // Only if the screen has not moved on to saying something else about a later action.
                 guard let self, self.message == logged else { return }
-                self.message = "\(logged). \(error.message)"
+                let detail = (error as? WebhookError)?.message ?? "The webhook could not be posted to."
+                self.message = "\(logged). \(detail)"
             }
         }
     }

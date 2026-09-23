@@ -40,10 +40,13 @@ public struct WebhookSender: Sendable {
         self.timeout = timeout
     }
 
-    public func send(_ content: String, to urlString: String) async throws(WebhookError) {
-        if let problem = webhookUrlProblem(urlString) { throw .invalidUrl(problem) }
+    /// Throws `WebhookError`. Deliberately not a typed `throws(WebhookError)`: the app target
+    /// builds in the Swift 5 language mode, where a `catch` clause still binds `any Error` and
+    /// `error.message` does not compile. A plain `throws` behaves the same everywhere.
+    public func send(_ content: String, to urlString: String) async throws {
+        if let problem = webhookUrlProblem(urlString) { throw WebhookError.invalidUrl(problem) }
         guard let url = URL(string: urlString.trimmingCharacters(in: .whitespacesAndNewlines)) else {
-            throw .invalidUrl("That is not a valid URL.")
+            throw WebhookError.invalidUrl("That is not a valid URL.")
         }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -57,12 +60,12 @@ public struct WebhookSender: Sendable {
         do {
             (_, response) = try await transport.send(request)
         } catch {
-            throw .transport((error as? APIError).map(Self.detail) ?? error.localizedDescription)
+            throw WebhookError.transport((error as? APIError).map(Self.detail) ?? error.localizedDescription)
         }
         guard (200..<300).contains(response.statusCode) else {
             throw [401, 403, 404].contains(response.statusCode)
-                ? .badWebhook
-                : .rejected(status: response.statusCode)
+                ? WebhookError.badWebhook
+                : WebhookError.rejected(status: response.statusCode)
         }
     }
 
