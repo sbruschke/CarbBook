@@ -26,6 +26,21 @@ pnpm --filter @carbbook/server carbbook import-usda <csv-dir> [<csv-dir>...]   #
 
 The dose estimate is informational. Any invalid input or settings produce a refusal, never a number.
 
+## Log webhook
+
+Each device can post an entry's accountability text to a webhook — a Discord channel's incoming
+webhook is what it was built for — the moment that device logs it. Web: Settings → Webhook. iOS:
+Settings → Webhook. The webhook message adds a breakdown of what was in the meal; the copy-pasteable
+accountability text on screen is unchanged.
+
+- Only **logging** posts. Editing an entry afterwards posts nothing, so a channel never fills with
+  revisions of the same meal.
+- The URL is kept **per device** — IndexedDB on the web, the Keychain on iOS — and is never synced,
+  never sent to the CarbBook server, and never shown back in a settings row. A webhook URL is a
+  bearer secret: anyone holding it can post to that channel. https only.
+- The post is made by the device, directly to the webhook. A failure is reported next to "Logged …"
+  and never unwinds the saved entry.
+
 ## Server environment
 
 | Variable | Default | Notes |

@@ -6,6 +6,7 @@ import { useServices } from '../app/services';
 import { getMeta } from '../db/meta';
 import { NetworkError } from '../lib/api';
 import { DoseSettingsEditor } from '../settings/DoseSettingsEditor';
+import { WebhookSettings } from '../settings/WebhookSettings';
 import type { SyncPhase } from '../sync/engine';
 import { discardForeignPending, foreignPendingSummary } from '../sync/ownership';
 import { dayKey, formatTime } from '../ui/format';
@@ -254,6 +255,7 @@ export function Settings() {
       <h1>Settings</h1>
       <DoseSettingsSection />
       <SyncSection />
+      <WebhookSettings />
       <LibrarySection />
       <AccountSection />
     </div>

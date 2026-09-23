@@ -269,7 +269,9 @@ final class CalculatorModel {
             changes.append(linked)
         }
         try app.save(changes)
-        message = "Logged \(formatNumber(records.entry.totalCarbsG))g" + (records.entry.takenUnits.map { ", \(formatNumber($0, digits: 2))u taken" } ?? "")
+        let logged = "Logged \(formatNumber(records.entry.totalCarbsG))g" + (records.entry.takenUnits.map { ", \(formatNumber($0, digits: 2))u taken" } ?? "")
+        message = logged
+        postToWebhook(records.entry, items: records.items, logged: logged)
         lines = []
         loadedSlotId = nil
         takenField.reset()
@@ -278,6 +280,29 @@ final class CalculatorModel {
         windowOverride = nil
         useNow = true
         recompute(app)
+    }
+
+    /// Posts the entry's accountability text, with its breakdown, to the device's webhook.
+    ///
+    /// Only logging posts, never a later edit — so nothing has to remember what was already sent.
+    /// The entry is saved by the time this runs: a failure is a note appended to the status line,
+    /// never a reason to unwind the log or to hold up the screen, so it runs off the save path.
+    private func postToWebhook(_ entry: LogEntryData, items: [LogItemData], logged: String) {
+        guard let url = Keychain.loadWebhook() else { return }
+        let content = webhookMessage(
+            AccountabilityInput(
+                when: accountabilityStamp.string(from: Date(timeIntervalSince1970: Double(entry.eatenAt) / 1000)),
+                bgMgdl: entry.bgMgdl, carbsG: entry.totalCarbsG, units: entry.takenUnits),
+            items: webhookItemLines(for: items, catalog: catalog))
+        Task { [weak self] in
+            do {
+                try await WebhookSender().send(content, to: url)
+            } catch {
+                // Only if the screen has not moved on to saying something else about a later action.
+                guard let self, self.message == logged else { return }
+                self.message = "\(logged). \(error.message)"
+            }
+        }
     }
 
     func saveMeal(name: String, yieldServings: Double, totalWeightG: Double?, _ app: AppModel) throws {

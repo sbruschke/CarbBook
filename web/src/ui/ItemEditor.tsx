@@ -16,7 +16,7 @@ import {
   type MealData,
   type RefType,
 } from '@carbbook/core';
-import { formatCarbs, parseAmount, parseNonNegative } from './format';
+import { formatCarbs, parseAmount, parseNonNegative, unitLabel } from './format';
 import { ImageThumb } from './ImageThumb';
 import { UnitPicker } from './UnitPicker';
 
@@ -90,6 +90,18 @@ export function draftAmount(item: DraftItem): number | null {
   if (item.ref_type !== 'quick') return parseAmount(item.amount);
   const grams = parseNonNegative(item.amount);
   return grams !== null && isValidQuickCarbs(grams) ? grams : null;
+}
+
+/**
+ * A draft row's amount as prose — "1 cup", "150 g", "1 slice (30 g)" — for the webhook breakdown.
+ * Empty when the amount is not a usable number, so a half-typed row contributes a name and its
+ * carbs rather than a nonsense quantity.
+ */
+export function draftAmountLabel(catalog: Catalog, item: DraftItem): string {
+  const amount = draftAmount(item);
+  if (amount === null) return '';
+  const unit = unitLabel(item.unit, item.ref_type === 'food' ? catalog.portions(item.ref_id) : []);
+  return `${String(Number(amount.toFixed(2)))} ${unit}`;
 }
 
 /** The label to store: trimmed text for quick rows (null when blank), always null otherwise. */

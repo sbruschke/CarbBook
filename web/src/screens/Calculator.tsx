@@ -1,4 +1,4 @@
-import { activeSettings, itemRefId, type PlanEntryData, type Synced, sumCarbs } from '@carbbook/core';
+import { activeSettings, itemRefId, type PlanEntryData, type Synced, sumCarbs, webhookMessage, type WebhookItemLine } from '@carbbook/core';
 import { useState } from 'react';
 import { lastDoseAt, useBgStatus, useCatalogData, useEligibleDoseVersions, useLogData, useNow, usePlanData, useUsdaPicks } from '../app/hooks';
 import { useServices } from '../app/services';
@@ -6,11 +6,13 @@ import { bgPrefill } from '../bg/bg';
 import { resolveBarcode } from '../barcode/resolve';
 import { buildCatalog } from '../db/catalog';
 import { isLive } from '../db/db';
+import { getMeta } from '../db/meta';
 import { type Change, dataOf } from '../db/store';
 import { estimateFor } from '../dose/dose';
 import { FoodEditor } from '../foods/FoodEditor';
 import { type FoodPrefill, prefillFromDraft } from '../foods/label';
 import { parseUsdaFoodId, uuidv7 } from '../lib/ids';
+import { postWebhook, WebhookError } from '../lib/webhook';
 import { saveMeal } from '../meals/saveMeal';
 import { dismissSlot, loadDismissed } from '../plan/dismissed';
 import { goalView } from '../plan/goal';
@@ -18,8 +20,8 @@ import { suggestionFor } from '../plan/suggestion';
 import type { SearchResult } from '../search/search';
 import { BgField, resolveBg } from '../ui/BgField';
 import { DoseCard } from '../ui/DoseCard';
-import { dayKey, formatCarbs, formatTime, fromDateTimeLocal, parseAmount, parseNonNegative, toDateTimeLocal } from '../ui/format';
-import { type DraftItem, draftAmount, draftItemCarbs, ItemEditor, itemLabel, newDraftItem, newQuickItem } from '../ui/ItemEditor';
+import { dayKey, formatCarbs, formatStamp, formatTime, fromDateTimeLocal, parseAmount, parseNonNegative, toDateTimeLocal } from '../ui/format';
+import { draftAmount, draftAmountLabel, draftItemCarbs, type DraftItem, ItemEditor, itemLabel, newDraftItem, newQuickItem } from '../ui/ItemEditor';
 import { ScannerDialog } from '../ui/ScannerDialog';
 import { SearchPanel } from '../ui/SearchPanel';
 import { saveUsdaFoodsFor } from '../usda/materialize';
@@ -212,8 +214,34 @@ export function Calculator() {
       });
     }
     await store.saveMany(changes);
+    const logged = `Logged ${formatCarbs(carbs.carbs_g)} carbs at ${formatTime(eatenAt)}.`;
     reset();
-    setMessage(`Logged ${formatCarbs(carbs.carbs_g)} carbs at ${formatTime(eatenAt)}.`);
+    setMessage(logged);
+    // Only logging posts, never a later edit — so nothing has to remember what was already sent.
+    // The entry is already saved: a webhook failure is a note appended to the status line, never a
+    // reason to unwind the log or to stop the calculator resetting.
+    const webhook = await getMeta(db, 'webhook_url');
+    if (!webhook) return;
+    try {
+      await postWebhook(
+        webhook,
+        webhookMessage({
+          when: formatStamp(eatenAt),
+          bg_mgdl: bg.mgdl,
+          carbs_g: carbs.carbs_g,
+          units: taken,
+          items: items.map((item, index): WebhookItemLine => ({
+            name: itemLabel(catalog, item),
+            // A quick row's amount IS its carb figure, which the line already ends with; printing
+            // "23 g carbs · 23 g carbs" would say the same thing twice.
+            amount: item.ref_type === 'quick' ? '' : draftAmountLabel(catalog, item),
+            carbs_g: results[index]!.carbs_g,
+          })),
+        }),
+      );
+    } catch (error) {
+      setMessage(`${logged} ${error instanceof WebhookError ? error.message : 'The webhook could not be posted to.'}`);
+    }
   }
 
   async function saveAsMeal(form: MealForm) {

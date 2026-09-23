@@ -214,4 +214,33 @@ final class VectorTests: XCTestCase {
             XCTAssertEqual(layout.overflow, c.expect.overflow, "stack overflow: \(c.name)")
         }
     }
+
+    struct WebhookVectors: Decodable {
+        struct Item: Decodable { let name: String; let amount: String; let carbs_g: Double? }
+        struct Input: Decodable {
+            let when: String; let bg_mgdl: Double?; let carbs_g: Double; let units: Double?; let items: [Item]
+        }
+        struct MessageCase: Decodable { let name: String; let limit: Int?; let input: Input; let expect: String }
+        struct UrlCase: Decodable { let name: String; let url: String; let problem: String?; let discord: Bool }
+        let message_cases: [MessageCase]
+        let url_cases: [UrlCase]
+    }
+
+    func testWebhookVectors() throws {
+        let w = try load("webhook-vectors", as: WebhookVectors.self)
+        XCTAssertFalse(w.message_cases.isEmpty)
+        XCTAssertFalse(w.url_cases.isEmpty)
+        for c in w.message_cases {
+            // JSON has no NaN: a null carbs snapshot in the vectors is the missing-value case.
+            let items = c.input.items.map { WebhookItemLine(name: $0.name, amount: $0.amount, carbsG: $0.carbs_g ?? .nan) }
+            let input = AccountabilityInput(
+                when: c.input.when, bgMgdl: c.input.bg_mgdl, carbsG: c.input.carbs_g, units: c.input.units)
+            let message = webhookMessage(input, items: items, limit: c.limit ?? discordContentLimit)
+            XCTAssertEqual(message, c.expect, "webhook message: \(c.name)")
+        }
+        for c in w.url_cases {
+            XCTAssertEqual(webhookUrlProblem(c.url), c.problem, "webhook url problem: \(c.name)")
+            XCTAssertEqual(isDiscordWebhookUrl(c.url), c.discord, "webhook url is discord: \(c.name)")
+        }
+    }
 }

@@ -7,4 +7,5 @@ export * from './carbs';
 export * from './dose';
 export * from './goal';
 export * from './accountability';
+export * from './webhook';
 export * from './sync';

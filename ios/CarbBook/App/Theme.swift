@@ -41,6 +41,16 @@ func formatNumber(_ value: Double?, digits: Int = 1) -> String {
     value.map { formatNumber($0, digits: digits) } ?? ""
 }
 
+/// "9/20/26, 12:24:58 PM CDT" — the same shape the web produces with `toLocaleString`, for the
+/// accountability text and the webhook message. The zone name is part of it on purpose: whoever
+/// receives the text has no reason to assume ours.
+let accountabilityStamp: DateFormatter = {
+    let formatter = DateFormatter()
+    formatter.dateStyle = .short
+    formatter.timeStyle = .long
+    return formatter
+}()
+
 /// "p:<portion id>" → "slice (30 g)" (just the label when its weight is unknown); "floz" → "fl oz".
 func unitLabel(_ unit: String, portions: [PortionData]) -> String {
     displayUnitName(unit, portions: portions)

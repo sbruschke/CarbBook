@@ -14,19 +14,10 @@ struct AccountabilitySection: View {
 
     @State private var copied = false
 
-    /// "9/20/26, 12:24:58 PM CDT" — the same shape the web produces with `toLocaleString`. The zone
-    /// name is part of it on purpose: whoever receives the text has no reason to assume ours.
-    private static let stamp: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .short
-        formatter.timeStyle = .long
-        return formatter
-    }()
-
     private var text: String {
         accountabilityText(
             AccountabilityInput(
-                when: Self.stamp.string(from: eatenAt), bgMgdl: bgMgdl, carbsG: carbsG, units: units))
+                when: accountabilityStamp.string(from: eatenAt), bgMgdl: bgMgdl, carbsG: carbsG, units: units))
     }
 
     var body: some View {

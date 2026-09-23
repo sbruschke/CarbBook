@@ -1,0 +1,99 @@
+{
+  "description": "Shared cases for core webhookMessage and webhookUrlProblem: the accountability sentence plus the item breakdown that only the webhook gets. `when` and each item's `amount` are already-formatted client strings, so both cores produce identical messages.",
+  "message_cases": [
+    {
+      "name": "sentence then breakdown",
+      "input": {
+        "when": "9/20/26, 12:24:58 PM CDT",
+        "bg_mgdl": 170,
+        "carbs_g": 59,
+        "units": 7,
+        "items": [
+          { "name": "Cheerios", "amount": "1 cup", "carbs_g": 24 },
+          { "name": "Milk, 2%", "amount": "8 fl oz", "carbs_g": 12 },
+          { "name": "Banana", "amount": "1 medium (118 g)", "carbs_g": 23 }
+        ]
+      },
+      "expect": "As of 9/20/26, 12:24:58 PM CDT my blood sugar is 170. I am eating something with 59 carbs and so am giving myself 7 units of fast acting insulin.\n\nIn it:\n• Cheerios — 1 cup · 24 g carbs\n• Milk, 2% — 8 fl oz · 12 g carbs\n• Banana — 1 medium (118 g) · 23 g carbs"
+    },
+    {
+      "name": "no items is the sentence alone",
+      "input": { "when": "9/20/26, 12:24:58 PM CDT", "bg_mgdl": 170, "carbs_g": 59, "units": 7, "items": [] },
+      "expect": "As of 9/20/26, 12:24:58 PM CDT my blood sugar is 170. I am eating something with 59 carbs and so am giving myself 7 units of fast acting insulin."
+    },
+    {
+      "name": "an item with no amount shows only its carbs",
+      "input": {
+        "when": "5/1/26, 9:30:00 AM CDT",
+        "bg_mgdl": 88,
+        "carbs_g": 23,
+        "units": 2,
+        "items": [{ "name": "Gatorade", "amount": "", "carbs_g": 23 }]
+      },
+      "expect": "As of 5/1/26, 9:30:00 AM CDT my blood sugar is 88. I am eating something with 23 carbs and so am giving myself 2 units of fast acting insulin.\n\nIn it:\n• Gatorade — 23 g carbs"
+    },
+    {
+      "name": "a missing carbs snapshot is left out, never printed as NaN",
+      "input": {
+        "when": "5/1/26, 9:30:00 AM CDT",
+        "bg_mgdl": null,
+        "carbs_g": 12,
+        "units": null,
+        "items": [{ "name": "Leftovers", "amount": "1 serving", "carbs_g": null }]
+      },
+      "expect": "As of 5/1/26, 9:30:00 AM CDT I do not have a blood sugar reading. I am eating something with 12 carbs and have not recorded a dose yet.\n\nIn it:\n• Leftovers — 1 serving"
+    },
+    {
+      "name": "carb figures drop trailing zeros and round to one decimal",
+      "input": {
+        "when": "3/4/26, 6:15:00 PM CST",
+        "bg_mgdl": 120,
+        "carbs_g": 58.96,
+        "units": 6.25,
+        "items": [
+          { "name": "Rice", "amount": "150 g", "carbs_g": 44.96 },
+          { "name": "Sauce", "amount": "2 tbsp", "carbs_g": 14.0 }
+        ]
+      },
+      "expect": "As of 3/4/26, 6:15:00 PM CST my blood sugar is 120. I am eating something with 59 carbs and so am giving myself 6.25 units of fast acting insulin.\n\nIn it:\n• Rice — 150 g · 45 g carbs\n• Sauce — 2 tbsp · 14 g carbs"
+    },
+    {
+      "name": "over the limit the tail is replaced with a count, never the sentence",
+      "limit": 210,
+      "input": {
+        "when": "9/20/26, 12:24:58 PM CDT",
+        "bg_mgdl": 170,
+        "carbs_g": 59,
+        "units": 7,
+        "items": [
+          { "name": "Cheerios", "amount": "1 cup", "carbs_g": 24 },
+          { "name": "Milk, 2%", "amount": "8 fl oz", "carbs_g": 12 },
+          { "name": "Banana", "amount": "1 medium (118 g)", "carbs_g": 23 }
+        ]
+      },
+      "expect": "As of 9/20/26, 12:24:58 PM CDT my blood sugar is 170. I am eating something with 59 carbs and so am giving myself 7 units of fast acting insulin.\n\nIn it:\n• Cheerios — 1 cup · 24 g carbs\n• …and 2 more"
+    },
+    {
+      "name": "a limit too small for any breakdown keeps the sentence whole",
+      "limit": 180,
+      "input": {
+        "when": "9/20/26, 12:24:58 PM CDT",
+        "bg_mgdl": 170,
+        "carbs_g": 59,
+        "units": 7,
+        "items": [{ "name": "Cheerios", "amount": "1 cup", "carbs_g": 24 }]
+      },
+      "expect": "As of 9/20/26, 12:24:58 PM CDT my blood sugar is 170. I am eating something with 59 carbs and so am giving myself 7 units of fast acting insulin."
+    }
+  ],
+  "url_cases": [
+    { "name": "a discord webhook", "url": "https://discord.com/api/webhooks/123456789012345678/abcDEF-123_xyz", "problem": null, "discord": true },
+    { "name": "the v10 api form", "url": "https://discord.com/api/v10/webhooks/123456789012345678/abcDEF-123_xyz", "problem": null, "discord": true },
+    { "name": "the legacy discordapp host", "url": "https://discordapp.com/api/webhooks/123456789012345678/abcDEF", "problem": null, "discord": true },
+    { "name": "any other https url is allowed but is not discord", "url": "https://example.com/hooks/abc", "problem": null, "discord": false },
+    { "name": "empty", "url": "   ", "problem": "Enter a webhook URL.", "discord": false },
+    { "name": "not a url at all", "url": "not a url", "problem": "That is not a valid URL.", "discord": false },
+    { "name": "http is refused: the url is itself the secret", "url": "http://discord.com/api/webhooks/1/abc", "problem": "The webhook URL must start with https://.", "discord": false },
+    { "name": "a discord url that is not a webhook path", "url": "https://discord.com/channels/1/2", "problem": null, "discord": false }
+  ]
+}

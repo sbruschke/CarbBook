@@ -34,7 +34,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.dxshdw.carbbook
         PRODUCT_NAME: CarbBook
-        MARKETING_VERSION: "0.5.0"
+        MARKETING_VERSION: "0.6.0"
         CURRENT_PROJECT_VERSION: "0"
         CODE_SIGNING_ALLOWED: NO
         CODE_SIGNING_REQUIRED: NO

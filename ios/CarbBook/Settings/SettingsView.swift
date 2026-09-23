@@ -13,6 +13,12 @@ struct SettingsView: View {
     /// The same shared filter Calculator and the Log editor use before picking an active version
     /// (`eligibleDoseSettingsVersions`, keyed on `LocalStore.rejectedDoseSettingsIds()`), so "in
     /// effect" here always agrees with what a new dose estimate would actually use.
+    /// Never the URL itself: a settings row is the wrong place to leave a bearer secret on screen.
+    private var webhookSummary: String {
+        guard let url = Keychain.loadWebhook() else { return "Nothing" }
+        return isDiscordWebhookUrl(url) ? "Discord" : (URL(string: url)?.host ?? "A webhook")
+    }
+
     private var active: DoseSettingsData? {
         activeSettings(eligibleDoseSettingsVersions(versions, rejectedIds: rejectedIds), nowMs())
     }
@@ -47,6 +53,13 @@ struct SettingsView: View {
                         Text("Only the owner can change dose settings.").font(.footnote).foregroundStyle(.secondary)
                     }
                     NavigationLink("Version history") { VersionHistoryView(versions: versions, rejectedIds: rejectedIds) }
+                }
+                Section("Webhook") {
+                    NavigationLink {
+                        WebhookSettingsView()
+                    } label: {
+                        LabeledContent("Log posts to", value: webhookSummary)
+                    }
                 }
                 Section("USDA library") {
                     Text(app.usdaStatus)

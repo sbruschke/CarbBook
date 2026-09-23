@@ -10,6 +10,12 @@ export interface MetaValues {
   usda_version: string;
   /** Last signed-in user, so the app opens offline. */
   user: User;
+  /**
+   * Where to post the accountability message when this device logs an entry. Kept per-device and
+   * never synced: the URL is a bearer secret for someone else's chat, so it has no business on the
+   * CarbBook server or on a device the owner did not set it up on.
+   */
+  webhook_url: string;
 }
 
 export type MetaKey = keyof MetaValues;
