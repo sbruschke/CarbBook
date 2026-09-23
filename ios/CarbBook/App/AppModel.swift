@@ -21,6 +21,8 @@ final class AppModel {
     let usdaInstaller: UsdaInstaller
     /// Food and meal photos, kept in Caches: the OS may purge them and they refetch on demand.
     let images: ImageCache
+    /// Apple Health writes (spec §1). Off until the Settings switch is turned on.
+    let health = HealthWriter()
     var usda: UsdaLibrary?
     var usdaStatus = "USDA library not downloaded yet"
     var user: ApiUser?

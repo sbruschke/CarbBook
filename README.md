@@ -26,6 +26,24 @@ pnpm --filter @carbbook/server carbbook import-usda <csv-dir> [<csv-dir>...]   #
 
 The dose estimate is informational. Any invalid input or settings produce a refusal, never a number.
 
+## Apple Health
+
+Logging a meal on the iPhone adds its carbs and the insulin you record **taking** to Apple Health.
+Off by default: Settings → Apple Health → "Write to Apple Health", which asks for permission first.
+
+- The *suggested* dose is never written — only `taken_units`. Health must not record insulin that
+  may not have been injected.
+- Zero, blank, negative and non-finite values produce no sample rather than a zero one.
+- Written once, at log time, keyed by entry id (`HealthLedger`, last 500 ids in `UserDefaults`), so
+  re-saving an entry cannot duplicate its samples. Editing an entry does not update Health.
+- A Health failure is reported under the switch and never fails the log.
+- Requires the `com.apple.developer.healthkit` entitlement (`ios/CarbBook.entitlements`) to survive
+  signing, so the App ID used to sideload needs the HealthKit capability — a free Apple ID cannot
+  grant it. Without it the switch turns on but no samples appear.
+
+The rules live in `CarbBookKit` (`HealthSamples.swift`, `HealthLedger.swift`) with no HealthKit
+import, so they run in the Linux suite; `ios/CarbBook/Health/HealthWriter.swift` is the thin adapter.
+
 ## Log webhook
 
 Each device can post an entry's accountability text to a webhook — a Discord channel's incoming

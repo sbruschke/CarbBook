@@ -556,3 +556,20 @@ Expected: Health still shows exactly one carb sample and one insulin sample for 
 - [ ] **Step 6: Report the results**
 
 Report what appeared in Health for each step. If step 3 shows nothing while the status line claims success, stop and investigate before shipping — a silent no-op is the failure mode this feature is most likely to have.
+
+
+---
+
+## Status
+
+Tasks 1-4 done 2026-09-23 on `main`, 250 CarbBookKit tests green.
+
+Task 0 (the LiveContainer feasibility gate) was **never run and is now moot**: CarbBook is sideloaded
+as itself rather than as a LiveContainer guest, so it carries its own entitlements. The probe branch
+`feat/apple-health-writes` and the hub's throwaway "CarbBook (Health probe)" app are both obsolete.
+`ios/CarbBook.entitlements` + `CODE_SIGN_ENTITLEMENTS` replace that gate: the App ID used to sign
+must have the HealthKit capability, which a free Apple ID cannot grant.
+
+Task 5 (app-target compile) is `release.yml` on the push. Task 6 (on-device verification) is still
+open and needs the phone — the failure mode to watch for is a status line claiming success while
+Health shows nothing.

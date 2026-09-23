@@ -269,6 +269,10 @@ final class CalculatorModel {
             changes.append(linked)
         }
         try app.save(changes)
+        // Apple Health (spec §1): fire-and-forget, after the save has succeeded. A Health failure
+        // must never fail or delay the log itself, so this is not awaited and cannot throw.
+        let savedEntry = records.entry
+        Task { await app.health.write(savedEntry) }
         let logged = "Logged \(formatNumber(records.entry.totalCarbsG))g" + (records.entry.takenUnits.map { ", \(formatNumber($0, digits: 2))u taken" } ?? "")
         message = logged
         postToWebhook(records.entry, items: records.items, logged: logged)

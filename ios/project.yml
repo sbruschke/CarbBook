@@ -34,7 +34,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.dxshdw.carbbook
         PRODUCT_NAME: CarbBook
-        MARKETING_VERSION: "0.6.0"
+        MARKETING_VERSION: "0.7.0"
         CURRENT_PROJECT_VERSION: "0"
         CODE_SIGNING_ALLOWED: NO
         CODE_SIGNING_REQUIRED: NO
@@ -44,6 +44,11 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_CFBundleDisplayName: CarbBook
         INFOPLIST_KEY_LSRequiresIPhoneOS: YES
+        # HealthKit needs both halves: the entitlement (granted at signing time; the file sits beside
+        # project.yml so it is never copied into the bundle as a resource) and this usage
+        # string. iOS terminates the app on an authorization request that has no usage string.
+        CODE_SIGN_ENTITLEMENTS: CarbBook.entitlements
+        INFOPLIST_KEY_NSHealthUpdateUsageDescription: "CarbBook adds the carbs you log, and the insulin you record taking, to Apple Health."
         INFOPLIST_KEY_NSCameraUsageDescription: "CarbBook uses the camera to scan food barcodes and to take photos of your foods and meals."
         INFOPLIST_KEY_NSPhotoLibraryUsageDescription: "CarbBook uses photos you choose to illustrate your foods and meals."
         INFOPLIST_KEY_UILaunchScreen_Generation: YES

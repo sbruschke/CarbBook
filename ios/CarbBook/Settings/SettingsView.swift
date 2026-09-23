@@ -61,6 +61,19 @@ struct SettingsView: View {
                         LabeledContent("Log posts to", value: webhookSummary)
                     }
                 }
+                Section("Apple Health") {
+                    Toggle("Write to Apple Health", isOn: Binding(
+                        get: { app.health.enabled },
+                        set: { on in Task { await app.health.setEnabled(on) } }))
+                    .disabled(!app.health.isAvailable)
+                    Text(app.health.isAvailable
+                         ? "Carbs and the insulin you record taking are added when you log a meal on this iPhone."
+                         : "Apple Health is not available on this device.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                    if let status = app.health.lastStatus {
+                        Text(status).font(.footnote).foregroundStyle(.secondary)
+                    }
+                }
                 Section("USDA library") {
                     Text(app.usdaStatus)
                     Button("Check for update") { Task { await app.updateUsda() } }
