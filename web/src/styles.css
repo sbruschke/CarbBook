@@ -619,3 +619,17 @@ fieldset {
   align-items: center;
   margin-top: 8px;
 }
+
+.log-item-end {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.paste-card p {
+  margin: 0;
+}
+
+.export-card .button-row {
+  margin-bottom: 0;
+}

@@ -25,6 +25,8 @@ import { draftAmount, draftAmountLabel, draftItemCarbs, type DraftItem, ItemEdit
 import { ScannerDialog } from '../ui/ScannerDialog';
 import { SearchPanel } from '../ui/SearchPanel';
 import { saveUsdaFoodsFor } from '../usda/materialize';
+import { pasteRows } from '../log/clipboard';
+import { PasteCard } from '../log/PasteCard';
 
 interface MealForm {
   name: string;
@@ -299,6 +301,8 @@ export function Calculator() {
           </div>
         </section>
       )}
+      {/* Pasted rows are plain draft rows: carbs recompute from today's foods, like a loaded plan. */}
+      <PasteCard onPaste={(clipboard) => setItems((current) => [...current, ...pasteRows(clipboard, () => uuidv7(now()))])} />
       <ItemEditor items={items} catalog={catalog} onChange={setItems} />
       {items.length > 0 && (
         <p className="total" data-testid="total-carbs">
