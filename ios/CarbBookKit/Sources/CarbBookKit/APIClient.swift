@@ -63,6 +63,22 @@ public struct TokenInfo: Codable, Equatable, Sendable, Identifiable {
     }
 }
 
+/// `GET /api/bg/readings` — stored CGM history (BG history spec 2026-10-07). Display only.
+public struct BgHistory: Codable, Equatable, Sendable {
+    public var readings: [BgPoint]
+    /// Oldest reading stored at all; before it there is no history, not a gap.
+    public var earliestAt: Int64?
+
+    public init(readings: [BgPoint], earliestAt: Int64?) {
+        self.readings = readings; self.earliestAt = earliestAt
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case readings
+        case earliestAt = "earliest_at"
+    }
+}
+
 /// `GET /api/bg`
 public struct BgReading: Codable, Equatable, Sendable {
     public var mgdl: Double
@@ -257,6 +273,25 @@ public final class APIClient: @unchecked Sendable {
 
     public func bg() async throws -> BgReading {
         try decode(BgReading.self, try await send(makeRequest("GET", "/api/bg")))
+    }
+
+    /// Stored readings in [fromMs, toMs). The server caps one request at 92 days, so a longer range
+    /// is asked for in 90-day pieces.
+    public func bgReadings(fromMs: Int64, toMs: Int64) async throws -> BgHistory {
+        let chunk: Int64 = 90 * 24 * 3_600_000
+        var readings: [BgPoint] = []
+        var earliest: Int64?
+        var start = fromMs
+        while start < toMs {
+            let end = min(toMs, start + chunk)
+            let part = try decode(BgHistory.self, try await send(makeRequest(
+                "GET", "/api/bg/readings",
+                query: [URLQueryItem(name: "from", value: String(start)), URLQueryItem(name: "to", value: String(end))])))
+            readings.append(contentsOf: part.readings)
+            earliest = part.earliestAt
+            start = end
+        }
+        return BgHistory(readings: readings, earliestAt: earliest)
     }
 
     public func barcode(_ code: String) async throws -> BarcodeLookup {

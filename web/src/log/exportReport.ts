@@ -1,5 +1,8 @@
 import {
   activeSettings,
+  bgStats,
+  dailyPattern,
+  mealResponse,
   buildLogReport,
   type DoseSettingsData,
   type LogEntryData,
@@ -10,7 +13,10 @@ import {
   type Synced,
 } from '@carbbook/core';
 import { dayKey, dayRange, formatTime, shiftDay, unitLabel } from '../ui/format';
-import type { ReportLabels } from './reportHtml';
+import { hourLabel, hourLabelAt, mealResponseText, statsLine } from '../bg/BgViews';
+import { bgDayChartSvg, bgPatternSvg, tirBarHtml } from '../bg/chart';
+import type { BgRangeResult } from '../bg/history';
+import type { ReportBg, ReportLabels } from './reportHtml';
 
 /** Every day key from `from` to `to`, inclusive; empty when the range is backwards. */
 export function daysBetween(from: string, to: string): string[] {
@@ -117,4 +123,53 @@ export function printReport(html: string, doc: Document = document): Promise<voi
     frame.srcdoc = html;
     doc.body.appendChild(frame);
   });
+}
+
+/**
+ * The CGM parts of the report from a fetched range: summary (time in range, average, GMI, CV, sensor
+ * data, and the daily pattern for ranges of 3+ days), a chart per day with its meals marked, and the
+ * after-meal line per entry. Without history it is only a note, and the rest of the report stands.
+ */
+export function reportBg(bg: BgRangeResult, report: Report, from: string, to: string): ReportBg {
+  const empty: ReportBg = { summaryHtml: null, dayHtml: {}, mealText: {}, note: null };
+  if (bg.status !== 'ok') return { ...empty, note: `No CGM section: ${bg.message ?? 'BG history unavailable.'}` };
+  if (bg.points.length === 0) return { ...empty, note: 'No CGM readings stored for this range.' };
+  const [start] = dayRange(from);
+  const [, end] = dayRange(to);
+  const covered = Math.max(start, Math.min(end, bg.earliestAt ?? end));
+  const stats = bgStats(bg.points, end - covered)!;
+  const days = report.days.length;
+  const line = `avg ${Math.round(stats.mean)} mg/dL · GMI ${stats.gmi.toFixed(1)}% · CV ${Math.round(stats.cv)}% · sensor data ${Math.round(stats.coverage * 100)}%`;
+  const startNote =
+    bg.earliestAt !== null && bg.earliestAt > start
+      ? ` · history starts ${new Date(bg.earliestAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
+      : '';
+  const summaryHtml = [
+    '<h3>Blood sugar (CGM) · time in range 70–180</h3>',
+    tirBarHtml(stats),
+    `<p class="line">${line}${startNote}</p>`,
+    days >= 3 ? bgPatternSvg(dailyPattern(bg.points, (at) => new Date(at).getHours()), hourLabel, 150) : '',
+  ].join('');
+  const dayHtml: Record<string, string> = {};
+  const mealText: Record<string, string> = {};
+  for (const day of report.days) {
+    const [dStart, dEnd] = dayRange(day.day);
+    const points = bg.points.filter((p) => p.at >= dStart && p.at < dEnd);
+    if (points.length === 0) continue;
+    const dayStats = bgStats(points, dEnd - dStart)!;
+    dayHtml[day.day] =
+      bgDayChartSvg({
+        start: dStart,
+        end: dEnd,
+        points,
+        meals: day.entries.map((e) => ({ at: e.eaten_at, label: `${String(Number(e.carbs_g.toFixed(0)))} g` })),
+        hourLabel: hourLabelAt,
+        height: 120,
+      }) + `<div class="line">${statsLine(dayStats)}</div>`;
+    for (const entry of day.entries) {
+      const text = mealResponseText(mealResponse(bg.points, entry.eaten_at));
+      if (text) mealText[entry.id] = text;
+    }
+  }
+  return { summaryHtml, dayHtml, mealText, note: null };
 }

@@ -13,17 +13,19 @@ notify() {
 }
 
 mkdir -p "$DEST"
-if ! rsync -a --ignore-existing --include='carbbook-*.db.gz' --exclude='*' \
+if ! rsync -a --ignore-existing --include='carbbook-*.db.gz' --include='dexcom-readings-*.db.gz' --exclude='*' \
      -e 'ssh -o BatchMode=yes -o ConnectTimeout=15' pi:/opt/carbbook/backups/ "$DEST/"; then
   notify "pull from pi failed (Pi unreachable?)"
   exit 1
 fi
 
-for f in "$DEST"/carbbook-*.db.gz; do
+for f in "$DEST"/carbbook-*.db.gz "$DEST"/dexcom-readings-*.db.gz; do
+  [ -e "$f" ] || continue
   gzip -t "$f" || { notify "corrupt backup $f"; exit 1; }
 done
 
 ls -1 "$DEST"/carbbook-*.db.gz | sort | head -n -"$KEEP" | xargs -r rm -f
+ls -1 "$DEST"/dexcom-readings-*.db.gz 2>/dev/null | sort | head -n -7 | xargs -r rm -f
 
 NEWEST=$(ls -1 "$DEST"/carbbook-*.db.gz | sort | tail -n 1)
 if [ -z "$(find "$NEWEST" -mmin -$((MAX_AGE_H * 60)))" ]; then

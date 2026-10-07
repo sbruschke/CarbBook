@@ -1,9 +1,11 @@
 import { activeSettings, type Catalog, type LogItemData, type StackEntry, type Synced } from '@carbbook/core';
 import { useState } from 'react';
+import { BgDay, BgTrends } from '../bg/BgViews';
 import { useCatalogData, useEligibleDoseVersions, useLogData } from '../app/hooks';
 import { useServices } from '../app/services';
 import { buildCatalog } from '../db/catalog';
-import { logReport, printReport, reportLabels } from '../log/exportReport';
+import { fetchBgRange } from '../bg/history';
+import { logReport, printReport, reportBg, reportLabels } from '../log/exportReport';
 import { LogEntryEditor } from '../log/LogEntryEditor';
 import { reportHtml } from '../log/reportHtml';
 import { goalView } from '../plan/goal';
@@ -20,7 +22,7 @@ function stackEntries(catalog: Catalog, items: Synced<LogItemData>[]): StackEntr
 }
 
 export function Log() {
-  const { now } = useServices();
+  const { api, now } = useServices();
   const log = useLogData();
   const versions = useEligibleDoseVersions();
   // The catalog is what turns a logged item's ref into its food's or meal's photo. One live query
@@ -29,6 +31,7 @@ export function Log() {
   const [day, setDay] = useState(() => dayKey(now()));
   const [editing, setEditing] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [view, setView] = useState<'days' | 'trends'>('days');
 
   if (editing) return <LogEntryEditor entryId={editing} onDone={() => setEditing(null)} />;
   if (!log || !versions || !data) return <p>Loading…</p>;
@@ -44,12 +47,26 @@ export function Log() {
   return (
     <div className="screen">
       <h1>Log</h1>
+      <div className="segmented" role="tablist" aria-label="Log view">
+        <button type="button" role="tab" aria-selected={view === 'days'} onClick={() => setView('days')}>
+          Days
+        </button>
+        <button type="button" role="tab" aria-selected={view === 'trends'} onClick={() => setView('trends')}>
+          BG trends
+        </button>
+      </div>
+      {view === 'trends' ? (
+        <BgTrends entries={log.entries} />
+      ) : (
+        <>
       {exporting ? (
         <ExportCard
           defaultTo={day}
           onExport={async (from, to) => {
             const report = logReport({ from, to, entries: log.entries, items: log.items, portions: data.portions, versions });
-            await printReport(reportHtml(report, reportLabels(from, to, now())));
+            // CGM history is fetched fresh for the range; offline, the report prints without it.
+            const bg = await fetchBgRange(api, dayRange(from)[0], dayRange(to)[1], now());
+            await printReport(reportHtml(report, reportLabels(from, to, now()), reportBg(bg, report, from, to)));
           }}
           onClose={() => setExporting(false)}
         />
@@ -72,6 +89,7 @@ export function Log() {
       <p className="total" data-testid="day-totals">
         {formatCarbs(totalCarbs)} carbs · {formatUnits(totalTaken)} taken
       </p>
+      <BgDay day={day} entries={entries} />
       {entries.length === 0 && <p className="muted">Nothing logged this day.</p>}
       <ul className="list">
         {entries.map((entry) => {
@@ -112,6 +130,8 @@ export function Log() {
           );
         })}
       </ul>
+        </>
+      )}
     </div>
   );
 }

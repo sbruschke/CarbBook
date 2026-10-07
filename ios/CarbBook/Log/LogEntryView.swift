@@ -83,6 +83,7 @@ struct LogEntryView: View {
                     .disabled(items.isEmpty)
                 Button("Recalculate from current meal") { recalculate() }
             }
+            MealBgSection(eatenAt: date(ms: entry.eatenAt))
             // Reads from what is entered above it, including edits not yet saved: BG and the taken
             // dose come from the fields when they have been edited, from the entry otherwise —
             // the same precedence `save()` uses, so the text never claims a value that would not
