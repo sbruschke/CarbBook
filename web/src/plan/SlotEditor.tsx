@@ -8,6 +8,8 @@ import type { SearchResult } from '../search/search';
 import { formatDayLabel } from '../ui/format';
 import { type DraftItem, draftAmount, draftItemCarbs, ItemEditor, newDraftItem, newQuickItem } from '../ui/ItemEditor';
 import { SearchPanel } from '../ui/SearchPanel';
+import { pasteRows } from '../log/clipboard';
+import { PasteCard } from '../log/PasteCard';
 import { goalView } from './goal';
 import { removeSlot, saveSlot } from './saveSlot';
 import type { Slot } from './slots';
@@ -85,6 +87,7 @@ export function SlotEditor(props: {
       <h1>
         {windowName} · {formatDayLabel(date)}
       </h1>
+      <PasteCard onPaste={(clipboard) => setItems((current) => [...current, ...pasteRows(clipboard, () => uuidv7(now()))])} />
       <ItemEditor items={items} catalog={catalog} onChange={setItems} reorderable />
       <SearchPanel
         label="Add to this slot"

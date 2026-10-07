@@ -1,0 +1,79 @@
+{
+  "description": "Shared cases for core buildLogReport (the printable log export) and clipItemsFromLog (copying logged items). Day keys and times arrive already worked out by the platform, so both cores produce identical numbers. Numbers compare within `tolerance`.",
+  "tolerance": 1e-9,
+  "report_cases": [
+    {
+      "name": "groups onto days, sorts by time, totals, and keeps empty days",
+      "input": {
+        "days": ["2026-10-05", "2026-10-06", "2026-10-07"],
+        "entries": [
+          { "id": "b", "day": "2026-10-05", "eaten_at": 2000, "time": "12:30", "window_name": "Lunch", "bg_mgdl": 210, "carbs_g": 60, "suggested_units": 9, "taken_units": 9, "notes": null, "goal": { "min": 50, "max": 80 }, "items": [] },
+          { "id": "a", "day": "2026-10-05", "eaten_at": 1000, "time": "07:00", "window_name": "Breakfast", "bg_mgdl": 120, "carbs_g": 56, "suggested_units": 6, "taken_units": 7, "notes": "late", "goal": { "min": 30, "max": 50 }, "items": [] },
+          { "id": "c", "day": "2026-10-07", "eaten_at": 5000, "time": "20:00", "window_name": "HS Snack", "bg_mgdl": null, "carbs_g": 15.5, "suggested_units": null, "taken_units": null, "notes": null, "goal": { "min": 10, "max": 30 }, "items": [] }
+        ]
+      },
+      "expect": {
+        "days": [
+          { "day": "2026-10-05", "entry_ids": ["a", "b"], "carbs_g": 116, "taken_units": 16, "goal_statuses": ["off", "in"] },
+          { "day": "2026-10-06", "entry_ids": [], "carbs_g": 0, "taken_units": 0, "goal_statuses": [] },
+          { "day": "2026-10-07", "entry_ids": ["c"], "carbs_g": 15.5, "taken_units": 0, "goal_statuses": ["in"] }
+        ],
+        "summary": {
+          "days": 3, "logged_days": 2, "entries": 3, "carbs_g": 131.5, "avg_carbs_per_logged_day": 65.75,
+          "taken_units": 16, "avg_taken_per_logged_day": 8, "bg_readings": 2, "avg_bg": 165, "min_bg": 120, "max_bg": 210,
+          "goal_counts": { "none": 0, "in": 2, "near": 0, "off": 1, "out": 0 }
+        }
+      }
+    },
+    {
+      "name": "entries outside the range are dropped; no goal counts as none",
+      "input": {
+        "days": ["2026-10-06"],
+        "entries": [
+          { "id": "in", "day": "2026-10-06", "eaten_at": 1, "time": "09:00", "window_name": null, "bg_mgdl": 95, "carbs_g": 20, "suggested_units": 2, "taken_units": 2.5, "notes": null, "goal": null, "items": [] },
+          { "id": "out", "day": "2026-10-08", "eaten_at": 2, "time": "09:00", "window_name": null, "bg_mgdl": 300, "carbs_g": 99, "suggested_units": 9, "taken_units": 9, "notes": null, "goal": null, "items": [] }
+        ]
+      },
+      "expect": {
+        "days": [ { "day": "2026-10-06", "entry_ids": ["in"], "carbs_g": 20, "taken_units": 2.5, "goal_statuses": ["none"] } ],
+        "summary": {
+          "days": 1, "logged_days": 1, "entries": 1, "carbs_g": 20, "avg_carbs_per_logged_day": 20,
+          "taken_units": 2.5, "avg_taken_per_logged_day": 2.5, "bg_readings": 1, "avg_bg": 95, "min_bg": 95, "max_bg": 95,
+          "goal_counts": { "none": 1, "in": 0, "near": 0, "off": 0, "out": 0 }
+        }
+      }
+    },
+    {
+      "name": "nothing logged: averages are null, not zero",
+      "input": { "days": ["2026-10-01", "2026-10-02"], "entries": [] },
+      "expect": {
+        "days": [
+          { "day": "2026-10-01", "entry_ids": [], "carbs_g": 0, "taken_units": 0, "goal_statuses": [] },
+          { "day": "2026-10-02", "entry_ids": [], "carbs_g": 0, "taken_units": 0, "goal_statuses": [] }
+        ],
+        "summary": {
+          "days": 2, "logged_days": 0, "entries": 0, "carbs_g": 0, "avg_carbs_per_logged_day": null,
+          "taken_units": 0, "avg_taken_per_logged_day": null, "bg_readings": 0, "avg_bg": null, "min_bg": null, "max_bg": null,
+          "goal_counts": { "none": 0, "in": 0, "near": 0, "off": 0, "out": 0 }
+        }
+      }
+    }
+  ],
+  "clip_cases": [
+    {
+      "name": "food, meal and quick rows; a default-named quick row loses its label",
+      "items": [
+        { "ref_type": "food", "ref_id": "rice", "amount": 1.5, "unit": "cup", "display_name": "Calrose Rice" },
+        { "ref_type": "meal", "ref_id": "chili", "amount": 1, "unit": "serving", "display_name": "Chili" },
+        { "ref_type": "quick", "ref_id": "q1", "amount": 12, "unit": "carbs", "display_name": "Salsa" },
+        { "ref_type": "quick", "ref_id": "q2", "amount": 5, "unit": "carbs", "display_name": "Extra carbs" }
+      ],
+      "expect": [
+        { "ref_type": "food", "ref_id": "rice", "amount": 1.5, "unit": "cup", "label": null },
+        { "ref_type": "meal", "ref_id": "chili", "amount": 1, "unit": "serving", "label": null },
+        { "ref_type": "quick", "ref_id": "q1", "amount": 12, "unit": "carbs", "label": "Salsa" },
+        { "ref_type": "quick", "ref_id": "q2", "amount": 5, "unit": "carbs", "label": null }
+      ]
+    }
+  ]
+}

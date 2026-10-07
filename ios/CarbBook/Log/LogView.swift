@@ -11,6 +11,7 @@ struct LogView: View {
     /// food's or meal's photo. Both are read once per load — never once per row.
     @State private var itemsByEntry: [Id: [LogItemData]] = [:]
     @State private var catalog = InMemoryCatalog()
+    @State private var exporting = false
 
     /// The goal of the window an entry was logged in, if that window still has one.
     private func goal(for entry: LogEntryData) -> CarbGoal? {
@@ -51,6 +52,12 @@ struct LogView: View {
                 }
             }
             .navigationTitle("Log")
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Button { exporting = true } label: { Label("Export PDF", systemImage: "square.and.arrow.up") }
+                }
+            }
+            .sheet(isPresented: $exporting) { LogExportSheet(initialDay: day) }
             .onAppear(perform: load)
             .onChange(of: day) { load() }
             .onChange(of: app.revision) { load() }

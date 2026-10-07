@@ -76,6 +76,10 @@ struct CalculatorView: View {
 
     private var itemsSection: some View {
         Section {
+            // Pasted rows are plain editable lines: carbs recompute from today's foods.
+            PasteRow { clipboard in
+                model.lines.append(contentsOf: clipboard.calculatorLines(catalog: model.catalog) { UUID().uuidString })
+            }
             if let suggestion = model.suggestion {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(suggestion.text).font(.callout)

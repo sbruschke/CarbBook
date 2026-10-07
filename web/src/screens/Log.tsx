@@ -3,7 +3,9 @@ import { useState } from 'react';
 import { useCatalogData, useEligibleDoseVersions, useLogData } from '../app/hooks';
 import { useServices } from '../app/services';
 import { buildCatalog } from '../db/catalog';
+import { logReport, printReport, reportLabels } from '../log/exportReport';
 import { LogEntryEditor } from '../log/LogEntryEditor';
+import { reportHtml } from '../log/reportHtml';
 import { goalView } from '../plan/goal';
 import { dayKey, dayRange, formatCarbs, formatTime, formatUnits, shiftDay } from '../ui/format';
 import { ImageStack } from '../ui/ImageStack';
@@ -26,6 +28,7 @@ export function Log() {
   const data = useCatalogData();
   const [day, setDay] = useState(() => dayKey(now()));
   const [editing, setEditing] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
 
   if (editing) return <LogEntryEditor entryId={editing} onDone={() => setEditing(null)} />;
   if (!log || !versions || !data) return <p>Loading…</p>;
@@ -41,6 +44,22 @@ export function Log() {
   return (
     <div className="screen">
       <h1>Log</h1>
+      {exporting ? (
+        <ExportCard
+          defaultTo={day}
+          onExport={async (from, to) => {
+            const report = logReport({ from, to, entries: log.entries, items: log.items, portions: data.portions, versions });
+            await printReport(reportHtml(report, reportLabels(from, to, now())));
+          }}
+          onClose={() => setExporting(false)}
+        />
+      ) : (
+        <div className="button-row">
+          <button type="button" onClick={() => setExporting(true)}>
+            Export PDF…
+          </button>
+        </div>
+      )}
       <div className="day-nav">
         <button type="button" aria-label="Previous day" onClick={() => setDay(shiftDay(day, -1))}>
           ‹
@@ -94,5 +113,69 @@ export function Log() {
         })}
       </ul>
     </div>
+  );
+}
+
+const PRESETS = [7, 14, 30, 90];
+
+/**
+ * Log export spec: pick a range, then the browser's print dialog makes the PDF ("Save as PDF").
+ * The range defaults to the week ending on the day being viewed.
+ */
+function ExportCard(props: { defaultTo: string; onExport: (from: string, to: string) => Promise<void>; onClose: () => void }) {
+  const [to, setTo] = useState(props.defaultTo);
+  const [from, setFrom] = useState(() => shiftDay(props.defaultTo, -6));
+  const [error, setError] = useState<string | null>(null);
+
+  async function run() {
+    if (!from || !to) return setError('Choose both dates.');
+    if (from > to) return setError('The start date is after the end date.');
+    setError(null);
+    try {
+      await props.onExport(from, to);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'The print view could not be opened.');
+    }
+  }
+
+  return (
+    <section className="card export-card" aria-label="Export log">
+      <h2>Export log as PDF</h2>
+      <div className="button-row">
+        {PRESETS.map((days) => (
+          <button
+            key={days}
+            type="button"
+            onClick={() => {
+              setFrom(shiftDay(to || props.defaultTo, -(days - 1)));
+            }}
+          >
+            Last {days} days
+          </button>
+        ))}
+      </div>
+      <label>
+        From
+        <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+      </label>
+      <label>
+        To
+        <input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+      </label>
+      <p className="hint">Opens the print dialog — choose “Save as PDF”.</p>
+      {error && (
+        <p role="alert" className="errors">
+          {error}
+        </p>
+      )}
+      <div className="button-row">
+        <button type="button" className="primary" onClick={() => void run()}>
+          Create PDF
+        </button>
+        <button type="button" onClick={props.onClose}>
+          Close
+        </button>
+      </div>
+    </section>
   );
 }

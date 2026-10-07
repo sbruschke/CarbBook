@@ -59,6 +59,16 @@ accountability text on screen is unchanged.
 - The post is made by the device, directly to the webhook. A failure is reported next to "Logged …"
   and never unwinds the saved entry.
 
+## Log export and copy
+
+- **Export PDF** on the Log screen: a range of days, day by day — BG, carbs against the window goal,
+  suggested and taken doses, items, notes — with a summary up top. The web opens the print dialog
+  (choose "Save as PDF"); iOS makes the PDF and offers Preview and Share.
+- **Copy** in a log entry (the whole meal, or one row) and **Paste** in the Calculator or a plan slot.
+  The clipboard is per device and never synced. Pasted rows recompute their carbs from today's foods.
+
+Spec: `docs/superpowers/specs/2026-10-07-log-export-and-copy-design.md`.
+
 ## Server environment
 
 | Variable | Default | Notes |

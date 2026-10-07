@@ -1,5 +1,6 @@
 import {
   activeSettings,
+  clipItemsFromLog,
   type DoseSettingsData,
   itemCarbs,
   type LogEntryData,
@@ -17,9 +18,10 @@ import { type Change, dataOf } from '../db/store';
 import { estimateFor } from '../dose/dose';
 import { AccountabilityText } from '../ui/AccountabilityText';
 import { DoseCard } from '../ui/DoseCard';
-import { formatCarbs, fromDateTimeLocal, parseNonNegative, parseWholeNumber, toDateTimeLocal, unitLabel } from '../ui/format';
+import { dayKey, formatCarbs, formatDayLabel, fromDateTimeLocal, parseNonNegative, parseWholeNumber, toDateTimeLocal, unitLabel } from '../ui/format';
 import { ImageThumb } from '../ui/ImageThumb';
 import { itemName, itemRecord } from '../ui/ItemEditor';
+import { copyToClipboard } from './clipboard';
 
 export function LogEntryEditor(props: { entryId: string; onDone: () => void }) {
   const { db } = useServices();
@@ -89,6 +91,24 @@ function EntryForm(props: {
   const total = carbs.carbs_g;
   const settings = versions.find((v) => v.id === entry.settings_version_id) ?? activeSettings(versions, eatenAt);
   const estimate = settings ? estimateFor({ settings, windowName: entry.window_name, eatenAt, carbs, bg }) : null;
+
+  const amountText = (row: Synced<LogItemData>) =>
+    row.ref_type === 'quick' ? '' : `${row.amount} ${unitLabel(row.unit, data.portions.filter((p) => p.food_id === row.ref_id))}`;
+
+  /**
+   * Log copy spec: puts rows on the in-app clipboard for the Calculator or a plan slot, and — as a
+   * convenience for pasting into anything else — a plain-text list on the system clipboard. The
+   * in-app copy is what matters; the system one is best effort and fails silently.
+   */
+  function copy(source: string, copied: Synced<LogItemData>[]) {
+    copyToClipboard({ source, items: clipItemsFromLog(copied) });
+    const text = [source, ...copied.map((row) => `- ${[row.display_name, amountText(row), formatCarbs(row.carbs_g)].filter(Boolean).join(' · ')}`)].join('\n');
+    navigator.clipboard?.writeText(text).catch(() => {});
+    setMessage(
+      `Copied ${copied.length === 1 ? copied[0]!.display_name : `${copied.length} items`}. Paste in the Calculator or a plan slot.`,
+    );
+  }
+  const entrySource = `${entry.window_name ?? 'Meal'} · ${formatDayLabel(dayKey(entry.eaten_at))}`;
 
   /** Spec §8: refresh each item's carbs snapshot from current food/meal data via core. */
   function recalculate() {
@@ -192,13 +212,23 @@ function EntryForm(props: {
                 {row.display_name} · {row.amount} {unitLabel(row.unit, data.portions.filter((p) => p.food_id === row.ref_id))}
               </span>
             </span>
-            <span>{formatCarbs(row.carbs_g)}</span>
+            <span className="log-item-end">
+              {formatCarbs(row.carbs_g)}
+              <button type="button" aria-label={`Copy ${row.display_name}`} onClick={() => copy(row.display_name, [row])}>
+                Copy
+              </button>
+            </span>
           </li>
         ))}
       </ul>
-      <button type="button" onClick={recalculate}>
-        Recalculate from current meal
-      </button>
+      <div className="button-row">
+        <button type="button" disabled={rows.length === 0} onClick={() => copy(entrySource, rows)}>
+          Copy meal
+        </button>
+        <button type="button" onClick={recalculate}>
+          Recalculate from current meal
+        </button>
+      </div>
       {message && <p role="status">{message}</p>}
       <p className="total" data-testid="entry-carbs">
         Total {formatCarbs(total)} carbs

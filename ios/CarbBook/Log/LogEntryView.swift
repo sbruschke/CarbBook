@@ -71,7 +71,16 @@ struct LogEntryView: View {
                         Spacer()
                         Text("\(formatNumber(item.carbsG))g").monospacedDigit()
                     }
+                    .swipeActions(edge: .leading) {
+                        Button { copy(item.displayName, [item]) } label: { Label("Copy", systemImage: "doc.on.doc") }
+                            .tint(.accentColor)
+                    }
+                    .contextMenu {
+                        Button { copy(item.displayName, [item]) } label: { Label("Copy \(item.displayName)", systemImage: "doc.on.doc") }
+                    }
                 }
+                Button { copy(entrySource, items) } label: { Label("Copy meal", systemImage: "doc.on.doc") }
+                    .disabled(items.isEmpty)
                 Button("Recalculate from current meal") { recalculate() }
             }
             // Reads from what is entered above it, including edits not yet saved: BG and the taken
@@ -90,6 +99,19 @@ struct LogEntryView: View {
             ToolbarItem(placement: .confirmationAction) { Button("Save") { save() } }
         }
         .onAppear(perform: load)
+    }
+
+    /// "Lunch · Tue 6 Oct" — what the paste prompt says was copied.
+    private var entrySource: String {
+        let day = date(ms: entry.eatenAt).formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated))
+        return "\(entry.windowName ?? "Meal") · \(day)"
+    }
+
+    /// Log copy spec: rows go on the in-app clipboard for the Calculator or a plan slot (and as text
+    /// on the system clipboard). Copies the rows as logged; pasting recomputes their carbs.
+    private func copy(_ source: String, _ copied: [LogItemData]) {
+        ClipboardStore.shared.copy(source: source, items: copied, catalog: catalog)
+        message = "Copied \(copied.count == 1 ? copied[0].displayName : "\(copied.count) items"). Paste in the Calculator or a plan slot."
     }
 
     private var showsRecentDoseWarning: Bool {

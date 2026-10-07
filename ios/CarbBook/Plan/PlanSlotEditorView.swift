@@ -24,6 +24,7 @@ struct PlanSlotEditorView: View {
         NavigationStack {
             Form {
                 Section {
+                    PasteRow { clipboard in items.append(contentsOf: clipboard.planItems()) }
                     ForEach($items, id: \.key) { $item in
                         if item.refType == .quick {
                             QuickCarbsRow(label: Binding(get: { $item.wrappedValue.label ?? "" },
