@@ -68,7 +68,8 @@ public enum LogReportHtml {
     .day h2 { font-size: 12pt; margin: 0 0 4px; padding: 5px 8px; background: #e8f5e9; border-radius: 6px; page-break-after: avoid; break-after: avoid; }
     .day h2 .tot { float: right; font-weight: 400; color: #1c2419; }
     .empty { color: #5d6b59; font-style: italic; padding: 2px 8px; }
-    table { width: 100%; border-collapse: collapse; }
+    table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    col.c-time { width: 12%; } col.c-meal { width: 19%; } col.c-bg { width: 8%; } col.c-carbs { width: 31%; } col.c-sug { width: 15%; } col.c-taken { width: 15%; }
     th { text-align: left; font-size: 8.5pt; text-transform: uppercase; letter-spacing: 0.04em; color: #5d6b59; font-weight: 600; padding: 3px 8px; border-bottom: 1px solid #d7ddd3; }
     td { padding: 5px 8px 1px; vertical-align: top; }
     td.n, th.n { text-align: right; white-space: nowrap; }
@@ -83,7 +84,7 @@ public enum LogReportHtml {
     .goal-off { color: #8a3f00; background: #fbe9dc; }
     .goal-out { color: #8a1418; background: #fbe3e4; }
     .it { white-space: nowrap; }
-    .it + .it::before { content: ' · '; color: #9aa596; }
+    .it:not(:last-child)::after { content: ' ·'; color: #9aa596; }
     footer { margin-top: 18px; font-size: 8.5pt; color: #5d6b59; border-top: 1px solid #d7ddd3; padding-top: 6px; }
     """
 
@@ -99,7 +100,7 @@ public enum LogReportHtml {
         let e = entry.input
         let items = e.items.map { item in
             "<span class=\"it\">\(esc(item.name))\(item.amount.isEmpty ? "" : " \(esc(item.amount))") — \(grams(item.carbsG))</span>"
-        }.joined()
+        }.joined(separator: " ") // a real space: the only place a long list of items can wrap
         return [
             "<tbody>",
             "<tr><td class=\"time\">\(esc(e.time))</td><td>\(esc(e.windowName ?? "—"))</td><td class=\"n\">\(bg(e.bgMgdl))</td>",
@@ -135,7 +136,7 @@ public enum LogReportHtml {
                 : "<span class=\"tot\">\(grams(day.carbsG)) carbs · \(units(day.takenUnits)) taken</span>"
             let heading = "<h2>\(esc(labels.day(day.day)))\(totals)</h2>"
             if day.entries.isEmpty { return "<section class=\"day\">\(heading)<div class=\"empty\">Nothing logged</div></section>" }
-            return "<section class=\"day\">\(heading)<table><thead><tr><th>Time</th><th>Meal</th><th class=\"n\">BG</th>"
+            return "<section class=\"day\">\(heading)<table><colgroup><col class=\"c-time\"><col class=\"c-meal\"><col class=\"c-bg\"><col class=\"c-carbs\"><col class=\"c-sug\"><col class=\"c-taken\"></colgroup><thead><tr><th>Time</th><th>Meal</th><th class=\"n\">BG</th>"
                 + "<th class=\"n\">Carbs / goal</th><th class=\"n\">Suggested</th><th class=\"n\">Taken</th></tr></thead>"
                 + day.entries.map(entryRows).joined() + "</table></section>"
         }.joined()

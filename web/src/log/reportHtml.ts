@@ -43,7 +43,8 @@ section.day { margin-bottom: 14px; }
 .day h2 { font-size: 12pt; margin: 0 0 4px; padding: 5px 8px; background: #e8f5e9; border-radius: 6px; page-break-after: avoid; break-after: avoid; }
 .day h2 .tot { float: right; font-weight: 400; color: #1c2419; }
 .empty { color: #5d6b59; font-style: italic; padding: 2px 8px; }
-table { width: 100%; border-collapse: collapse; }
+table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+col.c-time { width: 12%; } col.c-meal { width: 19%; } col.c-bg { width: 8%; } col.c-carbs { width: 31%; } col.c-sug { width: 15%; } col.c-taken { width: 15%; }
 th { text-align: left; font-size: 8.5pt; text-transform: uppercase; letter-spacing: 0.04em; color: #5d6b59; font-weight: 600; padding: 3px 8px; border-bottom: 1px solid #d7ddd3; }
 td { padding: 5px 8px 1px; vertical-align: top; }
 td.n, th.n { text-align: right; white-space: nowrap; }
@@ -58,7 +59,7 @@ tr.note td { font-style: italic; }
 .goal-off { color: #8a3f00; background: #fbe9dc; }
 .goal-out { color: #8a1418; background: #fbe3e4; }
 .it { white-space: nowrap; }
-.it + .it::before { content: ' · '; color: #9aa596; }
+.it:not(:last-child)::after { content: ' ·'; color: #9aa596; }
 footer { margin-top: 18px; font-size: 8.5pt; color: #5d6b59; border-top: 1px solid #d7ddd3; padding-top: 6px; }
 `;
 
@@ -72,7 +73,8 @@ function goalCell(entry: ReportEntry): string {
 function entryRows(entry: ReportEntry): string {
   const items = entry.items
     .map((item) => `<span class="it">${esc(item.name)}${item.amount ? ` ${esc(item.amount)}` : ''} — ${grams(item.carbs_g)}</span>`)
-    .join('');
+    // A real space between items is the only place a long list of items can wrap.
+    .join(' ');
   return [
     '<tbody>',
     `<tr><td class="time">${esc(entry.time)}</td><td>${esc(entry.window_name ?? '—')}</td><td class="n">${bg(entry.bg_mgdl)}</td>`,
@@ -112,7 +114,7 @@ export function reportHtml(report: Report, labels: ReportLabels): string {
         day.entries.length > 0 ? `<span class="tot">${grams(day.carbs_g)} carbs · ${units(day.taken_units)} taken</span>` : ''
       }</h2>`;
       if (day.entries.length === 0) return `<section class="day">${heading}<div class="empty">Nothing logged</div></section>`;
-      return `<section class="day">${heading}<table><thead><tr><th>Time</th><th>Meal</th><th class="n">BG</th><th class="n">Carbs / goal</th><th class="n">Suggested</th><th class="n">Taken</th></tr></thead>${day.entries
+      return `<section class="day">${heading}<table><colgroup><col class="c-time"><col class="c-meal"><col class="c-bg"><col class="c-carbs"><col class="c-sug"><col class="c-taken"></colgroup><thead><tr><th>Time</th><th>Meal</th><th class="n">BG</th><th class="n">Carbs / goal</th><th class="n">Suggested</th><th class="n">Taken</th></tr></thead>${day.entries
         .map(entryRows)
         .join('')}</table></section>`;
     })
