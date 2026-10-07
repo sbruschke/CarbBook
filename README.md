@@ -69,6 +69,16 @@ accountability text on screen is unchanged.
 
 Spec: `docs/superpowers/specs/2026-10-07-log-export-and-copy-design.md`.
 
+## BG history
+
+dexcom-api (pi-infra) now keeps every CGM reading; CarbBook shows a BG chart per Log day, after-meal BG on each
+entry, a **BG trends** view (time in range, GMI, CV, daily pattern, after-meal averages), and CGM sections in
+the PDF. Dexcom Share only serves 24 h, so older history comes from a Clarity CSV export:
+
+    ssh pi 'docker exec -i dexcom-api python app.py import-clarity' < ~/Downloads/clarity-export.csv
+
+Spec: `docs/superpowers/specs/2026-10-07-bg-history-design.md`.
+
 ## Server environment
 
 | Variable | Default | Notes |

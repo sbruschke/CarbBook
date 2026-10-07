@@ -35,6 +35,10 @@ struct LogView: View {
                     }
                     LabeledContent("Insulin taken", value: "\(formatNumber(entries.reduce(0) { $0 + ($1.takenUnits ?? 0) }, digits: 2))u")
                 }
+                BgDaySection(day: day, entries: entries)
+                Section {
+                    NavigationLink { BgTrendsView() } label: { Label("BG trends", systemImage: "chart.xyaxis.line") }
+                }
                 Section("Entries") {
                     ForEach(entries, id: \.id) { entry in
                         NavigationLink {

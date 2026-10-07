@@ -16,6 +16,7 @@ import { buildCatalog, type CatalogData } from '../db/catalog';
 import { isLive } from '../db/db';
 import { type Change, dataOf } from '../db/store';
 import { estimateFor } from '../dose/dose';
+import { MealBg } from '../bg/BgViews';
 import { AccountabilityText } from '../ui/AccountabilityText';
 import { DoseCard } from '../ui/DoseCard';
 import { dayKey, formatCarbs, formatDayLabel, fromDateTimeLocal, parseNonNegative, parseWholeNumber, toDateTimeLocal, unitLabel } from '../ui/format';
@@ -230,6 +231,7 @@ function EntryForm(props: {
         </button>
       </div>
       {message && <p role="status">{message}</p>}
+      <MealBg eatenAt={entry.eaten_at} />
       <p className="total" data-testid="entry-carbs">
         Total {formatCarbs(total)} carbs
       </p>

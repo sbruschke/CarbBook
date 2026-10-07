@@ -21,6 +21,7 @@ export class TestClock {
 
 export const unusedBg: BgClient = {
   latest: () => Promise.reject(new Error('bg client not stubbed in this test')),
+  range: () => Promise.reject(new Error('bg client not stubbed in this test')),
 };
 
 export const unusedOff: OffClient = {

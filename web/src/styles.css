@@ -633,3 +633,86 @@ fieldset {
 .export-card .button-row {
   margin-bottom: 0;
 }
+
+.segmented {
+  display: flex;
+  gap: 0;
+  margin: 8px 0 12px;
+}
+
+.segmented button {
+  flex: 1;
+  border-radius: 0;
+}
+
+.segmented button:first-child {
+  border-radius: 10px 0 0 10px;
+}
+
+.segmented button:last-child {
+  border-radius: 0 10px 10px 0;
+}
+
+.segmented button[aria-selected='true'] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+  font-weight: 700;
+}
+
+.bg-chart-wrap svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.bg-stats,
+.bg-note {
+  margin: 6px 0 0;
+  font-size: 15px;
+}
+
+.bg-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 8px;
+  margin: 12px 0 0;
+}
+
+.bg-tiles div {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 6px 10px;
+}
+
+.bg-tiles dt {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.bg-tiles dd {
+  margin: 0;
+  font-weight: 700;
+}
+
+.bg-windows {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 15px;
+}
+
+.bg-windows th,
+.bg-windows td {
+  padding: 4px 6px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+
+.bg-windows .n {
+  text-align: right;
+}
+
+.tir-bar { display: flex; height: 14px; border-radius: 4px; overflow: hidden; background: #eceee9; }
+.tir-bar span { display: block; min-width: 2px; }
+.tir-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 4px; font-size: 0.8em; color: #3d4a39; }
+.tir-key i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }

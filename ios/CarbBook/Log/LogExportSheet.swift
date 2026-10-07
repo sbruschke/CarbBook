@@ -17,6 +17,7 @@ struct LogExportSheet: View {
     @State private var previewURL: URL?
     @State private var error: String?
     @State private var loaded = false
+    @State private var creating = false
 
     private static let presets = [7, 14, 30, 90]
 
@@ -40,7 +41,10 @@ struct LogExportSheet: View {
                     Text("Every logged meal in the range, day by day, with BG, carbs against your goals, doses and what was eaten.")
                 }
                 Section {
-                    Button { create() } label: { Label("Create PDF", systemImage: "doc.richtext") }
+                    Button { create() } label: {
+                        Label(creating ? "Creating PDF…" : "Create PDF", systemImage: "doc.richtext")
+                    }
+                    .disabled(creating)
                     if let pdfURL {
                         Button { previewURL = pdfURL } label: { Label("Preview", systemImage: "eye") }
                         ShareLink(item: pdfURL) { Label("Share or save PDF", systemImage: "square.and.arrow.up") }
@@ -67,6 +71,14 @@ struct LogExportSheet: View {
     }
 
     private func create() {
+        creating = true
+        Task {
+            await createAsync()
+            creating = false
+        }
+    }
+
+    private func createAsync() async {
         let calendar = Calendar.current
         let start = calendar.startOfDay(for: from)
         let lastDay = calendar.startOfDay(for: to)
@@ -99,11 +111,24 @@ struct LogExportSheet: View {
                     else { return key }
                     return day.formatted(.dateTime.weekday(.wide).month(.wide).day())
                 })
+            // CGM history is fetched fresh for the range; offline, the PDF is made without it.
+            var history: BgHistory?
+            var failure: String?
+            do {
+                history = try await app.api.bgReadings(fromMs: ms(start), toMs: ms(end))
+            } catch {
+                failure = "BG history needs a connection, or is unavailable right now."
+            }
+            let cgm = LogReportBuilder.reportBg(
+                history: history, failure: failure, report: report, from: start, to: lastDay,
+                hourLabelAt: { date(ms: $0).formatted(.dateTime.hour()) },
+                hourLabel: { Calendar.current.date(bySettingHour: $0, minute: 0, second: 0, of: Date())!.formatted(.dateTime.hour()) },
+                earliestLabel: { date(ms: $0).formatted(.dateTime.month(.abbreviated).day()) })
             let name = start == lastDay
                 ? "CarbBook log \(LogReportBuilder.dayKey(start))"
                 : "CarbBook log \(LogReportBuilder.dayKey(start)) to \(LogReportBuilder.dayKey(lastDay))"
             let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(name).pdf")
-            try PDFRenderer.pdf(html: LogReportHtml.html(report, labels: labels)).write(to: url, options: .atomic)
+            try PDFRenderer.pdf(html: LogReportHtml.html(report, labels: labels, cgm: cgm)).write(to: url, options: .atomic)
             error = nil
             pdfURL = url
             previewURL = url
